@@ -231,10 +231,9 @@ class QuestionThenAnswer(LLMClient):
                             "memory",
                             {
                                 "action": "add",
-                                "kind": "user",
+                                "kind": "preference",
                                 "content": "验收偏好：回答保持简洁",
                                 "explicit": True,
-                                "expected_revision": results[-1]["revision"],
                             },
                         )
                     ]

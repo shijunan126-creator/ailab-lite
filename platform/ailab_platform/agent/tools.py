@@ -365,11 +365,12 @@ MEMORY = {
     "type": "function",
     "function": {
         "name": "memory",
-        "description": "维护当前文档：add无需revision；replace/remove需expected_revision与id。仅用户要求时explicit=true；自主保存静默。",
+        "description": "只在用户询问记忆、提到别处记下的内容或要修改快照外条目时list读完整当前文档；"
+        "add无需revision；replace/remove需expected_revision与id。仅用户要求时explicit=true；自主保存静默。",
         "parameters": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["add", "replace", "remove"]},
+                "action": {"type": "string", "enum": ["list", "add", "replace", "remove"]},
                 "expected_revision": {"type": "integer", "minimum": 0},
                 "id": {"type": "string"},
                 "kind": {"type": "string", "enum": ["fact", "preference", "project", "interest", "reference"]},
@@ -871,9 +872,11 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
 
 
 def tool_result_message(call_id: str, name: str, result: dict) -> dict:
+    from ..memory_recall.guard import escape_memory_tags
+
     return {
         "role": "tool",
         "tool_call_id": call_id,
         "name": name,
-        "content": json.dumps(result, ensure_ascii=False),
+        "content": escape_memory_tags(json.dumps(result, ensure_ascii=False)),
     }

@@ -699,6 +699,7 @@ class MemoryEpisode(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    context_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     content_hash: Mapped[str] = mapped_column(String(64))
     digest: Mapped[str] = mapped_column(Text)

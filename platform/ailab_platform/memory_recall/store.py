@@ -97,5 +97,5 @@ def replace_entries(db, user, entries):
         row.reinforced_at = stamp(e.get("reinforced_at"), row.reinforced_at if not fresh else now)
         row.content_hash = fact_hash(row.content)
         row.updated_at = stamp(e.get("updated_at"), now)
-        row.metadata_ = {k: e[k] for k in ("source", "evidence_episode_ids", "evidence_deleted", "last_used_at") if k in e}
+        row.metadata_ = {k: e[k] for k in ("source", "change_type", "evidence_episode_ids", "evidence_deleted", "last_used_at") if k in e}
     db.flush()

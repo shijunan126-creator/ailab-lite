@@ -2386,6 +2386,8 @@ class AgentLoop:
                     )
                     state["tool_log"][invocation] = observation(call.name, call.arguments, result)
                     messages.append(tool_result_message(call.id, call.name, result))
+                    if call.name == "memory":
+                        self._context(run_id).observe_memory_result(result, call.id)
                     state["pending"].pop(0)
                     if call.name in {"exec", "exec_wait", "exec_kill"} and result.get("handle"):
                         jobs = set(state.get("background_jobs", []))

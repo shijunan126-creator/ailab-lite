@@ -39,6 +39,7 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
 
     _doc.cache_clear()
     run_ids = set(db.scalars(select(Run.id).where(Run.conversation_id.in_(conversation_ids), Run.user_id == user.id)))
+    redact_episode_context(db, run_ids)
     embeddings.delete_for_runs(db, list(run_ids))
     db.execute(delete(MemoryWorkItem).where(MemoryWorkItem.run_id.in_(run_ids)))
     match = [MemoryEpisode.conversation_id.in_(conversation_ids)]
@@ -111,6 +112,7 @@ def purge_episodes_for_runs(db: Session, run_ids: list[str]) -> int:
     from .search import _doc
 
     _doc.cache_clear()
+    redact_episode_context(db, run_ids)
     embeddings.delete_for_runs(db, run_ids)
     db.execute(delete(MemoryWorkItem).where(MemoryWorkItem.run_id.in_(run_ids)))
     result = db.execute(delete(MemoryEpisode).where(MemoryEpisode.run_id.in_(run_ids)))
@@ -217,3 +219,19 @@ def cancel_memory_edits(db: Session, user_id: str, project_id: str | None, reaso
         dream.claim_token = None
         dream.claimed_until = None
         dream.finished_at = utcnow()
+
+
+def redact_episode_context(db, run_ids):
+    """Indexed redaction of predecessor text copied into another turn's episode."""
+    import json
+
+    from ..memory_dream.service import _hash
+
+    for episode in db.scalars(select(MemoryEpisode).where(MemoryEpisode.context_run_id.in_(run_ids))):
+        payload = json.loads(episode.digest)
+        payload.pop("context", None)
+        payload.pop("context_run_id", None)
+        episode.digest = json.dumps(payload, ensure_ascii=False)
+        source_start = payload.get("source_end", len(payload.get("user_said", ""))) - len(payload.get("user_said", ""))
+        episode.content_hash = _hash(str(episode.run_id) + "\n" + str(source_start) + "\n" + episode.digest)
+        episode.context_run_id = None

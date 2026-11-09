@@ -301,7 +301,6 @@ def test_dream_extraction_scope_and_judge_candidates(api, monkeypatch, mode, exp
     conv = c.post("/v1/conversations", headers=me, json={"project_id": pid}).json()["id"]
     _seed(uid, "我喜欢中文回答", conversation_id=conv, days_ago=0)
     put(c, me, [{"kind": "user", "content": "账号偏好"}, {"content": "项目约定", "project_id": pid}])
-    monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
     seen = []
 
     async def extract(episodes, active, user):
@@ -786,3 +785,42 @@ def post_edit(c, headers, body):
     return c.post(
         "/v1/memory/edit", headers=headers, json={"expected_revision": c.get("/v1/memory", headers=headers).json()["revision"], **body}
     )
+
+
+@pytest.mark.parametrize("change_scope", [False, True])
+def test_cached_candidates_respect_new_isolation_and_sensitive_guard_is_consumed(api, monkeypatch, change_scope):
+    """Re-read raw evidence under the current scope; no cached candidate can bypass the final fence."""
+    from ailab_platform.models import MemoryWorkItem
+
+    c, me, uid = api
+    pid = project(c, me)
+    conv = c.post("/v1/conversations", headers=me, json={"project_id": pid}).json()["id"]
+    rid = _seed(uid, "我患有慢性病", conversation_id=conv, days_ago=0)
+    calls = []
+
+    async def chat(*args):
+        calls.append(1)
+        if change_scope and len(calls) == 1:
+
+            def change():
+                with SessionLocal() as db:
+                    db.get(Project, pid).memory_mode = "isolated"
+                    db.commit()
+
+            await asyncio.to_thread(change)
+        return json.dumps({"ops": [{"op": "add", "kind": "fact", "content": "用户患有慢性病", "quote": "我患有慢性病", "run": rid}]}), {}
+
+    monkeypatch.setattr(service, "_chat", chat)
+    result = c.post("/v1/memory/dream/run", headers=me, params={"project_id": pid}).json()
+    first = c.get(f"/v1/memory/dreams/{result['id']}", headers=me).json()
+    assert first["status"] == ("failed" if change_scope else "applied")
+    if change_scope:
+        assert c.get("/v1/memory", headers=me).json()["entries"] == []
+        c.post("/v1/memory/dream/run", headers=me, params={"project_id": pid})
+    current = c.get("/v1/memory", headers=me).json()["entries"]
+    assert len(current) == 1 and current[0]["status"] == "review"
+    assert current[0]["project_id"] == (pid if change_scope else None)
+    c.post("/v1/memory/dream/run", headers=me, params={"project_id": pid})
+    assert len(calls) == (2 if change_scope else 1)
+    with SessionLocal() as db:
+        assert db.get(MemoryWorkItem, rid).state == "done"

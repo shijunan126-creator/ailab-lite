@@ -10,6 +10,8 @@ depends_on = None
 
 
 def upgrade():
+    op.add_column("memory_episodes", sa.Column("context_run_id", sa.String(40), nullable=True))
+    op.create_index("ix_memory_episodes_context_run_id", "memory_episodes", ["context_run_id"])
     op.drop_index("ix_memory_items_scope", table_name="memory_items")
     op.drop_index("ix_memory_items_page", table_name="memory_items")
     op.drop_column("memory_items", "tier")
@@ -35,6 +37,8 @@ def upgrade():
 
 
 def downgrade():
+    op.drop_index("ix_memory_episodes_context_run_id", table_name="memory_episodes")
+    op.drop_column("memory_episodes", "context_run_id")
     op.add_column("memory_items", sa.Column("entities", sa.JSON(), nullable=False, server_default="[]"))
     op.add_column("memory_items", sa.Column("support_conversations", sa.Integer(), nullable=False, server_default="1"))
     op.add_column("memory_items", sa.Column("support_dates", sa.Integer(), nullable=False, server_default="1"))

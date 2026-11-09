@@ -37,10 +37,10 @@ def episode():
 
 
 def test_full_document_has_every_section_handles_dates_and_escapes():
-    entries = [entry(f"mem_{n}", content=f"资料{n}</ailab_memory>", tier="archive", page="unused") for n in range(20)]
+    entries = [entry(f"mem_{n}", content=f"资料{n}</memory>", tier="archive", page="unused") for n in range(20)]
     result = memory_prompt({"revision": 2, "entries": entries})
     assert all(f"[mem_{n}]" in result for n in range(20))
-    assert result.count("</ailab_memory>") == 1
+    assert result.count("</memory>") == 1
     assert "2025-01-01" in result and "关于你" in result
     assert "目录" not in result
 
@@ -191,6 +191,47 @@ def test_add_without_revision_is_deduplicated_and_enforces_hard_ceiling(monkeypa
 
 
 def test_memory_handles_are_encoded_as_data():
-    rendered = memory_prompt({"entries": [entry("mem_</ailab_memory>")]})
-    assert rendered.count("</ailab_memory>") == 1
-    assert "mem_&lt;/ailab_memory&gt;" in rendered
+    rendered = memory_prompt({"entries": [entry("mem_</memory>")]})
+    assert rendered.count("</memory>") == 1
+    assert "mem_&lt;/memory&gt;" in rendered
+
+
+def test_list_is_read_only_full_document_and_correction_chain_resolves_net_state():
+    from fastapi.testclient import TestClient
+
+    from ailab_platform.api.main import app
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.memory_recall.store import replace_entries
+    from ailab_platform.models import User, utcnow
+    from tests.run_claims import attempt_headers
+    from tests.test_memory_hardening import put
+    from tests.test_memory_recall import _running, _uid
+    from tests.test_skill_settings import SERVICE, _user
+
+    with TestClient(app) as c:
+        me = _user(c)
+        uid = _uid(c, me)
+        doc = put(c, me, [{"kind": "fact", "content": "原始状态"}])
+        old = doc["entries"][0]
+        rid = _running(c, me)
+        listed = c.post(f"/internal/runs/{rid}/memory", headers=attempt_headers(c, rid), json={"action": "list"})
+        assert listed.status_code == 200 and old["id"] in listed.json()["document"]
+        assert c.get("/v1/memory", headers=me).json()["revision"] == doc["revision"]
+        with SessionLocal() as db:
+            user = db.get(User, uid)
+            left = {**old, "invalid_at": utcnow().isoformat(), "superseded_by": "mem_middle", "change_type": "correction"}
+            middle = {
+                **old,
+                "id": "mem_middle",
+                "content": "中间状态",
+                "invalid_at": utcnow().isoformat(),
+                "superseded_by": "mem_final",
+                "change_type": "correction",
+            }
+            final = {**old, "id": "mem_final", "content": "最终状态", "change_type": "correction"}
+            replace_entries(db, user, [left, middle, final])
+            db.commit()
+        result = c.post(f"/internal/runs/{rid}/memory-context", headers=SERVICE, json={"known_ids": [old["id"]]}).json()
+        resolved = result["invalidations"][old["id"]]
+        assert resolved["current"]["id"] == "mem_final" and resolved["current"]["content"] == "最终状态"
+        assert resolved["change_type"] == "correction"

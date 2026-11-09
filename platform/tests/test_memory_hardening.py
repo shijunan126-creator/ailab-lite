@@ -76,7 +76,6 @@ def install_extractor(monkeypatch, seen=None):
         return {}, {}
 
     install_plan_builder(monkeypatch, extract)
-    monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
 
 
 def test_paused_memory_is_not_disclosed_by_the_agent_list_tool():
@@ -662,3 +661,28 @@ def test_late_historical_fact_cannot_supersede_a_newer_confirmed_state():
         None,
     )
     assert result == [old] and audit == []
+
+
+def test_judge_denies_unsupported_inferences_even_with_valid_quotes():
+    from ailab_platform.models import MemoryEpisode
+
+    """The removed judge is replaced by the deterministic sensitive-review boundary."""
+    from types import SimpleNamespace
+
+    from ailab_platform.memory_dream.document import apply_ops
+
+    ep = MemoryEpisode(
+        id="epi_hypothesis", run_id="run_hypothesis", observed_at=datetime.now(UTC), digest=json.dumps({"user_said": "假设有人患有某疾病"})
+    )
+    entries, _ = apply_ops(
+        [],
+        [],
+        [ep],
+        [{"op": "add", "kind": "fact", "content": "用户患有某疾病", "quote": "假设有人患有某疾病", "run": ep.run_id}],
+        SimpleNamespace(settings={}),
+        None,
+    )
+    assert len(entries) == 1 and entries[0]["status"] == "review"
+    from ailab_platform.memory_recall.policy import model_view
+
+    assert model_view({"entries": entries})["entries"] == []

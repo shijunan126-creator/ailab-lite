@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -124,12 +124,14 @@ def write_memory(
     now = datetime.now(UTC)
     tombstones = tombstones_of(user)
     entries = []
+    checked_projects = set()
     known_evidence = {rid for entry in old.values() for rid in entry.get("evidence_run_ids", [])}
     for entry in body.entries:
-        if entry.project_id:
+        if entry.project_id and entry.project_id not in checked_projects:
             from ..library import owned_project
 
             owned_project(db, entry.project_id, user)
+            checked_projects.add(entry.project_id)
         if entry.id and entry.id not in old and not entry.id.startswith("mem_"):
             raise HTTPException(422, "unknown memory entry")
         prior = old.get(entry.id)
@@ -177,6 +179,7 @@ def write_memory(
             changed = prior["content"] != entry.content or prior["kind"] != entry.kind
             for field in (
                 "origin",
+                "change_type",
                 "observed_at",
                 "reinforced_at",
                 "expires_at",
@@ -207,6 +210,7 @@ def write_memory(
                 merged["kind"] = entry.kind
                 merged["updated_at"] = now.isoformat()
                 merged["source"] = source
+                merged["change_type"] = entry.change_type or "correction"
                 # An in-place edit invalidates the old quote/episode evidence. The dream applies
                 # append-only facts; this path is for explicit user/agent edits.
                 if entry.source_quote is None:
@@ -264,6 +268,7 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
         "id": entry.id or new_id("mem"),
         "kind": entry.kind,
         "origin": entry.origin,
+        "change_type": entry.change_type or "addition",
         "reinforced_at": entry.reinforced_at.isoformat() if entry.reinforced_at else now.isoformat(),
         "observed_at": entry.observed_at.isoformat() if entry.observed_at else now.isoformat(),
         "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
@@ -528,6 +533,16 @@ def run_memory(
         project_id = run_project(db, run)
         permissions = run_permissions(db, run)
         current["read_enabled"] = permissions["read"]
+        if body.action == "list":
+            from ..memory_recall.document import render
+
+            visible = model_view(current, project_id, mode=project_mode(db, project_id))
+            return {
+                "memory_list": True,
+                "revision": current["revision"],
+                "document": render(visible["entries"]),
+                "entries": visible["entries"],
+            }
         if not x_delivery_id or not x_delivery_id.startswith(run.id + ":") or len(x_delivery_id) > 160:
             raise HTTPException(422, "stable delivery identity required")
         prior = db.get(RunDelivery, (run.id, x_delivery_id))
@@ -610,11 +625,27 @@ def run_memory(
 
 
 @router.get("/internal/runs/{run_id}/memory-context", dependencies=[Depends(require_scope("runs:read"))])
-def current_memory_context(run_id: str, db: Session = Depends(get_db)):
+def current_memory_context(run_id: str, db: Session = Depends(get_db), known_id: list[str] = Query(default=[], max_length=2000)):
     from .routes_internal import _run_or_404
 
     run = _run_or_404(db, run_id)
-    return memory_for_run(db.get(User, run.user_id), run)
+    document = memory_for_run(db.get(User, run.user_id), run)
+    if known_id:
+        from ..memory_recall.invalidations import for_handles
+
+        project_id = run_project(db, run)
+        document["invalidations"] = for_handles(db, run.user_id, known_id, document, project_id, project_mode(db, project_id))
+    return document
+
+
+class KnownMemory(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    known_ids: list[str] = Field(max_length=2000)
+
+
+@router.post("/internal/runs/{run_id}/memory-context", dependencies=[Depends(require_scope("runs:read"))])
+def memory_invalidations(run_id: str, body: KnownMemory, db: Session = Depends(get_db)):
+    return current_memory_context(run_id, db, body.known_ids)
 
 
 @router.get("/v1/memory/{entry_id}/sources")

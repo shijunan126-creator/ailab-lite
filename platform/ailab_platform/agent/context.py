@@ -177,21 +177,27 @@ class ContextManager:
         latest = await self.platform.get_memory_context(run_id)
         if band:
             latest = bounded_memory(band, latest)
-        content = context["content"]
-        start = content.find("<ailab_memory>")
-        if start >= 0:
-            end = content.find("</ailab_memory>", start)
-            if end >= 0:
-                end += len("</ailab_memory>")
-                content = content[:start] + memory_prompt(latest).strip() + content[end:]
-        elif latest:
-            content += memory_prompt(latest)
+        context = self._memory_block(context, latest)
         self.state["memory_observed"] = latest
-        return context if content == context["content"] else {**context, "content": content}
+        self.state["memory_snapshot_signature"] = self._memory_signature(latest)
+        return context
+
+    @staticmethod
+    def _memory_block(context, memory):
+        import re
+
+        content = context["content"]
+        pattern = r"<(?:ailab_)?memory>.*?</(?:ailab_)?memory>"
+        replacement = memory_prompt(memory).strip()
+        content, count = re.subn(pattern, lambda _: replacement, content, count=1, flags=re.S)
+        if not count:
+            content += memory_prompt(memory)
+        return {**context, "content": content}
 
     async def _prepare_boundary_memory(self, run_id, context, band):
         present = "memory_observed" in self.state
         original = self.state.get("memory_observed")
+        original_signature = self.state.get("memory_snapshot_signature")
         try:
             context = await self._refresh_boundary_memory(run_id, context, band)
             return context, self.state.get("memory_observed")
@@ -200,6 +206,10 @@ class ContextManager:
                 self.state["memory_observed"] = original
             else:
                 self.state.pop("memory_observed", None)
+            if original_signature is None:
+                self.state.pop("memory_snapshot_signature", None)
+            else:
+                self.state["memory_snapshot_signature"] = original_signature
 
     def _band(self, model, run):
         return ContextBand.for_model(self.catalog().get(model), run.get("context_settings"))
@@ -351,6 +361,7 @@ class ContextManager:
                 },
             )
             self.state["memory_observed"] = observed
+            self.state["memory_snapshot_signature"] = self._memory_signature(observed or {})
             self.state["context_sources"] = [source.model_dump(exclude_none=True) for source in staged_history.semantic.sources()]
             fixed[1] = context
             summary, through = canonical_summary(staged_history.semantic), pending[-1]["id"]
@@ -558,6 +569,7 @@ class ContextManager:
             raise
         staged.measurements["before_tokens"] = request_tokens(self.state, model, [*prior, current], tools)
         self.state["memory_observed"] = observed
+        self.state["memory_snapshot_signature"] = self._memory_signature(observed or {})
         self.state["context_sources"] = [source.model_dump(exclude_none=True) for source in staged.semantic.sources()]
         self.state["compaction"] = {**staged.measurements, "after": staged.measurements["after_tokens"], "threshold": band.trigger}
         self.state.pop("failed_compaction_digest", None)
@@ -641,6 +653,7 @@ class ContextManager:
             if message.get("role") == "user" and i not in staged.current_indices and isinstance(message.get("content"), list)
         ]
         state["memory_observed"] = observed
+        state["memory_snapshot_signature"] = self._memory_signature(observed or {})
         state["context_sources"] = [source.model_dump(exclude_none=True) for source in staged.semantic.sources()]
         state["compaction"] = {
             **staged.measurements,
@@ -703,7 +716,8 @@ class ContextManager:
             or "<ailab_memory>" in str(saved_messages[0].get("content", ""))
             or len(saved_messages) < 2
             or saved_messages[1].get("role") != "system"
-            or ("<ailab_memory>" in str(saved_messages[1].get("content", "")) and "memory_observed" not in state)
+            or "<ailab_memory>" in str(saved_messages[1].get("content", ""))
+            or ("<memory>" in str(saved_messages[1].get("content", "")) and "memory_observed" not in state)
         )
         if not saved_messages or legacy:  # A legacy checkpoint is rebuilt once, preserving pending tool state.
             picked_text = None
@@ -753,6 +767,7 @@ class ContextManager:
                 if isinstance(state.get("user_message_index"), int):
                     state["user_message_index"] += 2 - skip
                 state["memory_observed"] = boundary_memory
+                state["memory_snapshot_signature"] = self._memory_signature(boundary_memory)
                 run["context_boundary"] = "context_abi_changed" if abi_mismatch else "rebuilt"
                 turn.messages = state["messages"]
                 if self.catalog().get(model):
@@ -776,6 +791,7 @@ class ContextManager:
                         state["active_user_indices"] = staged.current_indices
             elif previous and await self._revoked_recall_results(run_id, previous.get("messages", [])):
                 state["memory_observed"] = boundary_memory
+                state["memory_snapshot_signature"] = self._memory_signature(boundary_memory)
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
                 run["context_boundary"] = "access_revoked"
             elif previous and (
@@ -783,9 +799,11 @@ class ContextManager:
                 or len(previous.get("messages", [])) < 2
                 or previous["messages"][1].get("role") != "system"
                 or "<ailab_memory>" in str(previous["messages"][0].get("content", ""))
-                or ("<ailab_memory>" in str(previous["messages"][1].get("content", "")) and "memory_observed" not in previous)
+                or "<ailab_memory>" in str(previous["messages"][1].get("content", ""))
+                or ("<memory>" in str(previous["messages"][1].get("content", "")) and "memory_observed" not in previous)
             ):
                 state["memory_observed"] = boundary_memory
+                state["memory_snapshot_signature"] = self._memory_signature(boundary_memory)
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
                 run["context_boundary"] = (
                     "context_abi_changed" if previous.get("context_abi_version") not in (None, CONTEXT_ABI_VERSION) else "rebuilt"
@@ -795,18 +813,37 @@ class ContextManager:
                 prior = {"messages": previous["messages"]}
                 await self.runtime._restore_images(run_id, run, prior)
                 state["memory_observed"] = previous.get("memory_observed", boundary_memory)
-                state["messages"] = await self._compact_parent_context(
-                    run_id,
-                    run,
-                    llm,
-                    model,
-                    prior["messages"],
-                    messages[-1],
-                    state["tool_catalog_v1"],
-                    previous.get("delivered"),
-                    previous.get("delivery_names"),
-                    previous.get("operational_state"),
+                state["memory_snapshot_signature"] = previous.get("memory_snapshot_signature") or self._memory_signature(
+                    state["memory_observed"]
                 )
+                from datetime import UTC, datetime
+
+                from ..memory_recall.store import stamp
+
+                finished = stamp(previous.get("finished_at"))
+                idle = finished and (datetime.now(UTC) - finished).total_seconds() > settings.memory_snapshot_idle_hours * 3600
+                refresh = idle and state["memory_snapshot_signature"] != self._memory_signature(boundary_memory)
+                if refresh:
+                    prior["messages"] = list(prior["messages"])
+                    prior["messages"][1] = self._memory_block(prior["messages"][1], boundary_memory)
+                    state["memory_observed"] = boundary_memory
+                    state["memory_snapshot_signature"] = self._memory_signature(boundary_memory)
+                    state["messages"] = [*prior["messages"], messages[-1]]
+                    run["context_boundary"] = "memory_refreshed"
+                    state["memory_update_turn"] = [run_id, len(state["messages"]) - 1]
+                else:
+                    state["messages"] = await self._compact_parent_context(
+                        run_id,
+                        run,
+                        llm,
+                        model,
+                        prior["messages"],
+                        messages[-1],
+                        state["tool_catalog_v1"],
+                        previous.get("delivered"),
+                        previous.get("delivery_names"),
+                        previous.get("operational_state"),
+                    )
             else:
                 if previous:
                     run["context_boundary"] = (
@@ -817,6 +854,7 @@ class ContextManager:
                 elif not run.get("context_boundary") and (run.get("parent_run_id") or run.get("history")):
                     run["context_boundary"] = "rebuilt"
                 state["memory_observed"] = boundary_memory
+                state["memory_snapshot_signature"] = self._memory_signature(boundary_memory)
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
             if not legacy:
                 state["user_message_index"] = len(state["messages"]) - 1
@@ -843,57 +881,111 @@ class ContextManager:
 
     @staticmethod
     def _memory_signature(document):
+        from hashlib import sha256
+
         fields = ("content", "kind", "origin", "observed_at", "updated_at", "status", "suppressed", "invalid_at")
-        return (
-            tuple((key, document.get(key, True)) for key in ("enabled", "auto_save", "read_enabled", "write_enabled", "reference_history")),
-            tuple(sorted((e["id"], tuple(str(e.get(key, "")) for key in fields)) for e in document.get("entries", []) if e.get("id"))),
+        value = (
+            document.get("revision", 0),
+            [(key, document.get(key, True)) for key in ("enabled", "auto_save", "read_enabled", "write_enabled", "reference_history")],
+            sorted((e["id"], [str(e.get(key, "")) for key in fields]) for e in document.get("entries", []) if e.get("id")),
         )
+        return sha256(json.dumps(value, ensure_ascii=False).encode()).hexdigest()
+
+    def observe_memory_result(self, result, identity):
+        if not result.get("ok") or "entries" not in result:
+            return
+        consumed = self.state.setdefault("memory_applied_results", [])
+        if identity in consumed:
+            return
+        observed = self.state.get("memory_observed") or {}
+        if result.get("memory_delta"):
+            removed = set(result.get("removed_ids", []))
+            entries = [e for e in observed.get("entries", []) if e["id"] not in removed]
+            incoming = {e["id"]: e for e in result["entries"]}
+            entries = [incoming.pop(e["id"], e) for e in entries]
+            entries.extend(incoming.values())
+            self.state["memory_observed"] = {**observed, "revision": result["revision"], "entries": entries}
+        else:
+            self.state["memory_observed"] = {**observed, **result}
+        consumed.append(identity)
 
     async def refresh_memory(self, run_id, messages):
         from ..memory_recall.guard import model_text
 
-        latest = await self.platform.get_memory_context(run_id)
-        observed = self.state.get("memory_observed")
-        if observed is None:
-            self.state["memory_observed"] = latest
+        state = self.state
+        index = state.get("user_message_index")
+        if not isinstance(index, int) or index >= len(messages) or messages[index].get("role") != "user":
+            index = next((i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user"), None)
+        if index is None:
             return
-        # Fold successful current-run memory results into the comparison snapshot only.
-        # Earlier request messages, including their tool results, remain byte-identical.
-        for message in messages[self.state.get("user_message_index", len(messages)) :]:
+        # Own results advance only what this conversation actually saw, without echoing them.
+        for message in messages[index:]:
             if message.get("role") == "tool" and message.get("name") == "memory":
                 try:
-                    result = json.loads(message.get("content", "{}"))
+                    self.observe_memory_result(json.loads(message.get("content", "{}")), message.get("tool_call_id"))
                 except (ValueError, TypeError):
-                    continue
-                result_id = message.get("tool_call_id")
-                consumed = self.state.setdefault("memory_applied_results", [])
-                if result.get("ok") and "entries" in result and result_id not in consumed:
-                    if result.get("memory_delta"):
-                        known = {e["id"]: e for e in observed.get("entries", [])}
-                        for key in result.get("removed_ids", []):
-                            known.pop(key, None)
-                        known.update({e["id"]: e for e in result["entries"]})
-                        observed = {**observed, "revision": result["revision"], "entries": list(known.values())}
-                    else:
-                        observed = result
-                    consumed.append(result_id)
-        before = {e["id"]: e for e in observed.get("entries", [])}
+                    pass
+        marker = [run_id, index]
+        if state.get("memory_update_turn") == marker:
+            return
+        observed = state.get("memory_observed") or {}
+        handles = list(dict.fromkeys(e["id"] for e in observed.get("entries", [])))
+        latest = (
+            await self.platform.get_memory_invalidations(run_id, handles)
+            if hasattr(self.platform, "get_memory_invalidations")
+            else await self.platform.get_memory_context(run_id)
+        )
+        if not state.get("memory_observed"):
+            state["memory_observed"] = latest
+            state["memory_update_turn"] = marker
+            return
         after = {e["id"]: e for e in latest.get("entries", [])}
-        changes = []
-        for key in sorted(before.keys() | after.keys()):
-            old, new = before.get(key), after.get(key)
-            # This run's successful writes already appear in its tool results.
-            if old and not new:
-                changes.append(f"删除 [{model_text(key)}]")
-            elif new and (not old or old.get("content") != new.get("content")):
-                changes.append(f"{'新增' if not old else '修改'} [{model_text(key)}] {model_text(new['content'])}")
-        for key in ("enabled", "auto_save", "read_enabled", "write_enabled", "reference_history"):
+        lines, known = [], []
+        if latest.get("enabled", True) and latest.get("read_enabled", True):
+            for old in observed.get("entries", []):
+                handle = old.get("_snapshot_handle", old["id"])
+                resolved = latest.get("invalidations", {}).get(old["id"], {})
+                entry = resolved.get("current") if resolved else after.get(old["id"])
+                if entry is None and resolved.get("change_type") == "condense":
+                    known.append(old)
+                    continue
+                if entry is None:
+                    lines.append("已删除，不得再使用：[" + model_text(handle) + "]")
+                    continue
+                change = resolved.get("change_type") or entry.get("change_type")
+                corrected = old.get("content") != entry.get("content") and change != "condense"
+                if corrected:
+                    date = str(entry.get("updated_at") or entry.get("observed_at") or entry.get("valid_from") or "")[:10]
+                    lines.append(f"已更正，以此为准，旧内容作废：[{model_text(handle)}] {model_text(entry['content'])}（{date}）")
+                # Condensation changes the version link, but keeps the snapshot's meaning.
+                known.append({**entry, "content": old["content"] if change == "condense" else entry["content"], "_snapshot_handle": handle})
+        else:
+            known = observed.get("entries", [])
+        policies = {
+            "enabled": ("记忆", "不得使用或写入记忆"),
+            "auto_save": ("自动记忆", "仅在用户明确要求时保存"),
+            "read_enabled": ("记忆读取", "不得使用记忆"),
+            "write_enabled": ("记忆写入", "不得写入记忆"),
+            "reference_history": ("历史引用", "不得查询历史"),
+        }
+        for key, (label, instruction) in policies.items():
             if observed.get(key, True) != latest.get(key, True):
-                changes.append(f"{key}={str(latest.get(key, True)).lower()}")
-        if changes:
-            changes.insert(0, f"revision={latest.get('revision', 0)}")
-            messages.append({"role": "user", "content": "（平台记忆更新：\n" + "\n".join(changes) + "）"})
-        self.state["memory_observed"] = latest
+                lines.append("设置：" + label + ("已开启" if latest.get(key, True) else "已关闭，" + instruction))
+        if lines:
+            prefix = "<memory_update>\n" + "\n".join(dict.fromkeys(lines)) + "\n</memory_update>\n"
+            message = messages[index]
+            content = message.get("content", "")
+            if isinstance(content, list):
+                content = deepcopy(content)
+                if content and content[0].get("type") == "text":
+                    content[0]["text"] = prefix + content[0]["text"]
+                else:
+                    content.insert(0, {"type": "text", "text": prefix})
+            else:
+                content = prefix + content
+            messages[index] = {**message, "content": content}
+        state["memory_observed"] = {**latest, "entries": known}
+        state["memory_update_turn"] = marker
 
     async def revalidate_recall(self, run_id, messages):
         original = deepcopy(self.state)

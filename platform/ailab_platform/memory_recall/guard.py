@@ -68,3 +68,17 @@ def model_text(value: str) -> str:
     from html import escape
 
     return escape(str(value), quote=False)
+
+
+_MEMORY_TAG = re.compile(r"<\s*/?\s*(?:ailab_)?memory(?:_update)?\b[^>]*>", re.I)
+
+
+def escape_memory_tags(value):
+    """Reserve the platform memory delimiters without altering ordinary code/HTML."""
+    from html import escape
+
+    if isinstance(value, str):
+        return _MEMORY_TAG.sub(lambda match: escape(match.group(), quote=False), value)
+    if isinstance(value, list):
+        return [{**part, "text": escape_memory_tags(part["text"])} if isinstance(part, dict) and "text" in part else part for part in value]
+    return value

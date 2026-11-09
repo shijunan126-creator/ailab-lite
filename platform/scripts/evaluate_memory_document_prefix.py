@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import json
+from datetime import UTC, datetime, timedelta
 
 from ailab_platform.agent.loop import AgentLoop
 from scripts.evaluate_memory_prefix import Platform, Recorder, cache_acceptance, scenarios
@@ -24,6 +25,15 @@ class External(Platform):
         return copy.deepcopy(self.live)
 
     async def memory(self, run_id, args):
+        if args.get("action") == "list":
+            from ailab_platform.memory_recall.document import render
+
+            return {
+                "memory_list": True,
+                "revision": self.live["revision"],
+                "entries": copy.deepcopy(self.live["entries"]),
+                "document": render(self.live["entries"]),
+            }
         if args.get("action") == "add":
             from ailab_platform.memory_recall.document import write_result
 
@@ -57,6 +67,10 @@ class External(Platform):
                 {"id": "mem_external", "kind": "fact", "content": "外部会话新增", "origin": "chat", "observed_at": "2026-11-09"}
             )
         run = await super().get_run(run_id)
+        if run_id != "turn0":
+            run["previous_model_context"]["finished_at"] = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+            previous = self.checkpoints[f"turn{int(run_id[-1]) - 1}"]["state"]
+            run["previous_model_context"]["memory_snapshot_signature"] = previous.get("memory_snapshot_signature")
         if run_id == "turn0":
             run["prompt"] = "请调用memory工具记住我偏好用表格比较选项，成功后仅回复已记住。"
         return run
@@ -71,20 +85,38 @@ async def evaluate(model):
         try:
             for i in range(4):
                 await loop.process(f"turn{i}", attempt_id=f"a{i}")
-            for left, right in zip(rec.requests, rec.requests[1:]):
-                assert_extension(left, right)
-            updates = [m for m in rec.requests[-1]["messages"] if "平台记忆更新" in str(m.get("content"))]
+            assert all(status == "succeeded" for status, _ in p.statuses), p.statuses
+            for index, (left, right) in enumerate(zip(rec.requests, rec.requests[1:])):
+                try:
+                    assert_extension(left, right)
+                except AssertionError as exc:
+                    raise AssertionError(
+                        {
+                            "mode": mode,
+                            "call": index + 2,
+                            "previous_roles": [m["role"] for m in left["messages"]],
+                            "current_roles": [m["role"] for m in right["messages"]],
+                            "prefix_equal": right["messages"][: len(left["messages"])] == left["messages"],
+                        }
+                    ) from exc
+            updates = [
+                m
+                for m in rec.requests[-1]["messages"]
+                if m.get("role") == "user" and str(m.get("content", "")).startswith("<memory_update>")
+            ]
             assert p.own and len(updates) == 1, (p.own, len(updates))
             update = updates[0]["content"]
             assert "mem_own" not in update and all(
-                x in update for x in ("删除 [mem_core]", "Atlas已进入验收", "页面修改内容", "外部会话新增")
+                x in update for x in ("已删除，不得再使用：[mem_core]", "Atlas已进入验收", "页面修改内容")
             )
+            assert "外部会话新增" not in update
             assert all(r["messages"][:2] == rec.requests[0]["messages"][:2] for r in rec.requests)
             out[mode] = {
                 "acceptance": cache_acceptance(rec.usages, 1),
                 "calls": rec.usages,
                 "own_write": True,
                 "external_update_count": len(updates),
+                "resume_idle_hours": 2,
                 "prefix_extensions": True,
             }
         finally:

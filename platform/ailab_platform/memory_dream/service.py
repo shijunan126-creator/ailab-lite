@@ -59,7 +59,7 @@ def _normalize(text: str) -> str:
 
 
 def _hash(text: str) -> str:
-    return hashlib.sha256(_normalize(text).encode("utf-8")).hexdigest()
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _memory_view(user: User) -> dict:
@@ -308,6 +308,40 @@ def _assistant_context(value: str) -> str:
     return value.strip()[:300]
 
 
+def _episode_context(db, run):
+    from ..api.source_lifecycle import invalid_sources_query
+    from ..memory_recall.guard import escape_memory_tags
+
+    if not run.conversation_id:
+        return {}
+    skipped = select(MemoryWorkItem.run_id).where(MemoryWorkItem.state == "skipped")
+    previous = db.scalar(
+        select(Run)
+        .where(
+            Run.conversation_id == run.conversation_id,
+            Run.user_id == run.user_id,
+            Run.created_at < run.created_at,
+            Run.superseded_by_run_id.is_(None),
+            Run.status.in_(TERMINAL),
+            Run.id.not_in(invalid_sources_query(run.user_id)),
+            Run.id.not_in(skipped),
+            Run.options["evaluation"].as_boolean().is_not(True),
+            Run.options["eval"].as_boolean().is_not(True),
+            Run.runtime_meta["evaluation"].as_boolean().is_not(True),
+            Run.options["memory_policy"]["write"].as_boolean().is_not(False),
+        )
+        .order_by(Run.created_at.desc(), Run.id.desc())
+        .limit(1)
+    )
+    conv = db.get(Conversation, run.conversation_id)
+    if not previous or not conv or conv.deleted_at or not all(run_permissions(db, previous).values()):
+        return {}
+    context = escape_memory_tags(
+        f"{(conv.title or '')[:40]}\n用户：{_source_text(db, previous)[-100:]}\n助手：{(previous.summary or '')[:150]}"
+    )[:300]
+    return {"context": context, "context_run_id": previous.id}
+
+
 def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
     """Create immutable episode rows once; reuse them on a retry."""
     existing = {
@@ -319,12 +353,14 @@ def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
         item = db.get(MemoryWorkItem, run.id)
         offset = item.source_offset if item else 0
         source = _source_text(db, run)
-        chunk_chars = max(100, min(4000, (settings.memory_dream_input_chars - 500) // 3))
+        chunk_chars = max(100, min(4000, (settings.memory_dream_input_chars - 1000) // 3))
+        context = _episode_context(db, run) if offset == 0 else {}
         digest = json.dumps(
             {
                 "user_said": source[offset : offset + chunk_chars],
                 "assistant_replied": _assistant_context(run.summary or ""),
                 "source_end": min(offset + chunk_chars, len(source)),
+                **context,
             },
             ensure_ascii=False,
         )
@@ -336,6 +372,7 @@ def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
                 user_id=user.id,
                 run_id=run.id,
                 conversation_id=run.conversation_id,
+                context_run_id=context.get("context_run_id"),
                 observed_at=_aware(run.created_at),
                 content_hash=content_hash,
                 digest=digest,
@@ -350,24 +387,33 @@ def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
 
 
 def _episode_payload(episodes: list[MemoryEpisode]) -> str:
-    return json.dumps(
-        [
-            {
-                "id": e.id,
-                "run_id": e.run_id,
-                "observed_at": _aware(e.observed_at).isoformat(),
-                "user_said": _user_part(e.digest),
-                "assistant_replied": (
-                    json.loads(e.digest).get("assistant_replied", "")
-                    if e.digest.startswith('{"user_said":')
-                    else e.digest.split(ASSISTANT_MARK, 1)[1]
-                    if ASSISTANT_MARK in e.digest
-                    else ""
-                ),
-            }
-            for e in episodes
-        ],
-        ensure_ascii=False,
+    from ..memory_recall.guard import escape_memory_tags
+
+    return escape_memory_tags(
+        json.dumps(
+            [
+                {
+                    "id": e.id,
+                    "run_id": e.run_id,
+                    "observed_at": _aware(e.observed_at).isoformat(),
+                    "user_said": _user_part(e.digest),
+                    **(
+                        {"context": json.loads(e.digest)["context"]}
+                        if e.digest.startswith('{"user_said":') and json.loads(e.digest).get("context")
+                        else {}
+                    ),
+                    "assistant_replied": (
+                        json.loads(e.digest).get("assistant_replied", "")
+                        if e.digest.startswith('{"user_said":')
+                        else e.digest.split(ASSISTANT_MARK, 1)[1]
+                        if ASSISTANT_MARK in e.digest
+                        else ""
+                    ),
+                }
+                for e in episodes
+            ],
+            ensure_ascii=False,
+        )
     )
 
 
@@ -378,12 +424,6 @@ def _fit_episodes(episodes: list[MemoryEpisode], budget: int) -> list[MemoryEpis
         kept = kept[:-1]
         payload = _episode_payload(kept)
     return kept
-
-
-def _quote_supported(quote: str, episodes: list[MemoryEpisode]) -> bool:
-    """A quote counts only if the *user* said it: assistant text is context, never evidence (doc §7.2)."""
-    q = _normalize(quote)
-    return bool(q) and any(q in _normalize(_user_part(e.digest)) for e in episodes)
 
 
 async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict]:
@@ -599,6 +639,17 @@ async def process_dream(run_id: str) -> None:
                 job = _check_claim(db, run_id, token)
                 user = db.get(User, owner.id, populate_existing=True)
                 _validate_sources(db, user, runs, pid, expected_mode=mode, manual=job.trigger == "manual")
+                for episode in episodes:
+                    if episode.context_run_id:
+                        context_source = db.get(Run, episode.context_run_id, populate_existing=True)
+                        skipped = db.get(MemoryWorkItem, episode.context_run_id)
+                        if (
+                            not context_source
+                            or context_source.superseded_by_run_id
+                            or not all(run_permissions(db, context_source).values())
+                            or (skipped and skipped.state == "skipped")
+                        ):
+                            raise DreamError("前文来源已失效，请重试")
                 current = memory_for(user)
                 shown = [
                     e for e in current["entries"] if e.get("project_id") == scope and visible(e, scope, mode="isolated", standing=True)
@@ -613,7 +664,11 @@ async def process_dream(run_id: str) -> None:
                         and item.get("reason") in {"test", "repro", "no_signal"}
                     ):
                         ignored[item["run"]] = item["reason"]
-                evidence = [e for e in episodes if e.run_id not in ignored]
+                from ..memory_recall.lineage import redact_episode_context
+
+                stale_context = {e.run_id for e in episodes if e.context_run_id in ignored}
+                evidence = [e for e in episodes if e.run_id not in ignored and e.run_id not in stale_context]
+                redact_episode_context(db, list(ignored))
                 changed, audit = apply_ops(current["entries"], entries, evidence, result.get("ops", []), user, scope)
                 after = save(db, user, current, changed)
                 record(job, current, after)
@@ -625,6 +680,9 @@ async def process_dream(run_id: str) -> None:
                     item.source_offset = json.loads(episode.digest).get("source_end", len(source.prompt))
                     item.source_end = item.source_offset
                     item.state = "done" if item.source_offset >= len(_source_text(db, source)) else "ready"
+                    if episode.run_id in stale_context and episode.run_id not in ignored:
+                        item.source_offset = max(0, item.source_offset - len(_user_part(episode.digest)))
+                        item.state = "ready"
                     if ignored.get(episode.run_id) in {"test", "repro"}:
                         item.state = "skipped"
                     item.candidates = []

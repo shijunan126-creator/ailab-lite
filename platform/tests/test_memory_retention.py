@@ -21,6 +21,11 @@ def test_closed_history_is_indexed_and_never_loaded_by_writes():
             db.add(
                 MemoryItem(user_id=user.id, content=f"history{i}", content_hash=str(i), status="closed", valid_to=now - timedelta(days=100))
             )
+        peers = [User(email=f"memory-plan-peer-{now.timestamp()}-{i}@test.invalid") for i in range(20)]
+        db.add_all(peers)
+        db.flush()
+        for peer in peers:
+            db.add_all(MemoryItem(user_id=peer.id, content=f"peer{i}", content_hash=f"peer{i}", status="active") for i in range(50))
         db.add(MemoryItem(id="mem_hot", user_id=user.id, content="active", content_hash="active", status="active"))
         db.commit()
         db.execute(text("ANALYZE memory_items"))
@@ -46,6 +51,8 @@ def test_closed_history_is_indexed_and_never_loaded_by_writes():
         assert db.scalar(
             select(MemoryItem.content).where(MemoryItem.user_id == user.id, MemoryItem.status == "closed").limit(1)
         ).startswith("history")
+        for peer in peers:
+            db.delete(peer)
         db.delete(user)
         db.commit()
 

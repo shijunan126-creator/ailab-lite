@@ -31,6 +31,8 @@ def protected(entry):
 
 
 def apply_ops(all_entries, shown, episodes, ops, user, scope):
+    from html import unescape
+
     from .service import _user_part
 
     entries = copy.deepcopy(all_entries)
@@ -59,6 +61,8 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope):
             continue
         episode = evidence.get(op.get("run"))
         quote = op.get("quote", "")
+        if isinstance(quote, str):
+            quote = unescape(quote)
         if action in {"add", "update"}:
             if not episode or not isinstance(quote, str) or not quote.strip() or quote not in _user_part(episode.digest):
                 continue
@@ -95,9 +99,11 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope):
                 else sorted({rid for e in targets for rid in e.get("evidence_run_ids", [])})[:50],
                 "source_quote": quote,
                 "source": "nightly",
+                "change_type": "correction" if action == "update" else "condense" if action == "merge" else "addition",
             }
             entries.append(fresh)
         for target in targets:
+            target["change_type"] = "correction" if action == "update" else "condense" if action == "merge" else "addition"
             target["invalid_at"] = now
             target["updated_at"] = now
             if action != "delete":
@@ -116,5 +122,6 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope):
         if used_chars(scoped()) <= settings.memory_doc_max_chars:
             break
         entry["invalid_at"] = now
+        entry["change_type"] = "condense"
         audit.append({"op": "delete", "ids": [entry["id"]], "reason": "capacity"})
     return entries, audit

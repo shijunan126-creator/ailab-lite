@@ -32,6 +32,7 @@ class MemoryEntryInput(BaseModel):
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory", "preference", "fact", "interest", "project", "reference"] = "memory"
     origin: Literal["explicit", "inferred", "chat", "manual", "edited"] | None = None
+    change_type: Literal["addition", "correction", "condense"] | None = None
     reinforced_at: datetime | None = None
     observed_at: datetime | None = None
     expires_at: datetime | None = None
@@ -101,7 +102,7 @@ class MemoryUpdate(BaseModel):
 
 class MemoryOperation(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["add", "replace", "remove"]
+    action: Literal["list", "add", "replace", "remove"]
     expected_revision: int | None = Field(default=None, ge=0)
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory", "preference", "fact", "interest", "project", "reference"] = "memory"

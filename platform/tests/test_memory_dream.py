@@ -181,7 +181,6 @@ def test_process_dream_applies_without_a_visible_run(monkeypatch) -> None:
             return {}, {"prompt_tokens": 0, "completion_tokens": 0}
 
         install_plan_builder(monkeypatch, fake_extract)
-        monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
         c.portal.call(service.process_dream, "dream_test")
         with SessionLocal() as db:
             run = db.get(MemoryDreamRun, "dream_test")

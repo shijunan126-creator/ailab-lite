@@ -90,6 +90,9 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
                                 }
                                 | {"workspace": {"available": True} if state.get("workspace") else None},
                             }
+                            out["previous_model_context"]["finished_at"] = parent.finished_at.isoformat() if parent.finished_at else None
+                            if state.get("memory_snapshot_signature"):
+                                out["previous_model_context"]["memory_snapshot_signature"] = state["memory_snapshot_signature"]
                             if state.get("context_sources"):
                                 out["previous_model_context"]["context_sources"] = state["context_sources"]
                             if "memory_observed" in state:
