@@ -5,8 +5,7 @@ import { api, errorMessage, MemoryMode, Project } from "../../lib/api";
 import { confirmDialog } from "../../lib/dialog";
 import { projectsChanged } from "../../lib/projects";
 import Switch from "../switch";
-import Modal from "../library/modal";
-import { MemoryDialog } from "./memory-summary";
+import { MemoryDialog } from "./memory-view";
 
 /** A project's memory: whether it keeps to itself, and what it remembers. */
 export default function ProjectMemoryDialog({ project, onClose }: { project: Project; onClose: () => void }) {
@@ -57,9 +56,6 @@ export default function ProjectMemoryDialog({ project, onClose }: { project: Pro
     </>
   );
 
-  return mode === "isolated" ? (
-    <MemoryDialog projectId={project.id} title="项目记忆" onClose={onClose} top={() => controls} />
-  ) : (
-    <Modal title="项目记忆" onClose={onClose} className="memory-dialog">{controls}</Modal>
-  );
+  // a shared project's items are part of the account memory and are changed there; this one only shows them
+  return <MemoryDialog key={mode} projectId={project.id} title="项目记忆" onClose={onClose} top={() => controls} editable={mode === "isolated"} />;
 }

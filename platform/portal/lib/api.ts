@@ -451,18 +451,38 @@ export type Project = {
 /** shared: the project reads and feeds the account memory; isolated: it only uses its own. */
 export type MemoryMode = "shared" | "isolated";
 
-/** GET /v1/memory/summary: what the AI remembers in one scope (the account, or one project), written for people. */
-export type MemorySummary = {
+/** One remembered item (mirrors contracts/memory.py MemoryItemOut). */
+export type MemoryItem = {
+  id: string;
   project_id: string | null;
-  text: string; // Markdown, derived from the facts; empty when there is nothing or it has not been written yet
-  generated_at: string | null;
-  stale: boolean; // the facts changed since the text was written
-  enabled: boolean;
-  entries: number;
-  memory_mode: MemoryMode | null; // null for the account
-  merge_pending: boolean; // an isolated project became shared and its facts are waiting to be merged
-  active: { id: string; status: string; trigger: string } | null; // a consolidation or edit in progress
+  kind: "preference" | "fact" | "interest" | "project" | "artifact" | "reference";
+  origin: "explicit" | "inferred" | "chat" | "manual";
+  tier: "core" | "archive";
+  page: string;
+  content: string;
+  status: "active" | "review" | "suppressed" | "closed";
+  observed_at: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  expires_at: string | null;
+  updated_at: string;
+  sources: { run_id: string; conversation_id: string | null; conversation_title: string | null; date: string }[];
 };
+
+/** GET /v1/memory/view: one scope (the account, or one project) as people see it: what is always used, then topic pages. */
+export type MemoryView = {
+  project_id: string | null;
+  enabled: boolean;
+  memory_mode: MemoryMode | null; // null for the account
+  merge_pending: boolean; // an isolated project became shared and its items are waiting to be merged
+  revision: number; // the compare-and-set fence every change sends back
+  active: { id: string; status: string; trigger: string } | null; // a consolidation or edit in progress
+  core: MemoryItem[];
+  pages: { page: string; count: number; updated_at: string | null }[];
+};
+
+/** GET /v1/memory/items: one page of a topic, newest first. */
+export type MemoryItems = { items: MemoryItem[]; next_cursor: string | null };
 
 export type EventItem = {
   seq: number;
