@@ -8,9 +8,9 @@
 
 - `cd platform && .venv/bin/ruff check . && .venv/bin/ruff format --check .`通过。
 - `tests/test_memory_document.py`新增7项通过；覆盖完整渲染、静态/静默规则、引文/id/保护/墓碑、版本更新、超限输入/淘汰、每批一次/无工作不调用、无revision/去重/硬上限及view字段。
-- SQLite迁移模块在唯一键调整前通过；调整后与prefix全模块合跑仍须核对最终结果。未启动本地PG/Redis。
-- prefix新增Chat/Work会话外部增删改、页面编辑、工具自身写入不回声的录制测试通过；最终全模块仍待核对。旧模块定向运行（dream/hardening/summary/v2/recall）76项失败；包含已删除接口/内部阶段断言和真正需修复/迁移的边界，不能归为全部无关。
-- 没有本地全套Python、Portal build或浏览器验收。CI尚未全绿。
+- SQLite迁移模块（含唯一键调整）与文档/prefix全模块合跑通过。未启动本地PG/Redis。
+- prefix新增Chat/Work会话外部增删改、页面编辑、工具自身写入不回声的录制测试通过；最终prefix全模块通过。旧模块定向运行（dream/hardening/summary/v2/recall）76项失败；包含已删除接口/内部阶段断言和真正需修复/迁移的边界，不能归为全部无关。
+- 没有本地全套Python、Portal build或浏览器验收。[Draft PR #174](https://github.com/shijunan126-creator/ailab-lite/pull/174) 已创建；CI尚未全绿，不合并。
 
 ## 真模型（本轮代码，AgentLoop + API/Broker doubles）
 
