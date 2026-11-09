@@ -537,7 +537,7 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .memory-item { border-bottom: 1px solid var(--border); }
 .memory-item:last-child { border-bottom: 0; }
 .memory-item-row { display: flex; align-items: center; gap: 8px; min-height: 40px; }
-.memory-item-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 8px 0; border: 0; background: none; color: var(--foreground); text-align: left; font-size: var(--text-ui); line-height: 1.6; cursor: pointer; }
+button.memory-item-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; justify-content: flex-start; min-height: 0; padding: 8px 0; border-radius: 0; font-weight: 400; border: 0; background: none; color: var(--foreground); text-align: left; font-size: var(--text-ui); line-height: 1.6; cursor: pointer; }
 .memory-item-text { min-width: 0; overflow-wrap: anywhere; }
 .memory-item.review .memory-item-text { color: var(--muted-foreground); }
 .memory-tag { flex: none; padding: 0 6px; border-radius: 6px; background: var(--subtle); color: var(--muted-foreground); font-size: var(--text-xs); line-height: 18px; }
@@ -548,7 +548,8 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .memory-sources-none { color: var(--faint-foreground); }
 .memory-pages { display: flex; flex-direction: column; }
 .memory-page { border-top: 1px solid var(--border); }
-.memory-page-head { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0; border: 0; background: none; color: var(--foreground); font-size: var(--text-ui); font-weight: 550; cursor: pointer; }
+button.memory-page-head { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 44px; justify-content: flex-start; padding: 0; border-radius: 0; border: 0; background: none; color: var(--foreground); font-size: var(--text-ui); font-weight: 550; cursor: pointer; }
+:is(button.memory-item-main, button.memory-page-head):is(:hover, :focus-visible) { background: none; color: var(--foreground); }
 .memory-page-mark { flex: none; color: var(--faint-foreground); transition: transform var(--t); }
 .memory-page-mark.open { transform: rotate(90deg); }
 .memory-page-name { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; }
