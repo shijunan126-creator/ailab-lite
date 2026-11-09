@@ -188,7 +188,10 @@ def merge_project(db, user, project):
                     table = Run if field == "evidence_run_ids" else MemoryEpisode
                     ordered = list(
                         db.scalars(
-                            select(table.id).where(table.id.in_(target[field])).order_by(table.created_at.desc(), table.id.desc()).limit(50)
+                            select(table.id)
+                            .where(table.id.in_(target[field]))
+                            .order_by((table.created_at if table is Run else table.observed_at).desc(), table.id.desc())
+                            .limit(50)
                         )
                     )
                     target[field] = ordered

@@ -86,3 +86,5 @@ Work 首次有一次 cached=0，尽管请求是严格追加且 session/settings 
 前轮CI E2E通过；SQLite唯一失败为OCR checkpoint把新增静态记忆规则计入图片载荷固定10KB上限。修正断言扣除两条固定系统消息，仍保留非静态checkpoint 10KB约束及图片占位断言，不增加上限。全套只由最终head CI验收，不复用历史head通过。
 
 本轮补充结果：prefix/summary/episode/review/OCR联合227 passed；升级运行时构建依赖后source-context/user/review安全组49 passed（此前3个文档fixture失败因本地缺少Office reader dist，未修改产品跳过）；PG审查/retention/迁移组23 passed /92 deselected，SQLite+PG查询计划8 passed（含closed source反向索引）。ABI5真模型第二次调用起Chat36608/37343=98.03%、Work34432/34820=98.89%，逐请求追加与会话设置检查通过；仍为服务doubles，不据此消除历史供应商冷失效边界。新增MemoryItemSource投影带来每条来源一行磁盘/索引开销，来源最多50，内容不复制，写入成本仍随活动行/有界来源数增长。
+
+删除边界追加回归：清空201行超出200条re-add tombstone保留窗口后，最早快照handle仍触发forgotten（按权威行存在性区分用户硬删除与Dreaming closed版本，不依赖墓碑窗口）；来源文件失效实际清除closed私密行。该组46 passed，窗口专项1 passed；来源投影刷新合并为一次批量delete，避免每活动行一条删除SQL。没有改0064。

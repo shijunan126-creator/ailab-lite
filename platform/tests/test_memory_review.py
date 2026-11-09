@@ -212,3 +212,20 @@ def test_merge_keeps_newest_fifty_sources():
         assert response.status_code == 200, response.text
         sources = c.get("/v1/memory", headers=me).json()["entries"][0]["evidence_run_ids"]
         assert set(sources) == set(runs[:50])
+
+
+def test_forgotten_handles_survive_bounded_readd_tombstones(monkeypatch):
+    monkeypatch.setattr(settings, "memory_doc_max_chars", 20000)
+    with TestClient(app) as c:
+        me = _user(c)
+        uid = _uid(c, me)
+        identities = ["mem_" + uid[4:16] + str(i) for i in range(201)]
+        put(c, me, [{"id": identity, "content": "记忆" + str(i)} for i, identity in enumerate(identities)])
+        rid = _running(c, me)
+        assert c.delete("/v1/memory/entries", headers=me).status_code < 300
+        with SessionLocal() as db:
+            tombstones = db.get(User, uid).settings["memory"]["tombstones"]
+            assert identities[0] not in {t.get("id") for t in tombstones}
+        response = c.get(f"/internal/runs/{rid}/memory-context", headers=attempt_headers(c, rid), params={"known_id": identities[0]})
+        assert response.status_code == 200, response.text
+        assert response.json()["forgotten_ids"] == [identities[0]]

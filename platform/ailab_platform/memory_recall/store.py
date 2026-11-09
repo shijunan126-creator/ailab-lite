@@ -103,8 +103,9 @@ def replace_entries(db, user, entries):
         row.updated_at = stamp(e.get("updated_at"), now)
         row.metadata_ = {k: e[k] for k in ("source", "evidence_episode_ids", "evidence_deleted", "last_used_at") if k in e}
     db.flush()
+    if entries:
+        db.execute(delete(MemoryItemSource).where(MemoryItemSource.memory_id.in_([e["id"] for e in entries])))
     for e in entries:
-        db.execute(delete(MemoryItemSource).where(MemoryItemSource.memory_id == e["id"]))
         for rid in set(e.get("evidence_run_ids") or []):
             db.add(MemoryItemSource(memory_id=e["id"], run_id=rid))
     db.flush()

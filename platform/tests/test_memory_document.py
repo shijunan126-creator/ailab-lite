@@ -90,6 +90,7 @@ def test_condense_same_call_and_oldest_inferred_eviction(monkeypatch):
     assert "85%" in request[0]["content"] and "75%" in request[0]["content"]
     result, audit = apply_ops(shown, shown, [episode()], [], SimpleNamespace(settings={}), None)
     assert used_chars(result) <= 1000 and audit[0]["ids"] == ["mem_0"]
+    assert result[0]["superseded_reason"] == "evicted"
     assert shown == copy.deepcopy(shown)
 
 

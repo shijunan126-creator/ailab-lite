@@ -56,6 +56,8 @@ def maintenance_needed(entries, user=None):
     signature = sha256(render(entries).encode()).hexdigest()
     if used_chars(entries) <= settings.memory_doc_max_chars:
         return False
+    if user is not None and ((user.settings or {}).get("memory") or {}).get("nothing_condensable") == signature:
+        return False
     protected = [e for e in active(entries) if e.get("origin") in {"explicit", "edited", "manual"}]
     possible = used_chars(protected) <= settings.memory_doc_max_chars and len(protected) < len(active(entries))
     if not possible and user is not None:
