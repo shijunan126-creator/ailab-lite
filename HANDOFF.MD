@@ -1468,6 +1468,8 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 ## Memory v2 契约与测试隔离（2026-11-09）
 
 - `memory_items` 是事实来源；不能在测试或产品中直接写 `User.settings.memory.entries` 后期待 API 读取它。旧数据只由迁移 0064 转换；合成测试使用关系条目写路径。SQLite ORM 时间可能无时区，输出 DTO 必须归一为 UTC。
-- 全局容量会看到共用测试数据库中别的测试留下的活动作业。测试 teardown 清理本例新建的 pending/running 作业，不提高生产容量；故障测试另证实未过期租约阻塞、过期租约释放容量。
+- 全局容量会看到共用测试数据库中别的测试留下的活动作业。测试 teardown 清理本例新建的作业租约与 pending/running 状态，以及仍 running 的交互 Run（背压输入），不提高生产容量；故障测试另证实未过期租约阻塞、过期租约释放容量。
 - 多批报告必须按持久 `next_id` 续链；终态提交不等于链末发布。后继创建与前驱链接同事务，持用户锁后重读前驱，避免重复投递再次创建后继和累计。
 - Ruff 从 `platform/` 运行。仓库根包含 vendor、历史复现与生成 Office 技能，不能对根运行 `ruff --fix/format .`。
+
+- PG `LIMIT 1` 的活动查询加入 JSON chain 条件后，即使有 user_id 索引也可能选顺扫；在双库创建覆盖 pending/running、claimed_until 非空、chain_running 的部分索引，不关闭顺扫/不放宽 EXPLAIN 断言。

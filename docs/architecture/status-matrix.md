@@ -1,4 +1,4 @@
-2026-11-09 Memory v2 后端：实施中，尚未通过验收，不替代下方历史能力状态。新条目库、核心/目录、统一搜索与调度初版已落分支；摘要表移除、完整回归迁移与调度合同仍未完成。见[实施记录](../progress/updates/2026-11-09-memory-v2.md)及[方案](design/2026-11-09-memory-v2-amr-mem0.md)。
+2026-11-09 Memory v2 契约续修：`feat/memory-v2-a` 已整合 Portal，摘要退役、条目 change set/撤销、链报告与批量来源查询已实现，memory契约、双库EXPLAIN/迁移与完整E2E已验证；PG全套另有一次慢socket时序失败，原样复跑通过，精确边界见记录。调度及质量/真实模型评估仍留下一轮。见[实施与验证记录](../progress/updates/2026-11-09-memory-v2.md)。
 
 2026-11-08 网页图片短 ID/地址去重与引用生命周期、按权限流式代理已本地实现：不新增图片字节缓存，候选 24h、回答/分叉引用保留、缩略图优先；真实模型两轮与 Chromium 检查通过。检查基线和未测边界见[记录](../progress/updates/2026-11-08-web-image-refs.md)。未发布部署。原 UI/技能 PR #165 的合并状态见[历史记录](../progress/updates/2026-11-08-ui-polish-media.md)。
 
