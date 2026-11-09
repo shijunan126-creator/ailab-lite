@@ -73,3 +73,12 @@ def test_archive_not_in_standing_prompt():
     )
     assert "Atlas" in prompt
     assert "UNIQUE_ARCHIVE_BODY" not in prompt
+
+
+def test_stagger_is_stable_and_spreads_hundreds_of_users():
+    from ailab_platform.memory_dream.scheduling import offset
+
+    offsets = [offset(f"synthetic_user_{i}", 180) for i in range(500)]
+    assert all(0 <= n < 180 for n in offsets)
+    assert len(set(offsets)) > 150
+    assert offsets == [offset(f"synthetic_user_{i}", 180) for i in range(500)]

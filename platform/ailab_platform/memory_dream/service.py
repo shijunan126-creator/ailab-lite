@@ -125,9 +125,11 @@ def _run_out(run: MemoryDreamRun) -> MemoryDreamRunOut:
             report["candidates"] = []
     if "candidates" in report:
         report["candidates"] = [{k: v for k, v in entry.items() if k != "evidence_run_ids"} for entry in report["candidates"]]
+    report["runs_seen"] = int(report.get("runs_seen", len(run.input_run_ids or []))) + int(report.get("runs_seen_before", 0))
+    report["added"] = int(report.get("added", 0)) + int(report.get("added_before", 0))
     return MemoryDreamRunOut(
         id=run.id,
-        status=run.status,
+        status="running" if report.get("chain_running") and not report.get("next_id") else run.status,
         trigger=run.trigger,
         local_date=run.local_date,
         timezone=run.timezone,
@@ -229,7 +231,9 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 zone = ZoneInfo(settings.memory_dream_default_timezone)
             local = now.astimezone(zone)
             start, end = local_window(ds)
-            if not start <= local.hour * 60 + local.minute < end:
+            from .scheduling import offset
+
+            if local.hour * 60 + local.minute < start + offset(user.id, end - start):
                 continue
             runs = _new_runs(db, user.id, _last_success(db, user.id), now) if document["auto_save"] else []
             from ..models import Project
@@ -819,7 +823,13 @@ async def process_dream(run_id: str) -> None:
     token = new_id("claim")
 
     def claim():
-        with SessionLocal() as db:
+        from .scheduling import admission, can_start
+
+        with SessionLocal() as db, admission(db) as scheduler:
+            now = utcnow()
+            job = db.get(MemoryDreamRun, run_id)
+            if not job or not can_start(db, scheduler, job, now):
+                return False
             now = utcnow()
             changed = db.execute(
                 update(MemoryDreamRun)
@@ -1191,7 +1201,7 @@ async def process_dream(run_id: str) -> None:
                 dream_call.reset(job_context)
 
 
-async def process_dream_chain(run_id: str) -> None:
+async def _process_dream_chain(run_id: str) -> None:
     """Process bounded successive batches, creating each only after the previous commit."""
 
     def batch_limit():
@@ -1271,12 +1281,18 @@ async def process_dream_chain(run_id: str) -> None:
                         trigger=previous.trigger,
                         project_id=previous.project_id,
                         batch_index=previous.batch_index + 1,
+                        report={
+                            "runs_seen_before": (previous.report or {}).get("runs_seen_before", 0)
+                            + (previous.report or {}).get("runs_seen", 0),
+                            "added_before": (previous.report or {}).get("added_before", 0) + (previous.report or {}).get("added", 0),
+                        },
                         input_run_ids=[],
                         before_memory={},
                         after_memory={},
                         token_usage={},
                     )
                     db.add(row)
+                    previous.report = {**(previous.report or {}), "next_id": row.id}
                     try:
                         db.commit()
                     except IntegrityError:
@@ -1356,8 +1372,14 @@ async def dream_forever() -> None:
         try:
             recovered = await asyncio.to_thread(recover_pending)
             claimed = await asyncio.to_thread(claim_due)
-            for run_id in dict.fromkeys([*recovered, *claimed]):
-                await process_dream_chain(run_id)
+            jobs = list(dict.fromkeys([*recovered, *claimed]))
+            semaphore = asyncio.Semaphore(settings.memory_dream_concurrency)
+
+            async def process(job):
+                async with semaphore:
+                    await process_dream_chain(job)
+
+            await asyncio.gather(*(process(job) for job in jobs))
         except Exception:
             log.exception("memory dream dispatch failed")
         await asyncio.sleep(settings.memory_dream_interval_seconds)
@@ -1393,3 +1415,18 @@ def metrics(db: Session, user_id: str) -> dict:
         "changes": changes,
         "avg_changes": round(changes / len(applied), 2) if applied else 0,
     }
+
+
+async def process_dream_chain(run_id: str) -> None:
+    def chain_flag(active):
+        with SessionLocal() as db:
+            row = db.get(MemoryDreamRun, run_id)
+            if row:
+                row.report = {**(row.report or {}), "chain_running": active}
+                db.commit()
+
+    await asyncio.to_thread(chain_flag, True)
+    try:
+        await _process_dream_chain(run_id)
+    finally:
+        await asyncio.to_thread(chain_flag, False)
