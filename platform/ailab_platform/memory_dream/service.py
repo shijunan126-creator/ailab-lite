@@ -240,10 +240,31 @@ def claim_due(now: datetime | None = None) -> list[str]:
             if local.hour * 60 + local.minute < start + offset(user.id, end - start):
                 continue
             runs = _new_runs(db, user.id, _last_success(db, user.id), now) if document["auto_save"] else []
-            from ..models import Project
+            from ..models import MemoryItem, Project
 
-            if not runs and not db.scalar(
-                select(Project.id).where(Project.user_id == user.id, Project.memory_merge_requested_at.is_not(None)).limit(1)
+            last = _last_success(db, user.id)
+            maintenance = db.scalar(
+                select(MemoryItem.id)
+                .where(
+                    MemoryItem.user_id == user.id,
+                    MemoryItem.status == "active",
+                    or_(
+                        MemoryItem.expires_at <= now,
+                        MemoryItem.updated_at
+                        > (_aware(last.finished_at) if last and last.finished_at else datetime.min.replace(tzinfo=UTC)),
+                        MemoryItem.created_at <= now - timedelta(days=7)
+                        if not last or not last.finished_at or _aware(last.finished_at) <= now - timedelta(days=7)
+                        else False,
+                    ),
+                )
+                .limit(1)
+            )
+            if (
+                not runs
+                and not maintenance
+                and not db.scalar(
+                    select(Project.id).where(Project.user_id == user.id, Project.memory_merge_requested_at.is_not(None)).limit(1)
+                )
             ):
                 continue
             local_date = local.date().isoformat()
@@ -270,6 +291,7 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 token_usage={},
             )
             backfill = bool(runs) and all((item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "backfill" for r in runs)
+            row.kind = "extract" if runs else "dream"
             row.priority = 20 if backfill else 10
             row.due_at = local.replace(hour=start // 60, minute=start % 60, second=0, microsecond=0).astimezone(UTC) + timedelta(
                 minutes=offset(user.id, end - start)
@@ -528,8 +550,19 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
     if not get_catalog().get(model):
         raise DreamError(f"dream model not found: {model}")
     payload = _episode_payload(_fit_episodes(episodes, settings.memory_dream_input_chars))
+    from ..memory_recall import text as lexical
+
+    terms = lexical.query_tokens(" ".join(_user_part(e.digest) for e in episodes))
+    docs = [lexical.build_doc(e["id"], (e["content"], 1), (" ".join(e.get("entities", [])), 1)) for e in active]
+    selected = {h.key for h in sorted(lexical.search(terms, docs), key=lambda h: (-h.score, h.key))[:10]}
+    related = [{"id": e["id"], "content": e["content"]} for e in active if e["id"] in selected]
     user_prompt = (
-        "有界前文（仅用于理解指代，不是证据）：\n" + json.dumps(dream_context.get(), ensure_ascii=False) + "\n\n新 episodes：\n" + payload
+        "有界前文（仅用于理解指代，不是证据）：\n"
+        + json.dumps(dream_context.get(), ensure_ascii=False)
+        + "\n\n新 episodes：\n"
+        + payload
+        + "\n相关已有条目（仅去重参考）：\n"
+        + json.dumps(related, ensure_ascii=False)
     )
     raw, usage = await _chat(
         [
@@ -871,7 +904,9 @@ async def process_dream(run_id: str) -> None:
             if changed:
                 from ..metrics import MEMORY_DREAM_WAIT
 
-                MEMORY_DREAM_WAIT.labels(job.kind).observe(max(0, (now - _aware(job.due_at)).total_seconds()))
+                MEMORY_DREAM_WAIT.labels(job.kind if job.kind in {"extract", "dream", "edit", "merge"} else "extract").observe(
+                    max(0, (now - _aware(job.due_at)).total_seconds())
+                )
             return bool(changed)
 
     if not await asyncio.to_thread(claim):
@@ -1040,6 +1075,20 @@ async def process_dream(run_id: str) -> None:
                 outcomes.append({**outcome, "outcome": "unsupported", "reason": "证据不足"})
                 consumed.append(_hash(fact["text"]))
                 continue
+            pending = next(
+                (
+                    c
+                    for c in changes
+                    if c.op == "add" and c.project_id == fact.get("project_id") and _hash(c.content) == _hash(fact["text"])
+                ),
+                None,
+            )
+            if pending:
+                pending.evidence_run_ids = sorted(set(pending.evidence_run_ids) | set(fact["evidence_run_ids"]))[:20]
+                pending.evidence_episode_ids = sorted(set(pending.evidence_episode_ids) | set(fact["evidence_episode_ids"]))[:20]
+                outcomes.append({**outcome, "outcome": "duplicate", "reason": "同批来源合并"})
+                consumed.append(_hash(fact["text"]))
+                continue
             if not verdict.get("duplicate_ids") and (fact.get("project_id"), _hash(fact["text"])) not in seen:
                 changes.append(
                     DreamChange(
@@ -1102,6 +1151,12 @@ async def process_dream(run_id: str) -> None:
                                 ),
                                 None,
                             )
+                            pending = next(
+                                (c for c in changes if c.op == "add" and c.project_id == project_id and c.content == content), None
+                            )
+                            if pending:
+                                pending.evidence_run_ids = sorted(set(pending.evidence_run_ids) | {rid})[:20]
+                                continue
                             changes.append(
                                 DreamChange(
                                     op="reinforce" if old else "add",
@@ -1146,6 +1201,7 @@ async def process_dream(run_id: str) -> None:
                     db.flush()
                     pending_after = len(_new_runs(db, uid, None, utcnow(), limit=201))
                     counts = {key: sum(1 for x in outcomes if x["outcome"] == key) for key in ("added", "updated", "duplicate", "deferred")}
+                    counts["added"] += sum(c.op == "add" and c.kind == "artifact" for c in changes)
                     counts.update(
                         {
                             "candidates": len(outcomes),

@@ -150,6 +150,11 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
         if entry.id and entry.id not in old and not entry.id.startswith("mem_"):
             raise HTTPException(422, "unknown memory entry")
         prior = old.get(entry.id)
+        if entry.kind == "artifact" and (prior is None or prior["content"] != entry.content):
+            delivered = delivered_files(db, user.id, entry.evidence_run_ids or [])
+            expected = {f"已交付文件：{f['filename']}"[:300] for files in delivered.values() for f in files}
+            if source != "nightly" or entry.content not in expected:
+                raise HTTPException(422, "交付物记忆只能来自真实交付记录")
         if entry.source_quote:
             _refuse_unsafe(entry.source_quote, source)
         if entry.evidence_run_ids and (prior is None or set(entry.evidence_run_ids) - known_evidence):

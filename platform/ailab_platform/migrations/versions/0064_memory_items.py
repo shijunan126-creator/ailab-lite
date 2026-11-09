@@ -164,6 +164,34 @@ def upgrade():
         settings["memory"] = memory
         db.execute(users.update().where(users.c.id == user["id"]).values(settings=settings))
 
+    # Rebuild the entity projection from migrated facts, not from untrusted aliases.
+    entities = sa.Table("memory_entities", sa.MetaData(), autoload_with=db)
+    aliases = sa.Table("memory_entity_aliases", sa.MetaData(), autoload_with=db)
+    runs = sa.table("runs", sa.column("id", sa.String()), sa.column("conversation_id", sa.String()))
+    for user in db.execute(sa.select(users.c.id)).scalars():
+        groups = {}
+        for item in db.execute(sa.select(items).where(items.c.user_id == user, items.c.status == "active")).mappings():
+            for name in item["entities"] or []:
+                if isinstance(name, str) and 0 < len(name) <= 120:
+                    groups.setdefault((item["project_id"], name), []).append(item)
+        source_ids = {rid for group in groups.values() for item in group for rid in item["source_run_ids"]}
+        conversations = dict(db.execute(sa.select(runs).where(runs.c.id.in_(source_ids))).all()) if source_ids else {}
+        for (pid, name), group in groups.items():
+            entity_id = "ent_" + hashlib.sha256(f"{user}:{pid}:{name}".encode()).hexdigest()[:32]
+            ids = {rid for item in group for rid in item["source_run_ids"]}
+            db.execute(
+                entities.insert().values(
+                    id=entity_id,
+                    user_id=user,
+                    project_id=pid,
+                    canonical=name,
+                    aliases=[],
+                    conversations=len({conversations[rid] for rid in ids if conversations.get(rid)}),
+                    last_seen_at=max(item["reinforced_at"] for item in group),
+                )
+            )
+            db.execute(aliases.insert().values(entity_id=entity_id, user_id=user, name=name.casefold().strip()))
+
     work = sa.table(
         "memory_work_items",
         sa.column("state", sa.String()),

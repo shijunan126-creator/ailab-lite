@@ -168,6 +168,11 @@ async def consolidate(job_id, token):
                     if used > 1500:
                         e["tier"] = "archive"
                         counts["demoted"] += 1
+            from .maintenance import inputs
+            from .service import _fit
+
+            kept = {e.id for e in _fit(inputs(entries))}
+            entries = [e for e in entries if e["id"] in kept]
             if entries != current["entries"]:
                 save(db, owner, current, entries)
             entities = list(db.scalars(select(MemoryEntity).where(MemoryEntity.user_id == user.id)))

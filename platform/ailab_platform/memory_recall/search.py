@@ -202,8 +202,8 @@ def search_history(
     dense_order = sorted(similar, key=lambda k: (-similar[k] * boost(k, DENSE_RECENCY_BOOST), k))
     # Reciprocal rank fusion: a turn found by both channels beats one found by either; scores of the two are not comparable.
     fused: dict[str, float] = {}
-    for order in (lex_order, dense_order):
-        for rank, key in enumerate(order):
+    for channel_order in (lex_order, dense_order):
+        for rank, key in enumerate(channel_order):
             fused[key] = fused.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
     ranked = sorted(fused, key=lambda k: (-fused[k], k))
     if order == "asc":

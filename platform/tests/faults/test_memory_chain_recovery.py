@@ -3,12 +3,20 @@
 import asyncio
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import select
 
 from ailab_platform.db import SessionLocal
 from ailab_platform.memory_dream import service
 from ailab_platform.memory_dream.scheduling import can_start
 from ailab_platform.models import MemoryDreamRun, PlatformSetting, User, utcnow
+
+
+@pytest.fixture(scope="module", autouse=True)
+def isolated_database():
+    from ailab_platform.db import init_db
+
+    init_db()
 
 
 def test_crashed_lease_expires_without_raising_capacity(monkeypatch):
@@ -74,6 +82,7 @@ def test_chain_recovery_follows_committed_successor_once(monkeypatch):
 
 def test_database_admission_serializes_independent_connections(monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
+
     from ailab_platform.memory_dream.scheduling import admission
 
     monkeypatch.setattr(service.settings, "memory_dream_concurrency", 3)
@@ -105,9 +114,11 @@ def test_crash_after_candidate_commit_resumes_without_duplicate_items(monkeypatc
     import os
     import subprocess
     import sys
+
     from sqlalchemy import update
-    from ailab_platform.models import MemoryItem, MemoryWorkItem, Run
+
     from ailab_platform.memory_dream import consolidation
+    from ailab_platform.models import MemoryItem, MemoryWorkItem, Run
 
     now = utcnow()
     with SessionLocal() as db:
@@ -115,7 +126,13 @@ def test_crash_after_candidate_commit_resumes_without_duplicate_items(monkeypatc
         db.add(user)
         db.flush()
         run = Run(user_id=user.id, prompt="我使用PostgreSQL", model="local-demo", status="succeeded")
-        job = MemoryDreamRun(user_id=user.id, trigger="manual", local_date="2026-11-09", created_at=now - timedelta(minutes=11))
+        job = MemoryDreamRun(
+            user_id=user.id,
+            trigger="manual",
+            local_date="2026-11-09",
+            created_at=now - timedelta(minutes=11),
+            due_at=now - timedelta(minutes=11),
+        )
         db.add_all([run, job])
         db.commit()
         job_id, run_id, uid = job.id, run.id, user.id
@@ -160,3 +177,40 @@ asyncio.run(service.process_dream(os.environ['MEMORY_FAULT_JOB']))
         rows = list(db.scalars(select(MemoryItem).where(MemoryItem.user_id == uid)))
         assert len(rows) == 1 and rows[0].source_run_ids == [run_id]
         assert db.get(MemoryDreamRun, job_id).status == "applied"
+
+
+def test_soft_deadline_persists_oldest_due_for_next_dispatch(monkeypatch):
+    from ailab_platform.memory_recall.store import stamp
+
+    now = utcnow()
+    with SessionLocal() as db:
+        user = User(email=f"carry-{now.timestamp()}@test.invalid")
+        db.add(user)
+        db.flush()
+        job = MemoryDreamRun(
+            user_id=user.id,
+            local_date=now.date().isoformat(),
+            timezone="UTC",
+            trigger="cron",
+            status="applied",
+            due_at=now - timedelta(hours=3),
+            priority=20,
+            report={"chain_running": True, "stage_committed": True, "runs_seen": 1, "added": 1},
+        )
+        db.add(job)
+        db.commit()
+        identity, due = job.id, stamp(job.due_at)
+
+    async def process(*args):
+        return None
+
+    monkeypatch.setattr(service, "process_dream", process)
+    monkeypatch.setattr(service, "_new_runs", lambda *a, **kw: [object()])
+    monkeypatch.setattr(service, "local_window", lambda ds: (0, 1))
+    asyncio.run(service.process_dream_chain(identity))
+    with SessionLocal() as db:
+        first = db.get(MemoryDreamRun, identity)
+        successor = db.get(MemoryDreamRun, first.report["next_id"])
+        assert successor.status == "pending" and successor.priority == 20
+        assert stamp(successor.due_at) == due
+        assert successor.report["runs_seen_before"] == 1

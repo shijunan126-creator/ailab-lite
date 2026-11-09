@@ -853,8 +853,10 @@ class ContextManager:
             after = {entry_id: all_visible[entry_id] for entry_id in before.keys() & all_visible.keys()}
             after.update(selected)
             changes = [f"记忆 {entry_id} 已删除，不得再使用" for entry_id in sorted(before.keys() - all_visible.keys())]
+            from ..memory_recall.guard import model_text
+
             changes += [
-                f"记忆 {entry_id}：{after[entry_id].get('content', '')}"
+                f"记忆 {entry_id}：{model_text(after[entry_id].get('content', ''))}"
                 for entry_id in sorted(after)
                 if entry_id not in before or after[entry_id].get("content") != before[entry_id].get("content")
             ]
