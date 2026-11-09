@@ -36,6 +36,7 @@ def search_memory(db, user, run, document, request, project_id, mode):
             .join(MemoryEntityAlias, MemoryEntityAlias.entity_id == MemoryEntity.id)
             .where(MemoryEntityAlias.user_id == user.id, MemoryEntityAlias.name.in_([request.query.casefold(), *query]), or_(*scopes))
             .distinct()
+            .order_by(MemoryEntity.canonical)
         )
     )
     for canonical in matched_entities:
@@ -106,7 +107,9 @@ def search_memory(db, user, run, document, request, project_id, mode):
         result["relative_time"] = "今天" if days == 0 else f"{days} 天前"
         if result["source"] == "history":
             for field in ("conversation_title", "user_said", "assistant_replied"):
-                result[field] = model_text(result.get(field, ""))
+                result[field] = model_text(result.get(field, ""))[:360]
+            if result.get("files"):
+                result["files"] = [{**file, "filename": model_text(file["filename"])} for file in result["files"]]
         out.append(result)
         if len(out) == 5:
             break
