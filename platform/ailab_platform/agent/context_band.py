@@ -89,7 +89,9 @@ class ContextBand:
 
     @property
     def memory_budget(self):
-        return self.allocation(2000, 0.04)
+        # The complete bounded document is mandatory. Whole-request staging below
+        # accounts for its cost together with history, tools and output reserve.
+        return self.ceiling
 
     def digest(self, epoch, messages, state, tools):
         protected = {

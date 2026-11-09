@@ -452,8 +452,8 @@ def test_system_prefix_is_shared_and_memory_changes_append_notes():
         p1.current = {**p1.current, "revision": 3, "entries": [second]}
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
         assert messages[:2] == original
-        assert "核心记忆 m2：[2026-01-02] 简洁" in messages[-2]["content"]
-        assert "记忆 m1 已删除，不得再使用" in messages[-1]["content"]
-        assert "revision=" not in memory_prompt(p1.current)
+        assert "新增 [m2] 简洁" in messages[-2]["content"]
+        assert "删除 [m1]" in messages[-1]["content"]
+        assert "revision=3" in memory_prompt(p1.current)
 
     asyncio.run(exercise())

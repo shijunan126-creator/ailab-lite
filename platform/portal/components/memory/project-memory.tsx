@@ -24,7 +24,7 @@ export default function ProjectMemoryDialog({ project, onClose }: { project: Pro
           }
         : {
             title: "与你的记忆互通？",
-            body: "本项目会读取你的其他记忆；本项目的记忆会整理进你的记忆，只与本项目相关的仍留在这里。",
+            body: "本项目会读取你的其他记忆，本项目的记忆会并入你的记忆。",
             action: "互通",
           }
     );

@@ -868,7 +868,14 @@ class ContextManager:
                 result_id = message.get("tool_call_id")
                 consumed = self.state.setdefault("memory_applied_results", [])
                 if result.get("ok") and "entries" in result and result_id not in consumed:
-                    observed = result
+                    if result.get("memory_delta"):
+                        known = {e["id"]: e for e in observed.get("entries", [])}
+                        for key in result.get("removed_ids", []):
+                            known.pop(key, None)
+                        known.update({e["id"]: e for e in result["entries"]})
+                        observed = {**observed, "revision": result["revision"], "entries": list(known.values())}
+                    else:
+                        observed = result
                     consumed.append(result_id)
         before = {e["id"]: e for e in observed.get("entries", [])}
         after = {e["id"]: e for e in latest.get("entries", [])}

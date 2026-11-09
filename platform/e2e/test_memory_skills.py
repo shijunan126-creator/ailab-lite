@@ -192,15 +192,11 @@ def test_project_memory_mode_moves_and_merges_facts(page, stack, width):
     switch.click()
     page.get_by_role("alertdialog").get_by_role("button", name="互通", exact=True).click()
     expect(switch).to_have_attribute("aria-checked", "false")
-    # the merge runs in the background; the mock judges every project fact general, so it moves to the account
-    expect(dialog.locator(".memory-items")).to_have_count(0)
+    # Mode switching merges in the same transaction; the shared panel reads the account document.
+    expect(dialog.locator(".memory-body")).to_contain_text("季报口径以财务部为准")
+    expect(dialog.locator(".memory-body")).to_contain_text("回答先给结论")
     expect(dialog.get_by_role("textbox", name="修改记忆", exact=True)).to_have_count(0)
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        entries = httpx.get(stack.api + "/v1/memory", headers=headers).json()["entries"]
-        if all(entry["project_id"] is None for entry in entries):
-            break
-        time.sleep(0.1)
+    entries = httpx.get(stack.api + "/v1/memory", headers=headers).json()["entries"]
     assert {e["content"]: e["project_id"] for e in entries} == {"回答先给结论": None, "季报口径以财务部为准": None}
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.screenshot(path=str(stack.log_dir / f"project-memory-{width}.png"), full_page=True, animations="disabled")

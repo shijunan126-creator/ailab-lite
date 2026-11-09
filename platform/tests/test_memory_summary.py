@@ -158,7 +158,7 @@ def test_edit_add_secret_refusal_conflict_and_active(api, monkeypatch):
 
 def test_clear_scope_redacts_tombstones_and_all_statuses(api, monkeypatch):
     c, me, uid = api
-    pid = project(c, me)
+    pid = project(c, me, "isolated")
     put(
         c,
         me,

@@ -2670,7 +2670,9 @@ def test_conversation_document_snapshot_external_diff_and_own_write_no_echo(mode
 
     async def save(run_id, request):
         platform.own_saved = True
-        return first_result
+        from ailab_platform.memory_recall.document import write_result
+
+        return write_result(initial, first_result)
 
     platform.memory = save
     call = {

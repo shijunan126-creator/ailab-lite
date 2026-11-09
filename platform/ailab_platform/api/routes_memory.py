@@ -533,7 +533,7 @@ def run_memory(
         prior = db.get(RunDelivery, (run.id, x_delivery_id))
         if prior:
             allowed = {e["id"]: e for e in model_view(current, project_id, mode=project_mode(db, project_id))["entries"]}
-            return {**prior.result, "entries": [allowed[e["id"]] for e in prior.result.get("entries", []) if e["id"] in allowed]}
+            return {**prior.result, "entries": [e for e in prior.result.get("entries", []) if e["id"] in allowed]}
         if not current["enabled"] or not permissions["write"] or (not current["auto_save"] and not body.explicit):
             raise HTTPException(422, "用户已关闭自动记忆；只在用户明确要求时操作记忆，关闭记忆时不能操作")
         entries = [
@@ -559,7 +559,10 @@ def run_memory(
                 for e in entries
             )
             if duplicate:
-                result = model_view(current, project_id, mode=project_mode(db, project_id))
+                from ..memory_recall.document import write_result
+
+                visible = model_view(current, project_id, mode=project_mode(db, project_id))
+                result = write_result(visible, visible)
                 db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
                 db.commit()
                 return result
@@ -595,7 +598,12 @@ def run_memory(
         except ValueError as exc:
             raise HTTPException(422, "记忆内容为空或超出容量，请整理后重试") from exc
         result = write_memory(db, user, update, "agent", explicit=body.explicit)
-        result = model_view(result, project_id, mode=project_mode(db, project_id))
+        from ..memory_recall.document import write_result
+
+        result = write_result(
+            model_view(current, project_id, mode=project_mode(db, project_id)),
+            model_view(result, project_id, mode=project_mode(db, project_id)),
+        )
         db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
         db.commit()
         return result
@@ -847,9 +855,16 @@ def memory_view(
     from ..memory_recall.store import legacy
     from ..models import MemoryItem, Project
 
-    rows = list(db.scalars(_scope_items(db, user, project_id).where(MemoryItem.status.in_(("active", "review"))).order_by(MemoryItem.id)))
-    rows = [r for r in rows if not r.valid_to and not r.superseded_by]
+    query = _scope_items(db, user, project_id)
     project = db.get(Project, project_id) if project_id else None
+    if project and project.memory_mode == "shared":
+        from sqlalchemy import or_
+
+        query = select(MemoryItem).where(
+            MemoryItem.user_id == user.id, or_(MemoryItem.project_id.is_(None), MemoryItem.project_id == project_id)
+        )
+    rows = list(db.scalars(query.where(MemoryItem.status.in_(("active", "review"))).order_by(MemoryItem.id)))
+    rows = [r for r in rows if not r.valid_to and not r.superseded_by]
     job = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, active_job()).limit(1))
     document = memory_for(user)
     sources = _sources_for(db, user, rows)

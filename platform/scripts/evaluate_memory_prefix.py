@@ -71,8 +71,6 @@ def scenarios():
                 "id": "mem_core",
                 "kind": "preference",
                 "origin": "explicit",
-                "tier": "core",
-                "page": "偏好",
                 "content": "回答先给结论",
                 "observed_at": "2026-01-01T00:00:00+00:00",
             },
@@ -80,14 +78,10 @@ def scenarios():
                 "id": "mem_project",
                 "kind": "project",
                 "origin": "explicit",
-                "tier": "archive",
-                "page": "项目",
                 "content": "正在推进Atlas项目",
-                "entities": ["Atlas"],
                 "observed_at": "2026-01-01T00:00:00+00:00",
             },
         ],
-        "entity_catalog": [{"canonical": "Atlas", "conversations": 2, "last_seen_at": "2026-01-01T00:00:00+00:00"}],
     }
     changed = copy.deepcopy(initial)
     changed["revision"] = 2
@@ -97,14 +91,10 @@ def scenarios():
             "id": "mem_new",
             "kind": "preference",
             "origin": "manual",
-            "tier": "core",
-            "page": "偏好",
             "content": "回答说明适用条件",
-            "entities": ["Nova"],
             "observed_at": "2026-01-02T00:00:00+00:00",
         },
     ]
-    changed["entity_catalog"].append({"canonical": "Nova", "conversations": 2, "last_seen_at": "2026-01-02T00:00:00+00:00"})
     return {"unchanged": [initial] * 4, "items_changed": [initial, initial, changed, changed], "day_boundary": [initial] * 4}
 
 
