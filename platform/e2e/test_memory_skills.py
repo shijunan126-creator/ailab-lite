@@ -62,6 +62,12 @@ def test_memory_pages_are_changed_by_asking_and_undone(page, stack):
     dialog = memory_dialog(page)
     # Pages render stored items without a summary model call.
     expect(dialog.locator(".memory-view")).to_contain_text("回答先给结论", timeout=30000)
+    # Menus opened inside the dialog must float above it: a click on the item proves nothing covers it.
+    dialog.get_by_role("button", name="更多操作 你的记忆", exact=True).click()
+    page.get_by_role("menuitem", name="清空", exact=True).click()
+    expect(page.get_by_role("alertdialog", name="清空你的记忆？")).to_be_visible()
+    page.get_by_role("button", name="取消", exact=True).click()
+    expect(dialog.locator(".memory-view")).to_contain_text("回答先给结论")
     ask(dialog, "记住我常驻上海")
     expect(dialog.locator(".memory-turn.ai").last).to_contain_text("已记住", timeout=30000)
     dialog.locator(".memory-page-head").filter(has_text="工作与身份").click()
