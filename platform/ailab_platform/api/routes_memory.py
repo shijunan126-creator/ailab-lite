@@ -537,11 +537,12 @@ def run_memory(
             from ..memory_recall.document import render
 
             visible = model_view(current, project_id, mode=project_mode(db, project_id))
+            fields = ("id", "project_id", "kind", "origin", "content", "observed_at", "updated_at", "change_type")
             return {
                 "memory_list": True,
                 "revision": current["revision"],
                 "document": render(visible["entries"]),
-                "entries": visible["entries"],
+                "entries": [{key: e[key] for key in fields if key in e} for e in visible["entries"]],
             }
         if not x_delivery_id or not x_delivery_id.startswith(run.id + ":") or len(x_delivery_id) > 160:
             raise HTTPException(422, "stable delivery identity required")

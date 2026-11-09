@@ -7,7 +7,6 @@ from datetime import UTC, datetime, timedelta
 
 from ailab_platform.agent.loop import AgentLoop
 from scripts.evaluate_memory_prefix import Platform, Recorder, cache_acceptance, scenarios
-from tests.prefix_harness import assert_extension
 from tests.test_agent_loop import FakeBroker
 
 
@@ -71,6 +70,10 @@ class External(Platform):
             run["previous_model_context"]["finished_at"] = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
             previous = self.checkpoints[f"turn{int(run_id[-1]) - 1}"]["state"]
             run["previous_model_context"]["memory_snapshot_signature"] = previous.get("memory_snapshot_signature")
+        if run_id == "turn1":
+            run["prompt"] = "请用一句话解释什么是哈希表。"
+        if run_id == "turn2":
+            run["prompt"] = "请用一句话解释哈希表查找为什么快。"
         if run_id == "turn0":
             run["prompt"] = "请调用memory工具记住我偏好用表格比较选项，成功后仅回复已记住。"
         return run
@@ -85,20 +88,11 @@ async def evaluate(model):
         try:
             for i in range(4):
                 await loop.process(f"turn{i}", attempt_id=f"a{i}")
-            assert all(status == "succeeded" for status, _ in p.statuses), p.statuses
-            for index, (left, right) in enumerate(zip(rec.requests, rec.requests[1:])):
-                try:
-                    assert_extension(left, right)
-                except AssertionError as exc:
-                    raise AssertionError(
-                        {
-                            "mode": mode,
-                            "call": index + 2,
-                            "previous_roles": [m["role"] for m in left["messages"]],
-                            "current_roles": [m["role"] for m in right["messages"]],
-                            "prefix_equal": right["messages"][: len(left["messages"])] == left["messages"],
-                        }
-                    ) from exc
+            terminal = [status for status, _ in p.statuses if status in {"succeeded", "failed", "canceled"}]
+            assert terminal == ["succeeded"] * 4, terminal
+            for left, right in zip(rec.requests, rec.requests[1:]):
+                assert left.get("tools") == right.get("tools")
+                assert right["messages"][: len(left["messages"])] == left["messages"]
             updates = [
                 m
                 for m in rec.requests[-1]["messages"]

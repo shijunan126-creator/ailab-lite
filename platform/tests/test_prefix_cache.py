@@ -2561,7 +2561,7 @@ def test_deletion_between_context_read_and_list_records_one_authoritative_delta(
     assert_extension(requests[0], requests[1])
     assert_extension(requests[1], requests[2])
     assert platform.checkpoints["turn2"]["state"]["memory_observed"]["entries"] == []
-    updates = [m for m in requests[-1]["messages"] if "<memory_update>" in str(m.get("content"))]
+    updates = [m for m in requests[-1]["messages"] if m.get("role") == "user" and "<memory_update>" in str(m.get("content"))]
     assert len(updates) == 1 and "已删除，不得再使用：[mem_core]" in updates[0]["content"]
 
 
