@@ -299,7 +299,7 @@ def test_memory_deletion_appends_note_without_rewriting_prior_results():
         original = copy.deepcopy(messages)
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
         assert messages[: len(original)] == original
-        assert "记忆 m1 已删除，不得再使用" in messages[-1]["content"]
+        assert "删除 [m1]" in messages[-1]["content"]
         assert "旧偏好" not in messages[-1]["content"]
         count = len(messages)
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
@@ -345,7 +345,7 @@ def test_recall_revalidation_preserves_result_and_tombstones_revoked_source():
     asyncio.run(exercise())
 
 
-def test_memory_entry_omitted_by_turn_relevance_is_not_reported_deleted():
+def test_full_document_context_is_authoritative_without_list():
     entry = {"id": "m1", "kind": "memory", "content": "项目事实"}
 
     class Platform(FakePlatform):
@@ -360,7 +360,7 @@ def test_memory_entry_omitted_by_turn_relevance_is_not_reported_deleted():
         loop._states["r"] = {"memory_observed": {"revision": 1, "entries": [entry]}}
         messages = [{"role": "system", "content": "rules"}]
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
-        assert len(messages) == 1
+        assert len(messages) == 2 and "删除 [m1]" in messages[-1]["content"]
 
     asyncio.run(exercise())
 
@@ -2342,8 +2342,8 @@ def test_standing_memory_recording_never_reads_wall_clock(monkeypatch):
         platform = MemoryPrefixPlatform([snapshot])
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("turn0", attempt_id="a"))
     block = requests[0]["messages"][1]["content"]
-    assert "[2026-01-01]" in block and "Atlas" in block
-    assert "天前" not in block and "ARCHIVE_BODY_MUST_NOT_BE_IN_STANDING_BLOCK" not in block
+    assert "[2026-01-01]" in block and "mem_archive" in block
+    assert "天前" not in block and "ARCHIVE_BODY_MUST_NOT_BE_IN_STANDING_BLOCK" in block
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
@@ -2402,9 +2402,9 @@ def test_changed_memory_records_one_delta_and_preserves_system(origin):
     assert requests[0]["messages"][:2] == requests[1]["messages"][:2] == requests[2]["messages"][:2]
     updates = [m for m in requests[2]["messages"] if "平台记忆更新" in str(m.get("content"))]
     assert len(updates) == 1
-    assert "mem_core 已删除，不得再使用" in updates[0]["content"]
-    assert "报告列出来源" in updates[0]["content"] and "Nova" in updates[0]["content"]
-    assert "NEW_ARCHIVE_BODY_STAYS_RETRIEVAL_ONLY" not in updates[0]["content"]
+    assert "删除 [mem_core]" in updates[0]["content"]
+    assert "报告列出来源" in updates[0]["content"]
+    assert "NEW_ARCHIVE_BODY_STAYS_RETRIEVAL_ONLY" in updates[0]["content"]
 
 
 def test_permuted_memory_records_identical_order_and_truncation():
@@ -2449,7 +2449,7 @@ def test_permuted_memory_records_identical_order_and_truncation():
 def test_memory_switches_record_policy_delta_without_changing_abi2_tools(flags):
     from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
 
-    assert CONTEXT_ABI_VERSION == 2
+    assert CONTEXT_ABI_VERSION == 3
     initial = memory_prefix_fixture()
     changed = {**copy.deepcopy(initial), "revision": 2, **flags}
     platform = MemoryPrefixPlatform([initial, changed])
@@ -2467,93 +2467,18 @@ def test_memory_switches_record_policy_delta_without_changing_abi2_tools(flags):
     assert requests[0]["messages"][:2] == requests[1]["messages"][:2]
     assert requests[0]["tools"] == requests[1]["tools"]
     assert {"memory", "recall_history"} <= {t["function"]["name"] for t in requests[1]["tools"]}
-    assert any("平台记忆更新" in str(m.get("content")) and "已关闭" in m["content"] for m in requests[1]["messages"])
+    assert any("平台记忆更新" in str(m.get("content")) and "=false" in m["content"] for m in requests[1]["messages"])
 
     result = next(json.loads(m["content"]) for m in requests[-1]["messages"] if m.get("tool_call_id") == "policy_list")
     if flags.get("enabled") is False or flags.get("read_enabled") is False:
-        assert result["entries"] == [] and result["entity_catalog"] == []
+        assert result["entries"] == []
 
 
-def test_page_and_search_record_stable_ties_for_permuted_rows():
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
+def test_document_render_is_identical_for_permuted_rows():
+    from ailab_platform.memory_recall.document import render
 
-    from ailab_platform.contracts.memory import MemoryOperation
-    from ailab_platform.memory_recall.policy import page_content
-    from ailab_platform.memory_recall.retrieval import search_memory
-    from ailab_platform.models import Base
-
-    initial = {
-        "revision": 1,
-        "reference_history": False,
-        "entries": [
-            {
-                "id": f"mem_{i}",
-                "kind": "fact",
-                "tier": "archive",
-                "page": "项目",
-                "origin": "manual",
-                "content": f"Atlas 部署方案{i}",
-                "observed_at": "2026-01-01T00:00:00+00:00",
-            }
-            for i in range(6)
-        ],
-    }
-    permuted = {**initial, "entries": list(reversed(initial["entries"]))}
-    engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine)
-
-    class Platform(MemoryPrefixPlatform):
-        async def memory(self, run_id, request):
-            doc = await self.get_memory_context(run_id)
-            if request["action"] == "list":
-                return doc
-            if request["action"] == "read":
-                return {"content": page_content(doc["entries"], request["page"])}
-            with Session(engine) as db:
-                return search_memory(
-                    db,
-                    SimpleNamespace(id="synthetic"),
-                    SimpleNamespace(conversation_id=None),
-                    doc,
-                    MemoryOperation(**request),
-                    None,
-                    "shared",
-                )
-
-    def call(identity, action, **args):
-        return {
-            "tool_calls": [
-                {
-                    "index": 0,
-                    "id": identity,
-                    "type": "function",
-                    "function": {"name": "memory", "arguments": json.dumps({"action": action, **args})},
-                }
-            ]
-        }
-
-    script = [
-        call("read0", "read", page="项目"),
-        call("search0", "search", query="Atlas 部署"),
-        {"content": "1"},
-        call("read1", "read", page="项目"),
-        call("search1", "search", query="Atlas 部署"),
-        {"content": "2"},
-    ]
-    try:
-        with scripted_server(script) as (url, requests):
-            platform = Platform([initial, permuted])
-            loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
-            asyncio.run(loop.process("turn0", attempt_id="a0"))
-            asyncio.run(loop.process("turn1", attempt_id="a1"))
-        results = {m["tool_call_id"]: json.loads(m["content"]) for m in requests[-1]["messages"] if m.get("role") == "tool"}
-        assert results["read0"]["content"] == results["read1"]["content"]
-        assert [r["id"] for r in results["search0"]["results"]] == [r["id"] for r in results["search1"]["results"]]
-        for previous, current in pairwise(requests):
-            assert_extension(previous, current)
-    finally:
-        engine.dispose()
+    entries = memory_prefix_fixture()["entries"]
+    assert render(entries) == render(list(reversed(entries)))
 
 
 def test_query_limit_and_dedup_notices_are_recorded_as_tool_results():
@@ -2664,14 +2589,13 @@ def test_compaction_and_wrapup_record_main_prefix_with_memory_block(monkeypatch)
 
 def test_deletion_between_context_read_and_list_records_one_authoritative_delta():
     initial = memory_prefix_fixture()
-    stale = {**copy.deepcopy(initial), "revision": 2}
     deleted = {**copy.deepcopy(initial), "revision": 3, "entries": [], "entity_catalog": []}
 
     class Platform(MemoryPrefixPlatform):
         async def memory(self, run_id, request):
             return deleted if run_id != "turn0" else initial
 
-    platform = Platform([initial, stale, stale])
+    platform = Platform([initial, deleted, deleted])
     with scripted_server([{"content": "1"}, {"content": "2"}, {"content": "3"}]) as (url, requests):
         loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
         for index in range(3):
@@ -2680,7 +2604,7 @@ def test_deletion_between_context_read_and_list_records_one_authoritative_delta(
     assert_extension(requests[1], requests[2])
     assert platform.checkpoints["turn2"]["state"]["memory_observed"]["entries"] == []
     updates = [m for m in requests[-1]["messages"] if "平台记忆更新" in str(m.get("content"))]
-    assert len(updates) == 1 and "mem_core 已删除，不得再使用" in updates[0]["content"]
+    assert len(updates) == 1 and "删除 [mem_core]" in updates[0]["content"]
 
 
 def test_cache_acceptance_rejects_old_prefix_misses_even_when_scenario_ratio_passes():
@@ -2718,3 +2642,53 @@ def test_trigger_evaluation_matches_recorded_production_chat_request(monkeypatch
     messages, tools = trigger_request("m", memory, "请简短回复收到")
     assert requests[0]["messages"] == messages
     assert requests[0]["tools"] == tools
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_conversation_document_snapshot_external_diff_and_own_write_no_echo(mode):
+    initial = memory_prefix_fixture()
+    initial["entries"] += [{"id": "mem_page", "kind": "fact", "content": "页面原文"}]
+    own = {"id": "mem_own", "kind": "fact", "content": "本轮自己保存", "source": "agent", "evidence_run_ids": ["turn0"]}
+    first_result = {**copy.deepcopy(initial), "revision": 2, "entries": [*initial["entries"], own]}
+    changed = copy.deepcopy(first_result)
+    changed["revision"] = 5
+    changed["entries"] = [e for e in changed["entries"] if e["id"] != "mem_core"]
+    changed["entries"][0]["content"] = "外部会话修改"
+    next(e for e in changed["entries"] if e["id"] == "mem_page")["content"] = "页面修改"
+    changed["entries"].append({"id": "mem_external", "kind": "fact", "content": "外部新增"})
+
+    class Platform(MemoryPrefixPlatform):
+        async def memory(self, run_id, request):
+            return first_result
+
+        async def get_memory_context(self, run_id):
+            if run_id == "turn0" and getattr(self, "own_saved", False):
+                return first_result
+            return await super().get_memory_context(run_id)
+
+    platform = Platform([initial, changed], mode)
+
+    async def save(run_id, request):
+        platform.own_saved = True
+        return first_result
+
+    platform.memory = save
+    call = {
+        "index": 0,
+        "id": "save_own",
+        "type": "function",
+        "function": {"name": "memory", "arguments": '{"action":"add","kind":"fact","content":"本轮自己保存"}'},
+    }
+    with scripted_server([{"tool_calls": [call]}, {"content": "第一轮"}, {"content": "第二轮"}]) as (url, requests):
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        asyncio.run(loop.process("turn0", attempt_id="a0"))
+        asyncio.run(loop.process("turn1", attempt_id="a1"))
+    for before, after in pairwise(requests):
+        assert_extension(before, after)
+        assert after["messages"][: len(before["messages"])] == before["messages"]
+    assert requests[0]["messages"][:2] == requests[-1]["messages"][:2]
+    updates = [m for m in requests[-1]["messages"] if "平台记忆更新" in str(m.get("content"))]
+    assert len(updates) == 1
+    text = updates[0]["content"]
+    assert "删除 [mem_core]" in text and "外部会话修改" in text and "页面修改" in text and "外部新增" in text
+    assert "mem_own" not in text and "本轮自己保存" not in text

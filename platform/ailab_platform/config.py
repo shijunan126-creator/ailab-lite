@@ -398,6 +398,7 @@ class Settings(ContextBandSettings, BaseSettings):
     memory_dream_busy_runs: int = Field(default=4, ge=1, le=100)
     memory_dream_tokens_per_minute: int = Field(default=30000, ge=1000, le=1000000)
     memory_items_max: int = Field(default=2000, ge=100, le=10000)
+    memory_doc_max_chars: int = Field(default=6000, ge=1000, le=100_000)
     memory_dream_input_chars: int = Field(default=8000, ge=1000, le=100_000)
     memory_dream_confidence: float = Field(default=0.8, ge=0.5, le=1)
     memory_dream_target_ratio: float = Field(default=0.8, ge=0.5, le=1)

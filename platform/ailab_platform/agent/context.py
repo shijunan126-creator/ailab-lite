@@ -843,83 +843,50 @@ class ContextManager:
 
     @staticmethod
     def _memory_signature(document):
-        fields = ("content", "kind", "origin", "tier", "page", "observed_at", "reinforced_at", "status", "suppressed", "invalid_at")
+        fields = ("content", "kind", "origin", "observed_at", "updated_at", "status", "suppressed", "invalid_at")
         return (
             tuple((key, document.get(key, True)) for key in ("enabled", "auto_save", "read_enabled", "write_enabled", "reference_history")),
-            tuple(
-                sorted(
-                    (e["id"], tuple(str(e.get(key, "")) for key in fields), tuple(sorted(e.get("entities", []))))
-                    for e in document.get("entries", [])
-                    if e.get("id")
-                )
-            ),
-            tuple(
-                sorted(
-                    (e["canonical"], e.get("project_id") or "", e["conversations"], e["last_seen_at"])
-                    for e in document.get("entity_catalog", [])
-                )
-            ),
+            tuple(sorted((e["id"], tuple(str(e.get(key, "")) for key in fields)) for e in document.get("entries", []) if e.get("id"))),
         )
 
     async def refresh_memory(self, run_id, messages):
         from ..memory_recall.guard import model_text
-        from ..memory_recall.policy import catalog_names, core_catalog
 
         latest = await self.platform.get_memory_context(run_id)
-        state = self.state
-        observed = state.get("memory_observed")
+        observed = self.state.get("memory_observed")
         if observed is None:
-            state["memory_observed"] = latest
+            self.state["memory_observed"] = latest
             return
-        if observed.get("revision") == latest.get("revision") and self._memory_signature(observed) == self._memory_signature(latest):
-            return
-        before = {entry["id"]: entry for entry in observed.get("entries", []) if entry.get("id")}
-        selected = {entry["id"]: entry for entry in latest.get("entries", []) if entry.get("id")}
-        visible = await self.platform.memory(run_id, {"action": "list"})
-        all_visible = {entry["id"]: entry for entry in visible.get("entries", []) if entry.get("id")}
-        wanted = before.keys() | selected.keys()
-        after = {entry_id: all_visible[entry_id] for entry_id in sorted(wanted & all_visible.keys())}
-        document = {
-            **latest,
-            **visible,
-            "revision": visible.get("revision", latest.get("revision")),
-            "entries": [after[key] for key in sorted(after)],
-        }
-        deleted = before.keys() - all_visible.keys()
-        changes = [f"记忆 {model_text(entry_id)} 已删除，不得再使用" for entry_id in sorted(deleted)]
-        old_core = {e["id"]: e for e in core_catalog(observed)[0]}
-        new_core = {e["id"]: e for e in core_catalog(document)[0]}
-        changes += [f"核心记忆 {model_text(key)} 已移出常驻，需要时检索" for key in sorted(old_core.keys() - new_core.keys() - deleted)]
-        for key in sorted(new_core):
-            entry = new_core[key]
-            changed = key not in old_core or any(
-                entry.get(field) != old_core[key].get(field) for field in ("content", "observed_at", "valid_from")
-            )
-            if changed:
-                date = str(entry.get("observed_at") or entry.get("valid_from") or "")[:10]
-                changes.append(f"核心记忆 {model_text(key)}：[{date}] {model_text(entry['content'])}")
-        old_names, new_names = catalog_names(observed), catalog_names(document)
-        added_names = [name for name in new_names if name not in old_names]
-        removed_names = [name for name in old_names if name not in new_names]
-        if added_names:
-            changes.append("目录新增名称：" + model_text("、".join(added_names)))
-        if removed_names:
-            changes.append("目录移出名称：" + model_text("、".join(removed_names)))
-        policies = {
-            "enabled": "记忆",
-            "auto_save": "自动记忆",
-            "read_enabled": "本对话读取记忆",
-            "write_enabled": "本对话写入记忆",
-            "reference_history": "历史引用",
-        }
-        for key, label in policies.items():
+        # Fold successful current-run memory results into the comparison snapshot only.
+        # Earlier request messages, including their tool results, remain byte-identical.
+        for message in messages[self.state.get("user_message_index", len(messages)) :]:
+            if message.get("role") == "tool" and message.get("name") == "memory":
+                try:
+                    result = json.loads(message.get("content", "{}"))
+                except (ValueError, TypeError):
+                    continue
+                result_id = message.get("tool_call_id")
+                consumed = self.state.setdefault("memory_applied_results", [])
+                if result.get("ok") and "entries" in result and result_id not in consumed:
+                    observed = result
+                    consumed.append(result_id)
+        before = {e["id"]: e for e in observed.get("entries", [])}
+        after = {e["id"]: e for e in latest.get("entries", [])}
+        changes = []
+        for key in sorted(before.keys() | after.keys()):
+            old, new = before.get(key), after.get(key)
+            # This run's successful writes already appear in its tool results.
+            if old and not new:
+                changes.append(f"删除 [{model_text(key)}]")
+            elif new and (not old or old.get("content") != new.get("content")):
+                changes.append(f"{'新增' if not old else '修改'} [{model_text(key)}] {model_text(new['content'])}")
+        for key in ("enabled", "auto_save", "read_enabled", "write_enabled", "reference_history"):
             if observed.get(key, True) != latest.get(key, True):
-                changes.append(label + ("已开启" if latest.get(key, True) else "已关闭，不得使用该能力"))
-        if not changes and self._memory_signature(observed) != self._memory_signature(document):
-            changes.append("归档记忆已更新，需要具体内容时检索。")
+                changes.append(f"{key}={str(latest.get(key, True)).lower()}")
         if changes:
+            changes.insert(0, f"revision={latest.get('revision', 0)}")
             messages.append({"role": "user", "content": "（平台记忆更新：\n" + "\n".join(changes) + "）"})
-        state["memory_observed"] = document
+        self.state["memory_observed"] = latest
 
     async def revalidate_recall(self, run_id, messages):
         original = deepcopy(self.state)

@@ -24,10 +24,7 @@ def legacy(row):
         "project_id": row.project_id,
         "kind": {"preference": "user", "fact": "memory"}.get(row.kind, row.kind),
         "origin": row.origin,
-        "tier": row.tier,
-        "page": row.page,
         "content": row.content,
-        "entities": row.entities,
         "evidence_run_ids": row.source_run_ids,
         "source_quote": row.source_quote,
         "observed_at": stamp(row.observed_at).isoformat(),
@@ -35,7 +32,7 @@ def legacy(row):
         "invalid_at": row.valid_to.isoformat() if row.valid_to else None,
         "expires_at": row.expires_at.isoformat() if row.expires_at else None,
         "superseded_by": row.superseded_by,
-        "status": "active" if row.status in {"closed", "suppressed"} else row.status,
+        "status": row.status,
         "suppressed": row.status == "suppressed",
         "confidence": row.confidence,
         "updated_at": stamp(row.updated_at).isoformat(),
@@ -74,11 +71,8 @@ def replace_entries(db, user, entries):
             db.add(row)
         row.project_id = e.get("project_id")
         row.kind = {"user": "preference", "memory": "fact"}.get(e["kind"], e["kind"])
-        row.origin = e.get("origin") or ("explicit" if e.get("source") == "nightly" else "chat" if e.get("source") == "agent" else "manual")
-        row.tier = e.get("tier") or ("core" if row.kind == "preference" else "archive")
-        row.page = e.get("page") or ("偏好" if row.kind == "preference" else "工作与身份")
+        row.origin = e.get("origin") or ("explicit" if e.get("source") == "nightly" else "chat" if e.get("source") == "agent" else "edited")
         row.content = e["content"]
-        row.entities = (e.get("entities") or [])[:10]
         row.source_run_ids = e.get("evidence_run_ids") or []
         row.source_quote = e.get("source_quote") or ""
         row.observed_at = stamp(e.get("observed_at"), row.observed_at if not fresh else stamp(e.get("valid_from"), now))
@@ -93,57 +87,3 @@ def replace_entries(db, user, entries):
         row.updated_at = stamp(e.get("updated_at"), now)
         row.metadata_ = {k: e[k] for k in ("source", "evidence_episode_ids", "evidence_deleted", "last_used_at") if k in e}
     db.flush()
-    from collections import defaultdict
-
-    from ..models import MemoryEntity, Run
-
-    names = defaultdict(list)
-    item_rows = list(db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id)))
-    for row in item_rows:
-        if row.status != "active":
-            continue
-        for name in row.entities:
-            if isinstance(name, str) and 0 < len(name) <= 120:
-                names[(row.project_id, name)].append(row)
-    existing = {(r.project_id, r.canonical): r for r in db.scalars(select(MemoryEntity).where(MemoryEntity.user_id == user.id))}
-    for key, row in existing.items():
-        if key not in names:
-            db.delete(row)
-    all_ids = {rid for item in item_rows for rid in item.source_run_ids}
-    run_meta = (
-        {
-            rid: (cid, stamp(at))
-            for rid, cid, at in db.execute(
-                select(Run.id, Run.conversation_id, Run.created_at).where(Run.user_id == user.id, Run.id.in_(all_ids))
-            ).all()
-        }
-        if all_ids
-        else {}
-    )
-    conversations = {rid: meta[0] for rid, meta in run_meta.items()}
-    for row in item_rows:
-        if row.id not in keep:
-            continue
-        row.support_conversations = len({run_meta[rid][0] for rid in row.source_run_ids if rid in run_meta and run_meta[rid][0]})
-        row.support_dates = len({run_meta[rid][1].date() for rid in row.source_run_ids if rid in run_meta})
-    for (pid, name), items in names.items():
-        row = existing.get((pid, name))
-        if row is None:
-            row = MemoryEntity(user_id=user.id, project_id=pid, canonical=name, aliases=[])
-            db.add(row)
-        ids = {rid for item in items for rid in item.source_run_ids}
-        row.conversations = len({conversations[rid] for rid in ids if conversations.get(rid)})
-        row.last_seen_at = max(stamp(item.reinforced_at) for item in items)
-    sync_aliases(db, user.id)
-
-
-def sync_aliases(db, user_id):
-    from sqlalchemy import delete
-
-    from ..models import MemoryEntity, MemoryEntityAlias
-
-    db.flush()
-    db.execute(delete(MemoryEntityAlias).where(MemoryEntityAlias.user_id == user_id))
-    for entity in db.scalars(select(MemoryEntity).where(MemoryEntity.user_id == user_id)):
-        for name in sorted({n.casefold().strip() for n in [entity.canonical, *entity.aliases] if isinstance(n, str) and n.strip()}):
-            db.add(MemoryEntityAlias(entity_id=entity.id, user_id=user_id, name=name))

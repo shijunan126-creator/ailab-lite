@@ -249,14 +249,12 @@ def _user_prompt(messages: list[dict]) -> str:
 def _memory_answer(system: str, prompt: str) -> str | None:
     """Deterministic answers to the memory summary/edit/merge prompts, so the mock stack shows a real summary and
     "忘记…/记住…" works in the browser. Anything else is not a memory maintenance call."""
-    from .memory_dream.prompts import EDIT_SYSTEM, EXTRACT_SYSTEM, JUDGE_SYSTEM, MERGE_SYSTEM
+    from .memory_dream.prompts import DOCUMENT_SYSTEM, EDIT_SYSTEM, MERGE_SYSTEM
 
     # Extraction and judging append per-call rules to their system prompt. The mock extracts nothing, so a
     # nightly or manual consolidation on the mock stack takes the normal path rather than failing on prose.
-    if system.startswith(EXTRACT_SYSTEM):
-        return json.dumps({"facts": []})
-    if system.startswith(JUDGE_SYSTEM):
-        return json.dumps({"results": []})
+    if system.startswith(DOCUMENT_SYSTEM):
+        return json.dumps({"ops": []})
     if system not in (EDIT_SYSTEM, MERGE_SYSTEM):
         return None
     try:

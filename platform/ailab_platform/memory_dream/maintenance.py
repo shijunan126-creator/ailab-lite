@@ -71,8 +71,6 @@ async def edit(run_id, token):
                 entries = scope_entries(user, run.project_id)
                 if (run.report or {}).get("edit_source_digest", digest(entries)) != digest(entries):
                     raise DreamError("记忆已变化，请重试")
-                page = (run.report or {}).get("edit_page")
-                entries = [e for e in entries if not page or e.get("page") == page]
                 return user, run.project_id, run.instruction, entries
 
     snapshot = await asyncio.to_thread(prepare)
@@ -95,8 +93,7 @@ async def edit(run_id, token):
                 run = _check_claim(db, run_id, token)
                 owner = db.get(User, user.id, populate_existing=True)
                 current = memory_for(owner)
-                page = (run.report or {}).get("edit_page")
-                if [e for e in scope_entries(owner, pid) if not page or e.get("page") == page] != entries:
+                if scope_entries(owner, pid) != entries:
                     raise DreamError("记忆已变化，请重试")
                 if owner.disabled_at or not current["enabled"] or (pid and not db.get(Project, pid)):
                     raise DreamError("记忆未开启或项目已删除")
@@ -118,6 +115,7 @@ async def edit(run_id, token):
                                 kind=op.get("kind") if action == "add" and op.get("kind") in {"user", "memory"} else "memory",
                                 content=str(op.get("content") or "").strip(),
                                 project_id=pid,
+                                origin="edited",
                             )
                         except ValueError:
                             continue
@@ -138,7 +136,9 @@ async def edit(run_id, token):
                         else:
                             for e in modified:
                                 if e["id"] == op["id"] and e["content"] != item.content:
-                                    e.update(content=item.content, evidence_run_ids=[], evidence_episode_ids=[], source_quote="")
+                                    e.update(
+                                        content=item.content, origin="edited", evidence_run_ids=[], evidence_episode_ids=[], source_quote=""
+                                    )
                                     counts["replaced"] += 1
                 changed = modified != current["entries"]
                 try:

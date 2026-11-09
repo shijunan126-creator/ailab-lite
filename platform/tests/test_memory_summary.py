@@ -14,7 +14,7 @@ from ailab_platform.api.routes_memory import memory_for
 from ailab_platform.db import SessionLocal
 from ailab_platform.memory_dream import service
 from ailab_platform.memory_dream.changes import digest
-from ailab_platform.memory_dream.prompts import EDIT_SYSTEM, EXTRACT_SYSTEM, JUDGE_SYSTEM, MERGE_SYSTEM
+from ailab_platform.memory_dream.prompts import DOCUMENT_SYSTEM, EDIT_SYSTEM, MERGE_SYSTEM
 from ailab_platform.memory_recall.policy import model_view
 from ailab_platform.models import MemoryDreamRun, Project, User
 from tests.memory_fixtures import make_dream, snapshot
@@ -584,8 +584,8 @@ def test_mock_model_answers_memory_prompts():
     from ailab_platform.llm import _memory_answer
 
     assert _memory_answer("other", "{}") is None
-    assert json.loads(_memory_answer(EXTRACT_SYSTEM + "\n附加规则", "[]")) == {"facts": []}
-    assert json.loads(_memory_answer(JUDGE_SYSTEM + "\n附加规则", "[]")) == {"results": []}
+    assert json.loads(_memory_answer(DOCUMENT_SYSTEM + "\n附加规则", "[]")) == {"facts": []}
+    assert json.loads(_memory_answer(DOCUMENT_SYSTEM + "\n附加规则", "[]")) == {"results": []}
     entries = [{"id": "mem_a", "kind": "user", "content": "喜欢蓝色主题"}]
     forget = json.loads(_memory_answer(EDIT_SYSTEM, json.dumps({"instruction": "忘记蓝色主题", "entries": entries})))
     assert forget["ops"] == [{"op": "remove", "id": "mem_a"}]

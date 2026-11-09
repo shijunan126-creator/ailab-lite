@@ -1440,6 +1440,7 @@ class MemoryItem(Base):
             "uq_memory_items_hash",
             "user_id",
             func.coalesce(text("project_id"), ""),
+            "kind",
             "content_hash",
             unique=True,
             sqlite_where=text("status = 'active'"),
@@ -1472,25 +1473,3 @@ class MemoryItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     # Legacy adapter metadata, not another copy of the fact text.
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
-
-
-class MemoryEntity(Base):
-    __tablename__ = "memory_entities"
-    __table_args__ = (Index("uq_memory_entities_scope", "user_id", func.coalesce(text("project_id"), ""), "canonical", unique=True),)
-    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ent"))
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
-    canonical: Mapped[str] = mapped_column(String(120))
-    aliases: Mapped[list] = mapped_column(JSON, default=list)
-    conversations: Mapped[int] = mapped_column(Integer, default=1)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class MemoryEntityAlias(Base):
-    """Indexed, disposable projection of canonical names and aliases."""
-
-    __tablename__ = "memory_entity_aliases"
-    __table_args__ = (Index("ix_memory_alias_lookup", "user_id", "name"),)
-    entity_id: Mapped[str] = mapped_column(ForeignKey("memory_entities.id", ondelete="CASCADE"), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), primary_key=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))

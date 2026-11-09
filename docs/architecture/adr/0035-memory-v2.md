@@ -1,20 +1,15 @@
-# ADR 0035 · 核心与目录、按需记忆检索
+# ADR 0035 · 每个作用域一份有界记忆文档
 
-状态：本地已实施并验证，未发布（2026-11-09）。方案：[memory v2](../design/2026-11-09-memory-v2-amr-mem0.md)。
+状态：方案已决定，实现与验收尚未完成（2026-11-09）。替换此前核心/目录、检索、独立 judge 与 consolidation 方案。
 
-取代 ADR 0019/0022 中“所有事实常驻”与 JSON 事实存储的决定。`memory_items` 是唯一事实来源；边界上下文仅包含核心（1500 字）和目录（300 字），存量由模型主动查询。保留服务授权、revision CAS、墓碑、删除谱系、计费与前缀稳定合同。语义向量代码保留，默认不启用。
+`memory_items` 是唯一内容来源；账号与 isolated 项目分别组成完整文档，按 fact/preference/project/interest/reference 分节。默认渲染上限 6000 字，用户明确添加允许到 9000 字，超过返回 422。旧数据不得静默截断；下一次后台整理处理超限。保留版本关闭、来源授权、墓碑、敏感 review、租约、计费和可撤销 delta。
 
-主题页由条目派生，不另存正文。观察时间与有效时间分离。宽松提取保持用户引文校验，敏感条目待确认。工具升级通过上下文 ABI 边界重建，运行内只追加工具结果与记忆更新。
+系统消息一包含共用静态规则，消息二只包含数据。消息二是**会话快照**，每个新 run 重用原消息；仅 compaction/model/access/ABI/rebuild 边界重建。外部修改末尾追加一条增量，当前 run 的工具写入不重复播报。禁止 TTL 重绘。工具 ABI 升为 3：memory 仅 add/replace/remove；关键词查询原始历史移到 recall_history。
 
+每批 Dreaming 一个调用：静态规则、新 episodes、完整当前文档（最后）。输出 add/update/merge/delete JSON ops；同一调用在预测使用量超过85%时压至75%。程序校验引文、来源、id、墓碑和受保护条目，最后才淘汰最老的未强化 inferred 行。显式/edited 行不能被整理删除或合并，更新必须有较新用户引文。
 
-0064增加 `memory_entity_aliases` 作为实体别名的索引投影，不增加事实来源；随实体删除级联清理，条目/历史分词缓存分别以16 MiB估算预算回收，忘记同时清除两个通道。
+0065 清理 artifact 及 undo 副本，不写墓碑。0066 删除 entity/alias 投影，并让活动唯一键包含 kind。当前实现暂留 memory_items 的旧列；是否能安全直接 DROP COLUMN 尚待复核，不能把保留旧列称为清理完毕。
 
-所有来源（含手工编辑）在最终模型边界编码标签；测试/复现轮次的提取分类持久为 work item skipped，事实和表驱动交付物共用这项排除。core的预算选择先于页面分组，提取器不能自行把一般项目/兴趣晋升core。
+参考：[OpenAI Dreaming](https://openai.com/index/chatgpt-memory-dreaming/)、[Claude memory 与历史搜索](https://support.claude.com/en/articles/11817273-use-claude-s-chat-search-and-memory-to-build-on-previous-context)、[Mastra Observational Memory](https://mastra.ai/research/observational-memory)。借鉴后台综合、稳定上下文和原始历史按需查询，不声称这些产品采用同一存储实现。Mastra 报告的94.87%是其特定模型/数据集结果，不是本项目质量证明；其 Observer/Reflector 也不是本方案的单调用实现。
 
-调度以数据库singleton写锁串行化租约准入，SQLite与PG均成立，不持进程锁跨数据库I/O。priority/due_at/kind持久化，延期保留原due_at。网关冷却通过Redis跨服务共享，不让Agent写业务DB。提取阶段提交后的Dreaming沿用同一有效租约和计费身份，终态不重开；阶段结果与恢复标记同事务持久化。
-
-常驻模型投影只依赖已存储的状态/时间字段，不在渲染时计算相对时间或按now过滤；expires_at的即时过滤只在工具查询执行，Dreaming把到期关闭持久化。实体30天衰减排序采用 `log2(conversations)+last_seen_timestamp/30天`，去掉共同now项，数学上同序且跨日字节不变。完整快照仅在记录的context_boundary刷新；修订只追加名称/core行增删、删除禁用及政策变化，不把archive正文塞回常驻上下文。稍后的权威list读取覆盖过期context响应，避免删除竞态。
-
-ABI2工具目录不因记忆/历史开关或查询预算改变；拒绝、去重和限次通知进工具结果。压缩/收尾维持主调用prefix和设置。缓存验收按每场景第二轮起累计≥95%，另逐调用比较实际provider token数：旧前缀未命中不能超过固定缓存块尾部容差；新追加的推理/回答和用户消息不误判为旧前缀损失。真实六场景及录制证据见[实施记录](../../progress/updates/2026-11-09-memory-v2.md#真实前缀)。
-
-真实触发评测复用生产ABI2的完整工具选择、模型能力/GenUI规则与双system布局，并用录制请求验证同形。§7.3区分“需要用户背景”和“材料完整的新任务”，先查再追问；memory.search明确为memory的action/query参数。模型无效JSON仍严格拒绝，不猜参数修复。
+本轮实测、限制与剩余工作只维护在[实施记录](../../progress/updates/2026-11-09-memory-document.md)。

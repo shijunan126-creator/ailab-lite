@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from . import text
-
 CONTEXT_CHARS = 4000
 CONTEXT_FACTS = 20
 
@@ -19,15 +17,7 @@ def visible(
     if scope != project_id and (scope is not None or (project_id is not None and mode == "isolated")):
         return False
     if as_of is None:
-        return (
-            not entry.get("superseded_by")
-            and not entry.get("invalid_at")
-            and (
-                standing
-                or not entry.get("expires_at")
-                or datetime.fromisoformat(entry["expires_at"]).replace(tzinfo=UTC) > datetime.now(UTC)
-            )
-        )
+        return not entry.get("superseded_by") and not entry.get("invalid_at")
     instant = as_of.replace(tzinfo=UTC) if as_of.tzinfo is None else as_of.astimezone(UTC)
     for key, before in (("valid_from", True), ("invalid_at", False), ("expires_at", False)):
         if entry.get(key):
@@ -52,31 +42,7 @@ def model_view(
         if not document.get("enabled", True) or not document.get("read_enabled", True)
         else [e for e in document.get("entries", []) if visible(e, project_id, mode=mode, as_of=as_of, standing=standing)]
     )
-    if query is not None:
-        docs = [text.build_doc(e["id"], (e["content"], 1.0)) for e in entries]
-        scores = {h.key: h.score for h in text.search(text.query_tokens(query), docs) if h.coverage >= 0.2}
-        ranked = sorted(entries, key=lambda e: (-scores.get(e["id"], 0), e["id"]))
-        chosen, used = [], 0
-        for entry in ranked:
-            if entry["id"] not in scores and entry.get("kind") != "user":
-                continue
-            cost = len(entry["content"]) + 160
-            if used + cost > CONTEXT_CHARS or len(chosen) == CONTEXT_FACTS:
-                continue
-            chosen.append(entry)
-            used += cost
-        entries = chosen
-    return {
-        **document,
-        "entries": entries,
-        "entity_catalog": [
-            e
-            for e in document.get("entity_catalog", [])
-            if document.get("enabled", True)
-            and document.get("read_enabled", True)
-            and (e.get("project_id") == project_id or (e.get("project_id") is None and mode != "isolated"))
-        ],
-    }
+    return {**document, "entries": entries}
 
 
 def run_project(db, run) -> str | None:
@@ -160,99 +126,3 @@ def same_history_pool(db, current, source):
     if left and project_mode(db, left) == "isolated":
         return left == right
     return not right or project_mode(db, right) == "shared"
-
-
-def priority(kind, origin):
-    return 0 if kind in {"user", "preference"} and origin != "inferred" else 2 if origin == "inferred" else 3 if kind == "project" else 1
-
-
-def core_catalog(memory):
-    from .guard import model_text
-    from .store import stamp
-
-    entries = [
-        e
-        for e in memory.get("entries", [])
-        if memory.get("enabled", True)
-        and memory.get("read_enabled", True)
-        and not e.get("suppressed")
-        and not e.get("invalid_at")
-        and not e.get("superseded_by")
-        and e.get("status", "active") == "active"
-    ]
-    core = sorted(
-        (e for e in entries if e.get("tier", "core") == "core"),
-        key=lambda e: (
-            priority(e.get("kind", "memory"), e.get("origin")),
-            -stamp(e.get("reinforced_at"), datetime.min.replace(tzinfo=UTC)).timestamp(),
-            e["id"],
-        ),
-    )
-    chosen, used = [], 0
-    for entry in core:
-        cost = len(model_text(entry["content"])) + 16
-        if used + cost <= 1500:
-            chosen.append(entry)
-            used += cost
-    chosen.sort(key=lambda e: (e.get("page", ""), priority(e.get("kind"), e.get("origin")), e["id"]))
-    return chosen, "、".join(catalog_names({**memory, "entries": entries}))
-
-
-def catalog_names(memory):
-    import math
-    import re
-    from collections import defaultdict
-    from html import unescape
-
-    from .guard import model_text, reject_reason
-    from .store import stamp
-
-    entries = [
-        e
-        for e in memory.get("entries", [])
-        if memory.get("enabled", True)
-        and memory.get("read_enabled", True)
-        and not e.get("suppressed")
-        and not e.get("invalid_at")
-        and not e.get("superseded_by")
-        and e.get("status", "active") == "active"
-    ]
-    pages = defaultdict(int)
-    attributed = set()
-    active_names = set()
-    for e in entries:
-        pages[e.get("page", "工作与身份")] += 1
-        active_names.update(e.get("entities", []))
-        if e.get("source_quote") or e.get("origin") in {"explicit", "manual", "chat"}:
-            attributed.update(e.get("entities", []))
-    entities = memory.get("entity_catalog", [])
-    scores = {}
-    for e in entities:
-        name = e["canonical"]
-        if name in active_names and (name in attributed or e["conversations"] >= 2):
-            # log2(n * 2**(-(now-t)/30d)) differs by the same now-term
-            # for every entity. Drop that term: no clock and no exp overflow.
-            score = math.log2(max(1, e["conversations"])) + stamp(e["last_seen_at"]).timestamp() / (30 * 86400)
-            scores[name] = max(scores.get(name, float("-inf")), score)
-    if not entities:
-        scores = {name: 1 for name in attributed}
-    names = [*sorted(pages, key=lambda p: (-pages[p], p)), *sorted(scores, key=lambda n: (-scores[n], n))]
-    clean = []
-    used = 0
-    for name in names:
-        name = re.sub(r"[\x00-\x1f`*_#\[\]]", "", re.sub(r"<[^>]*>", "", unescape(str(name)))).strip()
-        if not name or len(name) > 20 or reject_reason(name) or name in clean:
-            continue
-        cost = len(model_text(name)) + bool(clean)
-        if used + cost > 300:
-            break
-        clean.append(name)
-        used += cost
-    return clean
-
-
-def page_content(entries, page):
-    selected = sorted(
-        (e for e in entries if e.get("page") == page), key=lambda e: (str(e.get("observed_at") or e.get("valid_from") or ""), e["id"])
-    )
-    return "\n".join(e["content"] for e in selected)[:3000]

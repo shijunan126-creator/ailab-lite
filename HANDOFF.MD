@@ -1,3 +1,10 @@
+## 2026-11-09 有界记忆文档（尚未完成）
+
+- 会话快照不等于Run快照。新turn必须重用previous_model_context前两条系统消息，只追加外部变化；当前Run自己的成功memory工具结果只折入比较基线一次，不能每次refresh重新折入旧结果导致重复增量。ABI/压缩/撤权/模型变化才重建，禁止TTL。
+- add去重必须统一legacy user/memory与preference/fact，否则第二次相同添加会在Pydantic/DB唯一键处422。kind+content+scope去重要求唯一索引也包含kind。
+- 删除item检索缓存时同步删lineage里的item_doc导入，否则删对话/硬清理会ImportError。整份文档预算不足应暂停，不得借旧bounded_memory任意丢行。
+- 当前OpenCode端点Work探针：完全相同正文/工具同session重放4992/5106，跨user同session也4992/5106；同user换session为0/5106。短Chat完全重放仍0/4474。不能将0命中自动当作系统一混入用户数据，也不能删必需session header。具体证据和残留缺口见[记录](docs/progress/updates/2026-11-09-memory-document.md)。
+
 ## 2026-11-09 Memory v2 迁移陷阱（实施中）
 
 - JSON 事实迁到 `memory_items` 后，读取、来源清理、项目融合、撤销与后台写入必须使用同一适配层；不能只迁 HTTP 管理入口。
