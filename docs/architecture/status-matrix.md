@@ -1,3 +1,5 @@
+2026-11-09 Memory v2 后端：实施中，尚未通过验收，不替代下方历史能力状态。新条目库、核心/目录、统一搜索与调度初版已落分支；摘要表移除、完整回归迁移与调度合同仍未完成。见[实施记录](../progress/updates/2026-11-09-memory-v2.md)及[方案](design/2026-11-09-memory-v2-amr-mem0.md)。
+
 2026-11-08 网页图片短 ID/地址去重与引用生命周期、按权限流式代理已本地实现：不新增图片字节缓存，候选 24h、回答/分叉引用保留、缩略图优先；真实模型两轮与 Chromium 检查通过。检查基线和未测边界见[记录](../progress/updates/2026-11-08-web-image-refs.md)。未发布部署。原 UI/技能 PR #165 的合并状态见[历史记录](../progress/updates/2026-11-08-ui-polish-media.md)。
 
 2026-11-07 真实模型workflow复核、提示词终审与剩余边界修复已在本地完成：参数试错与目录绕路归零；Excel可按工作表查看页图；小PDF表格线不再阻止内联；搜索单批按工作量限界；exec统一用bash。回答偏长、含填充框的小PDF仍不内联、未做多模型评估等边界仍在。见[workflow记录](../progress/updates/2026-11-07-real-model-document-workflows.md)和[终审修复](../progress/updates/2026-11-07-document-prompt-review.md)。未发布。

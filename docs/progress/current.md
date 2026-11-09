@@ -1,3 +1,12 @@
+# Memory v2 后端：实施中，未达到验收（2026-11-09）
+
+- 分支 `feat/memory-v2`，base `origin/main@df83d8e`；仅后端，不修改 Portal，不部署、不推送、不提 PR。
+- 已提交方案、P0 修复、P1 关系条目/检索与 P2 调度初版。**这些提交不是 P0→P2 完成声明，当前不可合并或部署。**
+- 当前结果、未完成项与验证见[本轮记录](updates/2026-11-09-memory-v2.md)，规范见[已批准方案](../architecture/design/2026-11-09-memory-v2-amr-mem0.md)。
+- 下一步：完成新表上的删除/撤销/项目合同回归迁移，解决完整双库和前缀测试失败，再补齐调度、评测和摘要存储移除。保留下面其他任务的原授权边界。
+
+---
+
 # 首条消息与会话原子创建（2026-11-09）
 
 - 用户报告 `/c/cnv_bf66cafddac34d6a8b4a` 空白，原有 PRO 正文和失败记录消失。证据：Conversation 已创建，但 `runs=0`、`run_events=0`、`queued_messages=0`；首条消息返回 `429 too many active runs for this user`。工作树 `.worktrees/first-message-admission`，分支 `fix/first-message-admission`，base `origin/main@e47d22d8`；主工作区既有修改保留。

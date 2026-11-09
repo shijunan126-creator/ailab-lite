@@ -1,3 +1,10 @@
+## 2026-11-09 Memory v2 迁移陷阱（实施中）
+
+- JSON 事实迁到 `memory_items` 后，读取、来源清理、项目融合、撤销与后台写入必须使用同一适配层；不能只迁 HTTP 管理入口。
+- 删除 `MemorySummary` ORM 前必须迁移既有摘要测试、查询计划测试和前缀快照测试，否则全套在 collection 阶段停止，不能冒称其他测试通过。当前摘要 ORM/表暂保留，仍待完整移除。
+- 工具 schema 升级须一起更新上下文 ABI 和录制请求的版本断言；缺省字段的历史快照也要能渲染。手动批次报告必须等待 chain 完成或提供 next_id，不能将单批新增当整次结果。
+- 本轮状态与未完成合同见[记录](docs/progress/updates/2026-11-09-memory-v2.md)。
+
 ## 2026-11-09 新会话首条消息不能先建空壳
 
 - 新会话的首条消息必须在同一用户锁和事务里完成 Run 准入、Conversation 和首条 Run 创建，失败整体回滚。先建 Conversation 再提交消息时，429/422 会留下 `runs=0` 的幽灵会话；前端进入详情页后消息被过滤，看起来像整段历史消失。见[记录](docs/progress/updates/2026-11-09-first-message-admission.md)。
