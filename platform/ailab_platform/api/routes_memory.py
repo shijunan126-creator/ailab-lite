@@ -271,6 +271,7 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
         "origin": entry.origin,
         "tier": entry.tier,
         "page": entry.page,
+        "reinforced_at": entry.reinforced_at.isoformat() if entry.reinforced_at else now.isoformat(),
         "observed_at": entry.observed_at.isoformat() if entry.observed_at else now.isoformat(),
         "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
         "content": entry.content,
@@ -546,7 +547,7 @@ def run_memory(
             entries = model_view(current, project_id, mode=project_mode(db, project_id))["entries"]
             return {
                 "revision": current["revision"],
-                "page": body.page,
+                "page": guard.model_text(body.page or ""),
                 "content": guard.model_text("\n".join(e["content"] for e in entries if e.get("page") == body.page)[:3000]),
             }
         if body.action == "list":

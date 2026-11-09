@@ -20,7 +20,8 @@ def upgrade():
     )
     op.add_column("memory_dream_runs", sa.Column("kind", sa.String(20), nullable=False, server_default="extract"))
     op.execute(
-        "UPDATE memory_dream_runs SET due_at = created_at, priority = CASE WHEN trigger = 'cron' THEN 10 ELSE 0 END, kind = CASE WHEN trigger = 'edit' THEN 'edit' ELSE 'extract' END"
+        "UPDATE memory_dream_runs SET due_at = created_at, priority = CASE WHEN trigger = 'cron' THEN 10 ELSE 0 END, "
+        "kind = CASE WHEN trigger = 'edit' THEN 'edit' ELSE 'extract' END"
     )
     op.create_index("ix_memory_dream_queue", "memory_dream_runs", ["status", "priority", "due_at", "id"])
     op.add_column("memory_dream_runs", sa.Column("change_set", sa.JSON(), nullable=False, server_default="{}"))

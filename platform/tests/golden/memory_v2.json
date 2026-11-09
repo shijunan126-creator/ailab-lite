@@ -244,23 +244,223 @@
   "retrieval": [
     {
       "query": "Atlas 部署",
-      "content": "Atlas 项目部署使用两台独立服务器",
-      "expected": true
+      "expected": [
+        "run_eval_0"
+      ]
     },
     {
-      "query": "蓝色主题",
-      "content": "用户偏好蓝色主题",
-      "expected": true
+      "query": "Orion 月报",
+      "expected": [
+        "mem_eval_1"
+      ]
     },
     {
-      "query": "Orion 报告",
-      "content": "Orion 项目报告按月交付",
-      "expected": true
+      "query": "Bluefin 品牌",
+      "expected": [
+        "mem_eval_2"
+      ]
+    },
+    {
+      "query": "昇腾 驱动",
+      "expected": [
+        "run_eval_3"
+      ]
+    },
+    {
+      "query": "数据库 PostgreSQL",
+      "expected": [
+        "mem_eval_4"
+      ]
+    },
+    {
+      "query": "备份 保留",
+      "expected": [
+        "mem_eval_5"
+      ]
+    },
+    {
+      "query": "迁移 截止",
+      "expected": [
+        "run_eval_6"
+      ]
+    },
+    {
+      "query": "回答 结论",
+      "expected": [
+        "mem_eval_7"
+      ]
+    },
+    {
+      "query": "文档 字体",
+      "expected": [
+        "mem_eval_8"
+      ]
+    },
+    {
+      "query": "表格 单位",
+      "expected": [
+        "run_eval_9"
+      ]
+    },
+    {
+      "query": "会议 周三",
+      "expected": [
+        "mem_eval_10"
+      ]
+    },
+    {
+      "query": "出差 杭州",
+      "expected": [
+        "mem_eval_11"
+      ]
+    },
+    {
+      "query": "教师 身份",
+      "expected": [
+        "run_eval_12"
+      ]
+    },
+    {
+      "query": "Python 脚本",
+      "expected": [
+        "mem_eval_13"
+      ]
+    },
+    {
+      "query": "Redis 缓存",
+      "expected": [
+        "mem_eval_14"
+      ]
+    },
+    {
+      "query": "Cedar 预算",
+      "expected": [
+        "run_eval_15"
+      ]
+    },
+    {
+      "query": "Lumen 发布",
+      "expected": [
+        "mem_eval_16"
+      ]
+    },
+    {
+      "query": "Vega 测试",
+      "expected": [
+        "mem_eval_17"
+      ]
+    },
+    {
+      "query": "Mango 客户",
+      "expected": [
+        "run_eval_18"
+      ]
+    },
+    {
+      "query": "Pine 日志",
+      "expected": [
+        "mem_eval_19"
+      ]
+    },
+    {
+      "query": "培训 初学者",
+      "expected": [
+        "mem_eval_20"
+      ]
+    },
+    {
+      "query": "跑步 周末",
+      "expected": [
+        "run_eval_21"
+      ]
+    },
+    {
+      "query": "旅行 博物馆",
+      "expected": [
+        "mem_eval_22"
+      ]
+    },
+    {
+      "query": "咖啡 无糖",
+      "expected": [
+        "mem_eval_23"
+      ]
+    },
+    {
+      "query": "显示器 分辨率",
+      "expected": [
+        "run_eval_24"
+      ]
+    },
+    {
+      "query": "合同 审批",
+      "expected": [
+        "mem_eval_25"
+      ]
+    },
+    {
+      "query": "采购 限额",
+      "expected": [
+        "mem_eval_26"
+      ]
+    },
+    {
+      "query": "监控 延迟",
+      "expected": [
+        "run_eval_27"
+      ]
+    },
+    {
+      "query": "发票 邮件",
+      "expected": [
+        "mem_eval_28"
+      ]
+    },
+    {
+      "query": "月度 汇报",
+      "expected": [
+        "mem_eval_29"
+      ]
     },
     {
       "query": "火星旅游",
-      "content": "Atlas 项目部署使用两台独立服务器",
-      "expected": false
+      "expected": []
+    },
+    {
+      "query": "恐龙灭绝",
+      "expected": []
+    },
+    {
+      "query": "海底火山",
+      "expected": []
+    },
+    {
+      "query": "黑洞蒸发",
+      "expected": []
+    },
+    {
+      "query": "古埃及象形文字",
+      "expected": []
+    },
+    {
+      "query": "袋鼠育儿袋",
+      "expected": []
+    },
+    {
+      "query": "冰岛极光",
+      "expected": []
+    },
+    {
+      "query": "金星自转",
+      "expected": []
+    },
+    {
+      "query": "蜜蜂授粉",
+      "expected": []
+    },
+    {
+      "query": "莫扎特交响曲",
+      "expected": []
     }
   ],
   "freshness": [
@@ -287,6 +487,280 @@
         "invalid_at": "2026-09-01T00:00:00+00:00"
       },
       "new": {}
+    }
+  ],
+  "items": [
+    {
+      "id": "mem_eval_1",
+      "kind": "fact",
+      "content": "Orion 月报每月五号交付",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "Orion"
+      ]
+    },
+    {
+      "id": "mem_eval_2",
+      "kind": "fact",
+      "content": "Bluefin 品牌色为蓝色",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "Bluefin"
+      ]
+    },
+    {
+      "id": "mem_eval_4",
+      "kind": "fact",
+      "content": "数据库选择 PostgreSQL 作为主库",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "数据库"
+      ]
+    },
+    {
+      "id": "mem_eval_5",
+      "kind": "fact",
+      "content": "备份保留七个每日版本",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "备份"
+      ]
+    },
+    {
+      "id": "mem_eval_7",
+      "kind": "fact",
+      "content": "回答习惯先给结论",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "回答"
+      ]
+    },
+    {
+      "id": "mem_eval_8",
+      "kind": "fact",
+      "content": "文档默认采用宋体",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "文档"
+      ]
+    },
+    {
+      "id": "mem_eval_10",
+      "kind": "fact",
+      "content": "团队会议定在周三",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "会议"
+      ]
+    },
+    {
+      "id": "mem_eval_11",
+      "kind": "fact",
+      "content": "用户计划出差去杭州",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "出差"
+      ]
+    },
+    {
+      "id": "mem_eval_13",
+      "kind": "fact",
+      "content": "Python 脚本使用版本3.12",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "Python"
+      ]
+    },
+    {
+      "id": "mem_eval_14",
+      "kind": "fact",
+      "content": "Redis 缓存保存十五分钟",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "Redis"
+      ]
+    },
+    {
+      "id": "mem_eval_16",
+      "kind": "fact",
+      "content": "Lumen 发布安排在周五",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "Lumen"
+      ]
+    },
+    {
+      "id": "mem_eval_17",
+      "kind": "fact",
+      "content": "Vega 测试要求覆盖断网恢复",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "Vega"
+      ]
+    },
+    {
+      "id": "mem_eval_19",
+      "kind": "fact",
+      "content": "Pine 日志保存三十天",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "Pine"
+      ]
+    },
+    {
+      "id": "mem_eval_20",
+      "kind": "fact",
+      "content": "培训面向初学者",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "培训"
+      ]
+    },
+    {
+      "id": "mem_eval_22",
+      "kind": "fact",
+      "content": "用户旅行喜欢参观博物馆",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "旅行"
+      ]
+    },
+    {
+      "id": "mem_eval_23",
+      "kind": "fact",
+      "content": "用户喝咖啡不加糖",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "咖啡"
+      ]
+    },
+    {
+      "id": "mem_eval_25",
+      "kind": "fact",
+      "content": "合同审批需要部门负责人签字",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "合同"
+      ]
+    },
+    {
+      "id": "mem_eval_26",
+      "kind": "fact",
+      "content": "采购限额设为五万元",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "采购"
+      ]
+    },
+    {
+      "id": "mem_eval_28",
+      "kind": "fact",
+      "content": "发票通过邮件发送",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "发票"
+      ]
+    },
+    {
+      "id": "mem_eval_29",
+      "kind": "fact",
+      "content": "月度汇报包括预算执行进展",
+      "page": "工作",
+      "tier": "archive",
+      "observed_at": "2026-01-01T00:00:00+00:00",
+      "entities": [
+        "月度"
+      ]
+    }
+  ],
+  "history": [
+    {
+      "id": "run_eval_0",
+      "prompt": "Atlas 部署使用两台服务器",
+      "summary": "已确认上述约定。"
+    },
+    {
+      "id": "run_eval_3",
+      "prompt": "昇腾 部署需要匹配驱动版本",
+      "summary": "已确认上述约定。"
+    },
+    {
+      "id": "run_eval_6",
+      "prompt": "迁移计划截止十二月",
+      "summary": "已确认上述约定。"
+    },
+    {
+      "id": "run_eval_9",
+      "prompt": "表格统一以万元为单位",
+      "summary": "已确认上述约定。"
+    },
+    {
+      "id": "run_eval_12",
+      "prompt": "用户是一名教师",
+      "summary": "已确认上述约定。"
+    },
+    {
+      "id": "run_eval_15",
+      "prompt": "Cedar 预算总额是十万元",
+      "summary": "已确认上述约定。"
+    },
+    {
+      "id": "run_eval_18",
+      "prompt": "Mango 客户需要每周简报",
+      "summary": "已确认上述约定。"
+    },
+    {
+      "id": "run_eval_21",
+      "prompt": "用户周末经常跑步",
+      "summary": "已确认上述约定。"
+    },
+    {
+      "id": "run_eval_24",
+      "prompt": "工作显示器分辨率为4K",
+      "summary": "已确认上述约定。"
+    },
+    {
+      "id": "run_eval_27",
+      "prompt": "监控重点关注请求延迟",
+      "summary": "已确认上述约定。"
     }
   ]
 }

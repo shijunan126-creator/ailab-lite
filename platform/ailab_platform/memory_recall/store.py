@@ -98,7 +98,10 @@ def replace_entries(db, user, entries):
     from ..models import MemoryEntity, Run
 
     names = defaultdict(list)
-    for row in db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.status == "active")):
+    item_rows = list(db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id)))
+    for row in item_rows:
+        if row.status != "active":
+            continue
         for name in row.entities:
             if isinstance(name, str) and 0 < len(name) <= 120:
                 names[(row.project_id, name)].append(row)
@@ -106,7 +109,7 @@ def replace_entries(db, user, entries):
     for key, row in existing.items():
         if key not in names:
             db.delete(row)
-    all_ids = {rid for items in names.values() for item in items for rid in item.source_run_ids}
+    all_ids = {rid for item in item_rows for rid in item.source_run_ids}
     run_meta = (
         {
             rid: (cid, stamp(at))
@@ -118,7 +121,7 @@ def replace_entries(db, user, entries):
         else {}
     )
     conversations = {rid: meta[0] for rid, meta in run_meta.items()}
-    for row in rows.values():
+    for row in item_rows:
         if row.id not in keep:
             continue
         row.support_conversations = len({run_meta[rid][0] for rid in row.source_run_ids if rid in run_meta and run_meta[rid][0]})

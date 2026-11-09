@@ -70,3 +70,93 @@ def test_chain_recovery_follows_committed_successor_once(monkeypatch):
         assert report.status == "applied"
         assert report.report["runs_seen"] == 5 and report.report["added"] == 2
         assert report.report["chain_complete"] and not report.report["chain_running"]
+
+
+def test_database_admission_serializes_independent_connections(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from ailab_platform.memory_dream.scheduling import admission
+
+    monkeypatch.setattr(service.settings, "memory_dream_concurrency", 3)
+    now = utcnow()
+    with SessionLocal() as db:
+        users = [User(email=f"multi-admission-{now.timestamp()}-{i}@test.invalid") for i in range(8)]
+        db.add_all(users)
+        db.flush()
+        jobs = [MemoryDreamRun(user_id=u.id, local_date="2026-11-09", trigger="manual") for u in users]
+        db.add_all(jobs)
+        db.commit()
+        ids = [j.id for j in jobs]
+
+    def claim(key):
+        with SessionLocal() as db, admission(db) as scheduler:
+            job = db.get(MemoryDreamRun, key)
+            accepted = can_start(db, scheduler, job, now)
+            if accepted:
+                job.claimed_until = now + timedelta(minutes=10)
+                job.status = "running"
+            db.commit()
+            return accepted
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        assert sum(pool.map(claim, ids)) == 3
+
+
+def test_crash_after_candidate_commit_resumes_without_duplicate_items(monkeypatch):
+    import os
+    import subprocess
+    import sys
+    from sqlalchemy import update
+    from ailab_platform.models import MemoryItem, MemoryWorkItem, Run
+    from ailab_platform.memory_dream import consolidation
+
+    now = utcnow()
+    with SessionLocal() as db:
+        user = User(email=f"crash-candidate-{now.timestamp()}@test.invalid")
+        db.add(user)
+        db.flush()
+        run = Run(user_id=user.id, prompt="我使用PostgreSQL", model="local-demo", status="succeeded")
+        job = MemoryDreamRun(user_id=user.id, trigger="manual", local_date="2026-11-09", created_at=now - timedelta(minutes=11))
+        db.add_all([run, job])
+        db.commit()
+        job_id, run_id, uid = job.id, run.id, user.id
+    script = """
+import asyncio, os
+from ailab_platform.memory_dream import service
+async def extract(episodes, active, user):
+ e=episodes[0]
+ return ([{'text':'用户使用PostgreSQL','kind':'fact','entities':['PostgreSQL'], 'scope':'account',
+           'evidence_run_ids':[e.run_id],'evidence_episode_ids':[e.id],'source_quote':'我使用PostgreSQL','confidence':1}],{},'local-demo')
+async def crash(*args): os._exit(91)
+service._extract=extract
+service._judge=crash
+service.settings.memory_dream_min_runs=1
+asyncio.run(service.process_dream(os.environ['MEMORY_FAULT_JOB']))
+"""
+    result = subprocess.run([sys.executable, "-c", script], env={**os.environ, "MEMORY_FAULT_JOB": job_id}, capture_output=True, timeout=40)
+    assert result.returncode == 91, result.stderr.decode()[-1000:]
+    with SessionLocal() as db:
+        assert db.get(MemoryWorkItem, run_id).candidates
+        assert not list(db.scalars(select(MemoryItem).where(MemoryItem.user_id == uid)))
+        db.execute(update(MemoryDreamRun).where(MemoryDreamRun.id == job_id).values(claimed_until=now - timedelta(seconds=1)))
+        db.commit()
+    assert job_id in service.recover_pending(now)
+
+    async def judge(facts, active, user, model):
+        return {i: {"supported": True} for i in range(len(facts))}, {}
+
+    async def unexpected(*args):
+        raise AssertionError("committed candidates must not be extracted twice")
+
+    async def no_consolidation(*args):
+        return None
+
+    monkeypatch.setattr(service, "_extract", unexpected)
+    monkeypatch.setattr(service, "_judge", judge)
+    monkeypatch.setattr(consolidation, "consolidate", no_consolidation)
+    monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
+    asyncio.run(service.process_dream(job_id))
+    asyncio.run(service.process_dream(job_id))
+    with SessionLocal() as db:
+        rows = list(db.scalars(select(MemoryItem).where(MemoryItem.user_id == uid)))
+        assert len(rows) == 1 and rows[0].source_run_ids == [run_id]
+        assert db.get(MemoryDreamRun, job_id).status == "applied"

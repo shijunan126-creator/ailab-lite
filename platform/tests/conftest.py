@@ -137,3 +137,10 @@ def release_test_memory_jobs():
                     row.report = {**row.report, "chain_running": False}
             db.execute(update(Run).where(Run.id.not_in(before_runs), Run.status == "running").values(status="canceled"))
             db.commit()
+
+
+@pytest.fixture(autouse=True)
+def isolate_model_pressure(monkeypatch):
+    from ailab_platform import model_pressure
+
+    monkeypatch.setattr(model_pressure, "_until", 0.0)

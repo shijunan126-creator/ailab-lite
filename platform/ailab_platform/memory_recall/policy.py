@@ -11,7 +11,7 @@ CONTEXT_FACTS = 20
 
 
 def visible(entry: dict, project_id: str | None = None, mode: str = "shared", *, as_of: datetime | None = None) -> bool:
-    if entry.get("suppressed") or entry.get("status", "active") != "active":
+    if entry.get("suppressed") or entry.get("status", "active") not in ({"active", "closed"} if as_of else {"active"}):
         return False
     scope = entry.get("project_id")
     if scope != project_id and (scope is not None or (project_id is not None and mode == "isolated")):

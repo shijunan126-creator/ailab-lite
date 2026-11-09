@@ -1,10 +1,16 @@
 """Bounded lexical retrieval across facts and history; no automatic injection."""
 
 from datetime import UTC, datetime
+from functools import lru_cache
 
 from . import text
 from .policy import model_view
 from .search import _rows, search_history
+
+
+@lru_cache(maxsize=4096)
+def item_doc(identity, updated_at, content, entities, page):
+    return text.build_doc(identity, (content, 1.0), (" ".join(entities), 1.0), (page, 0.5))
 
 
 def search_memory(db, user, run, document, request, project_id, mode):
@@ -35,12 +41,13 @@ def search_memory(db, user, run, document, request, project_id, mode):
     )
     for canonical in matched_entities:
         query.extend(text.tokens(canonical))
-    docs = [text.build_doc(e["id"], (e["content"], 1.0), (" ".join(e.get("entities", [])), 1.0), (e.get("page", ""), 0.5)) for e in entries]
+    docs = [item_doc(e["id"], e.get("updated_at"), e["content"], tuple(e.get("entities", [])), e.get("page", "")) for e in entries]
+    by_id = {e["id"]: e for e in entries}
     now = datetime.now(UTC)
     import math
 
     def score(hit):
-        entry = next(e for e in entries if e["id"] == hit.key)
+        entry = by_id[hit.key]
         age = max(0, (now - stamp(entry.get("reinforced_at") or entry.get("observed_at"), now)).total_seconds() / 86400)
         bonus = bool(set(entry.get("entities", [])) & set(matched_entities))
         return hit.score * (1 + 0.25 * math.exp(-math.log(2) * age / 45)) + bonus
@@ -56,7 +63,7 @@ def search_memory(db, user, run, document, request, project_id, mode):
                 {
                     "source": "memory",
                     "id": e["id"],
-                    "content": model_text(e["content"][:120]),
+                    "content": model_text(e["content"])[:120],
                     "date": e["observed_at"],
                     "run_ids": e.get("evidence_run_ids", []),
                 },
@@ -72,6 +79,7 @@ def search_memory(db, user, run, document, request, project_id, mode):
             project_id=project_id,
             before=request.before,
             after=request.after,
+            order=request.order,
         )
         for rank, result in enumerate(history["results"]):
             results.append((1 / (61 + rank), {**result, "source": "history"}))
@@ -82,8 +90,12 @@ def search_memory(db, user, run, document, request, project_id, mode):
     conversations = (
         dict(db.execute(select(Run.id, Run.conversation_id).where(Run.user_id == user.id, Run.id.in_(ids))).all()) if ids else {}
     )
-    counts, out = {}, []
+    counts, out, fingerprints = {}, [], set()
     for _, result in results:
+        fingerprint = result.get("content") if result["source"] == "memory" else (result.get("user_said"), result.get("assistant_replied"))
+        if fingerprint in fingerprints:
+            continue
+        fingerprints.add(fingerprint)
         convs = {conversations[rid] for rid in result.get("run_ids", []) if conversations.get(rid)}
         if result.get("conversation_id"):
             convs.add(result["conversation_id"])

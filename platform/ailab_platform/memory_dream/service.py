@@ -1304,7 +1304,7 @@ async def _process_dream_chain(run_id: str) -> None:
                         previous.report = {**(previous.report or {}), "chain_running": False, "chain_complete": True}
                         db.commit()
 
-                    if previous.status != "applied" or previous.batch_index >= limit:
+                    if previous.status != "applied" or (previous.trigger != "cron" and previous.batch_index >= limit):
                         publish()
                         return
                     if (
@@ -1328,17 +1328,19 @@ async def _process_dream_chain(run_id: str) -> None:
                         .limit(1)
                     ):
                         return
+                    carry = False
                     if previous.trigger == "cron":
                         ds = dream_settings(owner)
                         local = utcnow().astimezone(ZoneInfo(ds.timezone or settings.memory_dream_default_timezone))
                         start, end = local_window(ds)
-                        if (
-                            not ds.enabled
-                            or not start <= local.hour * 60 + local.minute < end
-                            or local.date().isoformat() != previous.local_date
-                        ):
+                        if not ds.enabled:
                             publish()
                             return
+                        carry = (
+                            not start <= local.hour * 60 + local.minute < end
+                            or local.date().isoformat() != previous.local_date
+                            or previous.batch_index >= limit
+                        )
                         used = len(
                             list(
                                 db.scalars(
@@ -1352,9 +1354,7 @@ async def _process_dream_chain(run_id: str) -> None:
                                 )
                             )
                         )
-                        if used >= limit:
-                            publish()
-                            return
+                        carry = carry or used >= limit
                     row = MemoryDreamRun(
                         id=new_id("dream"),
                         user_id=previous.user_id,
@@ -1363,7 +1363,10 @@ async def _process_dream_chain(run_id: str) -> None:
                         status="pending",
                         trigger=previous.trigger,
                         project_id=previous.project_id,
-                        batch_index=previous.batch_index + 1,
+                        batch_index=1 if carry else previous.batch_index + 1,
+                        priority=previous.priority,
+                        due_at=previous.due_at,
+                        kind=previous.kind,
                         report={
                             "runs_seen_before": (previous.report or {}).get("runs_seen_before", 0)
                             + (previous.report or {}).get("runs_seen", 0),
@@ -1379,7 +1382,7 @@ async def _process_dream_chain(run_id: str) -> None:
                     except IntegrityError:
                         db.rollback()
                         return
-                    return row.id
+                    return None if carry else row.id
 
         run_id = await asyncio.to_thread(next_batch)
         if run_id is None:
