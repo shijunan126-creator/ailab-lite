@@ -739,3 +739,22 @@ def test_test_delivery_is_not_an_artifact_memory_but_formal_delivery_is(monkeypa
         items = list(db.scalars(select(MemoryItem).where(MemoryItem.user_id == uid)))
         assert [e.content for e in items] == ["已交付文件：example1.pdf"]
         assert db.get(MemoryWorkItem, skipped_id).state == "skipped"
+
+
+def test_merge_only_request_persists_merge_kind_and_manual_priority():
+    from fastapi import BackgroundTasks, Response
+
+    from ailab_platform.api.routes_memory import run_dream_now
+    from ailab_platform.db import SessionLocal, init_db
+    from ailab_platform.models import MemoryDreamRun, Project, User, utcnow
+
+    init_db()
+    with SessionLocal() as db:
+        user = User(email=f"merge-kind-{utcnow().timestamp()}@test.invalid")
+        db.add(user)
+        db.flush()
+        db.add(Project(user_id=user.id, name="合成项目", memory_merge_requested_at=utcnow()))
+        db.commit()
+        result = run_dream_now(BackgroundTasks(), Response(), user, db, project_id=None)
+        job = db.get(MemoryDreamRun, result["id"])
+        assert job.kind == "merge" and job.priority == 0

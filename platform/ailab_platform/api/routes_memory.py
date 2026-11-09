@@ -393,6 +393,7 @@ def run_dream_now(
             timezone=zone_name,
             status="pending",
             trigger="manual",
+            kind="merge" if merges and not pending else "extract",
             project_id=project_id,
             input_run_ids=[],
             token_usage={},

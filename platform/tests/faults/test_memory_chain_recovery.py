@@ -254,3 +254,67 @@ def test_crash_after_extraction_commit_resumes_only_dreaming(monkeypatch):
     asyncio.run(service.process_dream(identity))
     asyncio.run(service.process_dream(identity))
     assert calls == [identity]
+
+
+def test_dispatch_drains_ready_backlog_before_sleeping(monkeypatch):
+    now = utcnow()
+    with SessionLocal() as db:
+        users = [User(email=f"drain-{now.timestamp()}-{i}@test.invalid") for i in range(3)]
+        db.add_all(users)
+        db.flush()
+        jobs = [MemoryDreamRun(user_id=u.id, local_date="2026-11-09", due_at=now, trigger="manual") for u in users]
+        db.add_all(jobs)
+        db.commit()
+        ids = [j.id for j in jobs]
+    processed = []
+    monkeypatch.setattr(service.settings, "env", "development")
+    monkeypatch.setattr(service, "claim_due", lambda: [])
+    monkeypatch.setattr(service, "recover_pending", lambda: [next(j for j in ids if j not in processed)] if len(processed) < 3 else [])
+
+    async def process(identity):
+        def finish():
+            with SessionLocal() as db:
+                row = db.get(MemoryDreamRun, identity)
+                row.status = "applied"
+                row.finished_at = utcnow()
+                db.commit()
+
+        await asyncio.to_thread(finish)
+        processed.append(identity)
+
+    async def idle(seconds):
+        assert processed == ids, "ready backlog must drain before the fixed idle delay"
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(service, "process_dream_chain", process)
+    monkeypatch.setattr(service.asyncio, "sleep", idle)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(service.dream_forever())
+
+
+def test_dispatch_sleeps_when_backpressure_makes_no_progress(monkeypatch):
+    with SessionLocal() as db:
+        user = User(email=f"no-progress-{utcnow().timestamp()}@test.invalid")
+        db.add(user)
+        db.flush()
+        job = MemoryDreamRun(user_id=user.id, local_date="2026-11-09", due_at=utcnow())
+        db.add(job)
+        db.commit()
+        identity = job.id
+    attempts = []
+    monkeypatch.setattr(service.settings, "env", "development")
+    monkeypatch.setattr(service, "recover_pending", lambda: [identity])
+    monkeypatch.setattr(service, "claim_due", lambda: [])
+
+    async def blocked(key):
+        attempts.append(key)
+
+    async def idle(seconds):
+        assert attempts == [identity]
+        assert seconds == service.settings.memory_dream_interval_seconds
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(service, "process_dream_chain", blocked)
+    monkeypatch.setattr(service.asyncio, "sleep", idle)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(service.dream_forever())

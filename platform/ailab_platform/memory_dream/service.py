@@ -266,13 +266,12 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 )
                 .limit(1)
             )
-            if (
-                not runs
-                and not maintenance
-                and not db.scalar(
-                    select(Project.id).where(Project.user_id == user.id, Project.memory_merge_requested_at.is_not(None)).limit(1)
-                )
-            ):
+            merges = (
+                db.scalar(select(Project.id).where(Project.user_id == user.id, Project.memory_merge_requested_at.is_not(None)).limit(1))
+                if not runs
+                else None
+            )
+            if not runs and not maintenance and not merges:
                 continue
             local_date = local.date().isoformat()
             active = db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == user.id, active_job(now)).limit(1))
@@ -298,7 +297,7 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 token_usage={},
             )
             backfill = bool(runs) and any((item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "backfill" for r in runs)
-            row.kind = "extract" if runs else "dream"
+            row.kind = "extract" if runs else "merge" if merges else "dream"
             row.priority = 20 if backfill else 10
             row.due_at = local.replace(hour=start // 60, minute=start % 60, second=0, microsecond=0).astimezone(UTC) + timedelta(
                 minutes=offset(user.id, end - start)
@@ -1543,11 +1542,6 @@ async def dream_forever() -> None:
     if not settings.memory_dream_enabled or settings.env == "test":
         return
     log.info("memory dream scheduler started")
-    try:
-        for run_id in await asyncio.to_thread(recover_pending):
-            await process_dream_chain(run_id)
-    except Exception:
-        log.exception("memory dream recovery failed")
     while True:
         try:
             recovered = await asyncio.to_thread(recover_pending)
@@ -1571,6 +1565,21 @@ async def dream_forever() -> None:
                     )
 
             jobs = await asyncio.to_thread(ordered)
+
+            def progress_snapshot():
+                with SessionLocal() as db:
+                    rows = db.execute(
+                        select(
+                            MemoryDreamRun.id,
+                            MemoryDreamRun.status,
+                            MemoryDreamRun.finished_at,
+                            MemoryDreamRun.report["chain_complete"].as_boolean(),
+                            MemoryDreamRun.report["dreaming"]["expired"].as_integer().is_not(None),
+                        ).where(MemoryDreamRun.id.in_(jobs))
+                    )
+                    return {row[0]: tuple(row[1:]) for row in rows}
+
+            before = await asyncio.to_thread(progress_snapshot)
             semaphore = asyncio.Semaphore(settings.memory_dream_concurrency)
 
             async def process(job):
@@ -1578,6 +1587,24 @@ async def dream_forever() -> None:
                     await process_dream_chain(job)
 
             await asyncio.gather(*(process(job) for job in jobs))
+            after = await asyncio.to_thread(progress_snapshot)
+            if after != before:
+                # Drain ready backlog after progress, but retain the idle/backpressure
+                # delay when every attempted admission was refused.
+                def ready():
+                    with SessionLocal() as db:
+                        return db.scalar(
+                            select(MemoryDreamRun.id)
+                            .where(
+                                MemoryDreamRun.status == "pending",
+                                MemoryDreamRun.due_at <= utcnow(),
+                                or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < utcnow()),
+                            )
+                            .limit(1)
+                        )
+
+                if await asyncio.to_thread(ready):
+                    continue
         except Exception:
             log.exception("memory dream dispatch failed")
         await asyncio.sleep(settings.memory_dream_interval_seconds)
