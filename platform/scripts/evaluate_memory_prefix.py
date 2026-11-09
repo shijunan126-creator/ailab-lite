@@ -1,35 +1,87 @@
 #!/usr/bin/env python3
-"""Four real-model AgentLoop turns with isolated in-memory API/Broker doubles.
+"""Serial real-model prefix acceptance: unchanged, item changes, and a simulated day boundary.
 
-This checks prompt caching, not live API/Broker/sandbox integration. Credentials and catalog
-must be supplied externally. Only synthetic prompts and provider usage are emitted.
+API/Broker are in-memory doubles. Uses actual AgentLoop and serialized provider requests;
+this measures model caching, not live service/sandbox integration. Configure credentials
+externally. Every warm call and every scenario must reach 95%; no retries or padding.
 """
 
 import argparse
 import asyncio
 import copy
 import json
+from datetime import UTC, datetime, timedelta
 
 from ailab_platform.agent.loop import AgentLoop
 from ailab_platform.catalog import get_catalog
 from ailab_platform.llm import llm_for
+from ailab_platform.memory_recall import policy
 from tests.prefix_harness import assert_extension
 from tests.test_agent_loop import FakeBroker, FakePlatform
 
 QUESTIONS = ["请用一句话解释什么是哈希表。", "用一句话说明它的查找速度。", "再用一句话说一个使用场景。", "用一句话总结。"]
 
 
+def scenarios():
+    initial = {
+        "revision": 1,
+        "enabled": True,
+        "entries": [
+            {
+                "id": "mem_core",
+                "kind": "preference",
+                "origin": "explicit",
+                "tier": "core",
+                "page": "偏好",
+                "content": "回答先给结论",
+                "observed_at": "2026-01-01T00:00:00+00:00",
+            },
+            {
+                "id": "mem_project",
+                "kind": "project",
+                "origin": "explicit",
+                "tier": "archive",
+                "page": "项目",
+                "content": "正在推进Atlas项目",
+                "entities": ["Atlas"],
+                "observed_at": "2026-01-01T00:00:00+00:00",
+            },
+        ],
+        "entity_catalog": [{"canonical": "Atlas", "conversations": 2, "last_seen_at": "2026-01-01T00:00:00+00:00"}],
+    }
+    changed = copy.deepcopy(initial)
+    changed["revision"] = 2
+    changed["entries"] = [
+        changed["entries"][1],
+        {
+            "id": "mem_new",
+            "kind": "preference",
+            "origin": "manual",
+            "tier": "core",
+            "page": "偏好",
+            "content": "回答说明适用条件",
+            "entities": ["Nova"],
+            "observed_at": "2026-01-02T00:00:00+00:00",
+        },
+    ]
+    changed["entity_catalog"].append({"canonical": "Nova", "conversations": 2, "last_seen_at": "2026-01-02T00:00:00+00:00"})
+    return {"unchanged": [initial] * 4, "items_changed": [initial, initial, changed, changed], "day_boundary": [initial] * 4}
+
+
 class Platform(FakePlatform):
-    def __init__(self, mode, model):
+    def __init__(self, mode, model, case, snapshots):
         super().__init__()
         self.checkpoints = {}
-        self.mode, self.model, self.prior = mode, model, None
+        self.mode, self.model, self.case = mode, model, case
+        self.snapshots = copy.deepcopy(snapshots)
 
     async def get_memory_context(self, run_id):
-        return {"entries": [], "enabled": True, "revision": 0}
+        return copy.deepcopy(self.snapshots[int(run_id[-1])])
 
     async def memory(self, run_id, request):
-        return {"results": [], "status": "NO_RELEVANT_MEMORY", "revision": 0}
+        if request.get("action") == "list":
+            return await self.get_memory_context(run_id)
+        return {"results": [], "status": "NO_RELEVANT_MEMORY", "revision": self.snapshots[int(run_id[-1])]["revision"]}
 
     async def recall(self, *args, **kwargs):
         return {"results": []}
@@ -44,22 +96,23 @@ class Platform(FakePlatform):
         return {"step": step + 1}
 
     async def get_run(self, run_id):
+        index = int(run_id[-1])
         run = {
             **await super().get_run(run_id),
             "model": self.model,
-            "conversation_id": "conv_memory_cache_" + self.mode,
-            "prompt": QUESTIONS[int(run_id[-1])],
-            "options": {"mode": self.mode},
+            "conversation_id": f"conv_memory_cache_{self.mode}_{self.case}",
+            "prompt": QUESTIONS[index],
+            "options": {"mode": self.mode, "document_tools_version": 2},
             "memory": await self.get_memory_context(run_id),
         }
-        if self.prior:
-            state = self.checkpoints[self.prior]["state"]
+        if index:
+            state = self.checkpoints[f"turn{index - 1}"]["state"]
             run["previous_model_context"] = {
                 "messages": state["messages"],
                 "tools": state["tool_catalog_v1"],
-                "prompt_anchors": state["prompt_anchors"],
-                "memory_observed": state.get("memory_observed", {}),
-                "context_abi_version": state.get("context_abi_version"),
+                "prompt_anchors": state.get("prompt_anchors", []),
+                "memory_observed": state["memory_observed"],
+                "context_abi_version": state["context_abi_version"],
             }
         return run
 
@@ -67,16 +120,30 @@ class Platform(FakePlatform):
 class Recorder:
     def __init__(self, model):
         self.inner = llm_for(model)
-        self.requests, self.usages = [], []
+        self.requests, self.usages, self.sessions = [], [], []
+        self.original_request = self.inner._request
+        spec = get_catalog().get(model)
 
-    async def chat_stream(self, messages, tools, model, *args, **kwargs):
-        self.requests.append({"messages": copy.deepcopy(messages), "tools": copy.deepcopy(tools)})
-        result = await self.inner.chat_stream(messages, tools, model, *args, **kwargs)
+        def record(*args, **kwargs):
+            payload, headers = self.original_request(*args, **kwargs)
+            self.requests.append(copy.deepcopy(payload))
+            self.sessions.append(headers.get(spec.session_header) if spec.session_header else None)
+            return payload, headers
+
+        self.inner._request = record
+
+    def close(self):
+        self.inner._request = self.original_request
+
+    async def chat_stream(self, *args, **kwargs):
+        result = await self.inner.chat_stream(*args, **kwargs)
         self.usages.append(result.usage)
         return result
 
     async def chat(self, *args, **kwargs):
-        return await self.inner.chat(*args, **kwargs)
+        result = await self.inner.chat(*args, **kwargs)
+        self.usages.append(result.usage)
+        return result
 
 
 async def evaluate(model):
@@ -84,28 +151,56 @@ async def evaluate(model):
     if not spec or not spec.available or spec.provider == "mock":
         raise ValueError("real available model required")
     out = {}
-    for mode in ["chat", "work"]:
-        platform, recorder = Platform(mode, model), Recorder(model)
-        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=recorder)
-        boundaries = []
-        for index in range(4):
-            run_id = "cache_" + mode + str(index)
-            await loop.process(run_id, attempt_id="a" + str(index))
-            platform.prior = run_id
-            boundaries.append(len(recorder.usages))
-        for previous, current in zip(recorder.requests, recorder.requests[1:]):
-            assert_extension(previous, current)
-        usage = recorder.usages[boundaries[0] :]
-        prompt = sum(u.get("prompt_tokens", 0) for u in usage)
-        cached = sum(u.get("cached_tokens", 0) for u in usage)
-        out[mode] = {
-            "calls": recorder.usages,
-            "cached_tokens": cached,
-            "prompt_tokens": prompt,
-            "ratio": cached / prompt if prompt else 0,
-            "prefix_extensions": True,
-            "completed_turns": sum(s == "succeeded" for s, _ in platform.statuses),
-        }
+    original_clock = policy.datetime
+
+    class Clock(datetime):
+        instant = datetime(2026, 11, 9, 23, 59, tzinfo=UTC)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.instant if tz is None else cls.instant.astimezone(tz)
+
+    try:
+        for mode in ["chat", "work"]:
+            for case, snapshots in scenarios().items():
+                platform, recorder = Platform(mode, model, case, snapshots), Recorder(model)
+                loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=recorder)
+                boundaries = []
+                policy.datetime = Clock if case == "day_boundary" else original_clock
+                Clock.instant = datetime(2026, 11, 9, 23, 59, tzinfo=UTC)
+                try:
+                    for index in range(4):
+                        if case == "day_boundary" and index == 2:
+                            Clock.instant += timedelta(days=1)
+                        await loop.process(f"turn{index}", attempt_id=f"a{index}")
+                        boundaries.append(len(recorder.usages))
+                    for previous, current in zip(recorder.requests, recorder.requests[1:]):
+                        assert_extension(previous, current)
+                        for key in ("tool_choice", "thinking", "model", "temperature"):
+                            assert previous.get(key) == current.get(key), key
+                    assert len(set(recorder.sessions)) == 1
+                    assert all(r["messages"][:2] == recorder.requests[0]["messages"][:2] for r in recorder.requests)
+                    usage = recorder.usages[boundaries[0] :]
+                    prompt = sum(u.get("prompt_tokens", 0) for u in usage)
+                    cached = sum(u.get("cached_tokens", 0) for u in usage)
+                    warm_ratios = [u.get("cached_tokens", 0) / u["prompt_tokens"] for u in usage if u.get("prompt_tokens")]
+                    completed = sum(s == "succeeded" for s, _ in platform.statuses)
+                    out[f"{mode}/{case}"] = {
+                        "calls": recorder.usages,
+                        "turn_call_boundaries": boundaries,
+                        "cached_tokens": cached,
+                        "prompt_tokens": prompt,
+                        "ratio": cached / prompt if prompt else 0,
+                        "warm_call_ratios": warm_ratios,
+                        "prefix_extensions": True,
+                        "stable_session": True,
+                        "completed_turns": completed,
+                        "passed": completed == 4 and bool(warm_ratios) and min(warm_ratios) >= 0.95,
+                    }
+                finally:
+                    recorder.close()
+    finally:
+        policy.datetime = original_clock
     return out
 
 
@@ -113,4 +208,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
     args = parser.parse_args()
-    print(json.dumps(asyncio.run(evaluate(args.model or get_catalog().default_id())), ensure_ascii=False, indent=2))
+    result = asyncio.run(evaluate(args.model or get_catalog().default_id()))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    raise SystemExit(0 if all(r["passed"] for r in result.values()) else 1)

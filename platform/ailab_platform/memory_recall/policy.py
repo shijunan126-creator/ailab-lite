@@ -10,7 +10,9 @@ CONTEXT_CHARS = 4000
 CONTEXT_FACTS = 20
 
 
-def visible(entry: dict, project_id: str | None = None, mode: str = "shared", *, as_of: datetime | None = None) -> bool:
+def visible(
+    entry: dict, project_id: str | None = None, mode: str = "shared", *, as_of: datetime | None = None, standing: bool = False
+) -> bool:
     if entry.get("suppressed") or entry.get("status", "active") not in ({"active", "closed"} if as_of else {"active"}):
         return False
     scope = entry.get("project_id")
@@ -20,7 +22,11 @@ def visible(entry: dict, project_id: str | None = None, mode: str = "shared", *,
         return (
             not entry.get("superseded_by")
             and not entry.get("invalid_at")
-            and (not entry.get("expires_at") or datetime.fromisoformat(entry["expires_at"]).replace(tzinfo=UTC) > datetime.now(UTC))
+            and (
+                standing
+                or not entry.get("expires_at")
+                or datetime.fromisoformat(entry["expires_at"]).replace(tzinfo=UTC) > datetime.now(UTC)
+            )
         )
     instant = as_of.replace(tzinfo=UTC) if as_of.tzinfo is None else as_of.astimezone(UTC)
     for key, before in (("valid_from", True), ("invalid_at", False), ("expires_at", False)):
@@ -33,12 +39,18 @@ def visible(entry: dict, project_id: str | None = None, mode: str = "shared", *,
 
 
 def model_view(
-    document: dict, project_id: str | None = None, *, mode: str = "shared", query: str | None = None, as_of: datetime | None = None
+    document: dict,
+    project_id: str | None = None,
+    *,
+    mode: str = "shared",
+    query: str | None = None,
+    as_of: datetime | None = None,
+    standing: bool = False,
 ) -> dict:
     entries = (
         []
         if not document.get("enabled", True) or not document.get("read_enabled", True)
-        else [e for e in document.get("entries", []) if visible(e, project_id, mode=mode, as_of=as_of)]
+        else [e for e in document.get("entries", []) if visible(e, project_id, mode=mode, as_of=as_of, standing=standing)]
     )
     if query is not None:
         docs = [text.build_doc(e["id"], (e["content"], 1.0)) for e in entries]
@@ -60,7 +72,9 @@ def model_view(
         "entity_catalog": [
             e
             for e in document.get("entity_catalog", [])
-            if e.get("project_id") == project_id or (e.get("project_id") is None and mode != "isolated")
+            if document.get("enabled", True)
+            and document.get("read_enabled", True)
+            and (e.get("project_id") == project_id or (e.get("project_id") is None and mode != "isolated"))
         ],
     }
 
@@ -153,22 +167,18 @@ def priority(kind, origin):
 
 
 def core_catalog(memory):
-    import math
-    import re
-    from collections import defaultdict
-    from html import unescape
-
-    from .guard import reject_reason
+    from .guard import model_text
     from .store import stamp
 
     entries = [
         e
         for e in memory.get("entries", [])
-        if not e.get("suppressed")
+        if memory.get("enabled", True)
+        and memory.get("read_enabled", True)
+        and not e.get("suppressed")
         and not e.get("invalid_at")
         and not e.get("superseded_by")
         and e.get("status", "active") == "active"
-        and (not e.get("expires_at") or stamp(e["expires_at"]) > datetime.now(UTC))
     ]
     core = sorted(
         (e for e in entries if e.get("tier", "core") == "core"),
@@ -180,11 +190,33 @@ def core_catalog(memory):
     )
     chosen, used = [], 0
     for entry in core:
-        cost = len(entry["content"]) + 16
+        cost = len(model_text(entry["content"])) + 16
         if used + cost <= 1500:
             chosen.append(entry)
             used += cost
     chosen.sort(key=lambda e: (e.get("page", ""), priority(e.get("kind"), e.get("origin")), e["id"]))
+    return chosen, "、".join(catalog_names({**memory, "entries": entries}))
+
+
+def catalog_names(memory):
+    import math
+    import re
+    from collections import defaultdict
+    from html import unescape
+
+    from .guard import model_text, reject_reason
+    from .store import stamp
+
+    entries = [
+        e
+        for e in memory.get("entries", [])
+        if memory.get("enabled", True)
+        and memory.get("read_enabled", True)
+        and not e.get("suppressed")
+        and not e.get("invalid_at")
+        and not e.get("superseded_by")
+        and e.get("status", "active") == "active"
+    ]
     pages = defaultdict(int)
     attributed = set()
     active_names = set()
@@ -193,15 +225,15 @@ def core_catalog(memory):
         active_names.update(e.get("entities", []))
         if e.get("source_quote") or e.get("origin") in {"explicit", "manual", "chat"}:
             attributed.update(e.get("entities", []))
-    # A fixed reference day makes repeated rendering within the day byte-stable.
-    today = datetime.now(UTC).date()
     entities = memory.get("entity_catalog", [])
     scores = {}
     for e in entities:
         name = e["canonical"]
         if name in active_names and (name in attributed or e["conversations"] >= 2):
-            age = max(0, (today - stamp(e["last_seen_at"]).date()).days)
-            scores[name] = max(scores.get(name, 0), max(1, e["conversations"]) * math.exp(-math.log(2) * age / 30))
+            # log2(n * 2**(-(now-t)/30d)) differs by the same now-term
+            # for every entity. Drop that term: no clock and no exp overflow.
+            score = math.log2(max(1, e["conversations"])) + stamp(e["last_seen_at"]).timestamp() / (30 * 86400)
+            scores[name] = max(scores.get(name, float("-inf")), score)
     if not entities:
         scores = {name: 1 for name in attributed}
     names = [*sorted(pages, key=lambda p: (-pages[p], p)), *sorted(scores, key=lambda n: (-scores[n], n))]
@@ -211,9 +243,16 @@ def core_catalog(memory):
         name = re.sub(r"[\x00-\x1f`*_#\[\]]", "", re.sub(r"<[^>]*>", "", unescape(str(name)))).strip()
         if not name or len(name) > 20 or reject_reason(name) or name in clean:
             continue
-        cost = len(name) + bool(clean)
+        cost = len(model_text(name)) + bool(clean)
         if used + cost > 300:
             break
         clean.append(name)
         used += cost
-    return chosen, "、".join(clean)
+    return clean
+
+
+def page_content(entries, page):
+    selected = sorted(
+        (e for e in entries if e.get("page") == page), key=lambda e: (str(e.get("observed_at") or e.get("valid_from") or ""), e["id"])
+    )
+    return "\n".join(e["content"] for e in selected)[:3000]

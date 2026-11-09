@@ -85,7 +85,9 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
                 "conversations": e.conversations,
                 "last_seen_at": e.last_seen_at.isoformat(),
             }
-            for e in session.scalars(select(MemoryEntity).where(MemoryEntity.user_id == user.id))
+            for e in session.scalars(
+                select(MemoryEntity).where(MemoryEntity.user_id == user.id).order_by(MemoryEntity.canonical, MemoryEntity.id)
+            )
         ]
         if session
         else []
@@ -99,7 +101,7 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
         if db:
             result["entries"] = visible_memory_entries(db, user.id, result["entries"])
     if for_model:
-        result = model_view(result)
+        result = model_view(result, standing=True)
     return result
 
 
@@ -114,7 +116,7 @@ def memory_for_run(owner: User | None, run: Run) -> dict:
     document = memory_for(owner)
     permissions = run_permissions(db, run) if db else {"read": True, "write": True}
     document.update(read_enabled=permissions["read"], write_enabled=permissions["write"])
-    return model_view(document, project_id, mode=project_mode(db, project_id))
+    return model_view(document, project_id, mode=project_mode(db, project_id), standing=True)
 
 
 def _refuse_unsafe(content: str, source: str) -> None:
@@ -550,11 +552,13 @@ def run_memory(
                 from ..memory_recall.retrieval import search_memory
 
                 return search_memory(db, user, run, current, body, project_id, project_mode(db, project_id))
+            from ..memory_recall.policy import page_content
+
             entries = model_view(current, project_id, mode=project_mode(db, project_id))["entries"]
             return {
                 "revision": current["revision"],
                 "page": guard.model_text(body.page or ""),
-                "content": guard.model_text("\n".join(e["content"] for e in entries if e.get("page") == body.page)[:3000]),
+                "content": guard.model_text(page_content(entries, body.page)),
             }
         if body.action == "list":
             return model_view(

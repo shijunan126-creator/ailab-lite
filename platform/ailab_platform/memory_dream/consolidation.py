@@ -135,7 +135,7 @@ async def consolidate(job_id, token):
                         "page": group["group"],
                         "content": content,
                         "evidence_run_ids": sorted(run_ids),
-                        "source_quote": next(iter(quotes), ""),
+                        "source_quote": min(quotes, default=""),
                         "project_id": group["project_id"],
                         "status": "active",
                     }
