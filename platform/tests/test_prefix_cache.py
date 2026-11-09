@@ -2728,29 +2728,49 @@ def test_untrusted_memory_tag_forging_is_encoded_in_user_and_tool_requests():
 
 
 @pytest.mark.parametrize("user_deleted", [True, False])
-def test_forgotten_snapshot_boundary_vs_dream_delete_block(user_deleted):
+def test_user_and_dream_deletion_preserve_snapshot_and_push_handle_only(user_deleted):
     initial = memory_prefix_fixture()
     latest = {**copy.deepcopy(initial), "entries": [], "revision": 2}
 
+    reads = []
+
     class Platform(MemoryPrefixPlatform):
         async def get_memory_invalidations(self, run_id, handles):
+            reads.append(run_id)
             document = await self.get_memory_context(run_id)
-            return {**document, "forgotten_ids": handles if user_deleted and run_id == "turn1" else []}
+            # Hard user deletion has no stored row; Dreaming keeps a closed version.
+            return {
+                **document,
+                "invalidations": {
+                    h: {
+                        "current": next((e for e in document["entries"] if e["id"] == h), None),
+                        "change_type": None if user_deleted else "deleted",
+                    }
+                    for h in handles
+                },
+            }
 
     platform = Platform([initial, latest])
     with scripted_server([{"content": "1"}, {"content": "2"}]) as (url, requests):
         loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
         asyncio.run(loop.process("turn0", attempt_id="a0"))
         asyncio.run(loop.process("turn1", attempt_id="a1"))
-    events = [p for name, p in platform.events if name == "agent.context_boundary" and p.get("reason") == "memory_forgotten"]
-    if user_deleted:
-        assert len(events) == 1
-        assert initial["entries"][0]["content"] not in requests[-1]["messages"][1]["content"]
-        assert not requests[-1]["messages"][-1]["content"].startswith("<memory_update>")
-    else:
-        assert not events
-        assert_extension(*requests)
-        assert requests[-1]["messages"][-1]["content"].startswith("<memory_update>")
+    assert reads == ["turn0", "turn1"]  # no additional deletion-triggered boundary fetch
+    assert_extension(*requests)
+    prefix = requests[1]["messages"][: len(requests[0]["messages"])]
+    assert json.dumps(prefix, ensure_ascii=False).encode() == json.dumps(requests[0]["messages"], ensure_ascii=False).encode()
+    assert not [p for name, p in platform.events if name == "agent.context_boundary"]
+    block = requests[-1]["messages"][-1]["content"]
+    assert block.startswith("<memory_update>\n已删除，不得再使用：[mem_core]")
+    assert all(e["content"] not in block for e in initial["entries"])
+    assert initial["entries"][0]["content"] in requests[-1]["messages"][1]["content"]
+
+
+def test_latest_list_overrides_snapshot_and_earlier_updates_in_static_rules():
+    from ailab_platform.agent.prompts import MEMORY_RULES, memory_prompt
+
+    assert all(text in MEMORY_RULES for text in ("我之前跟你说过", "你记错了", "记忆行可能过时", "先 memory.list", "覆盖快照和此前更新块"))
+    assert "最新 list" not in memory_prompt(memory_prefix_fixture())
 
 
 def test_idle_refresh_still_enters_parent_compaction(monkeypatch):

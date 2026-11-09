@@ -214,7 +214,7 @@ def test_merge_keeps_newest_fifty_sources():
         assert set(sources) == set(runs[:50])
 
 
-def test_forgotten_handles_survive_bounded_readd_tombstones(monkeypatch):
+def test_deleted_handle_invalidations_survive_bounded_readd_tombstones(monkeypatch):
     monkeypatch.setattr(settings, "memory_doc_max_chars", 20000)
     with TestClient(app) as c:
         me = _user(c)
@@ -228,4 +228,4 @@ def test_forgotten_handles_survive_bounded_readd_tombstones(monkeypatch):
             assert identities[0] not in {t.get("id") for t in tombstones}
         response = c.get(f"/internal/runs/{rid}/memory-context", headers=attempt_headers(c, rid), params={"known_id": identities[0]})
         assert response.status_code == 200, response.text
-        assert response.json()["forgotten_ids"] == [identities[0]]
+        assert response.json()["invalidations"][identities[0]]["current"] is None

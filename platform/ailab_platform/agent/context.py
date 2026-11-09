@@ -822,20 +822,13 @@ class ContextManager:
 
                 finished = stamp(previous.get("finished_at"))
                 idle = finished and (datetime.now(UTC) - finished).total_seconds() > settings.memory_snapshot_idle_hours * 3600
-                import re
-
-                snapshot_ids = re.findall(r"\[(mem_[^\]]+)\]", str(prior["messages"][1].get("content", "")))
-                forgotten = False
-                if snapshot_ids and hasattr(self.platform, "get_memory_invalidations"):
-                    invalidations = await self.platform.get_memory_invalidations(run_id, snapshot_ids)
-                    forgotten = bool(invalidations.get("forgotten_ids"))
-                refresh = forgotten or (idle and state["memory_snapshot_signature"] != self._memory_signature(boundary_memory))
+                refresh = idle and state["memory_snapshot_signature"] != self._memory_signature(boundary_memory)
                 if refresh:
                     prior["messages"] = list(prior["messages"])
                     prior["messages"][1] = self._memory_block(prior["messages"][1], boundary_memory)
                     state["memory_observed"] = boundary_memory
                     state["memory_snapshot_signature"] = self._memory_signature(boundary_memory)
-                    run["context_boundary"] = "memory_forgotten" if forgotten else "memory_refreshed"
+                    run["context_boundary"] = "memory_refreshed"
                 state["messages"] = await self._compact_parent_context(
                     run_id,
                     run,

@@ -44,6 +44,8 @@ isolated→shared 项目融合为**程序事务**，没有模型调用：活动�
 
 无变化不写、不增 revision；快照不渲染 revision，signature 仅由该 scope 渲染文档和 policies 决定。Portal 保留全局 CAS，Agent ABI5 的 replace/remove 只认当前活动 handle。保护行本身已超过 cap 时，记录 nothing_condensable signature，不为纯维护反复调用模型；手动返回 nothing，有新对话仍正常处理。
 
-用户明确删除（页面、forget edit、explicit tool remove、clear）优先于缓存：下一 run 若快照包含被删 handle，重建 system2，记录 memory_forgotten，其他变化一并折入且不发 block。Dreaming duplicate/outdated 删除仍推 block；condense/evicted 不推。空闲刷新后仍执行 parent compaction，发生压缩时只记录 compaction 边界。运行中的外部变化到下一 run 才送达，不改已发请求。
+会话中记忆变化始终保持前缀，包括用户明确删除（页面、forget edit、explicit tool remove、clear）。下一用户消息开头的 `<memory_update>` 只列 `已删除，不得再使用：[h]`，不重发内容、不重建 system2。旧文本保留到压缩、条件空闲刷新、模型变化或撤权等自然边界；新会话只读当前文档，永不看到已删除行。重建整段前缀的缓存成本大于一条已标记失效的旧快照文本，因此本规则取代此前审查项7的删除重建决定。
+
+用户质疑或提及记忆、行可能过时时先 memory.list；最新 list 结果是当前事实，覆盖快照与此前更新块。空闲刷新后仍执行 parent compaction，发生压缩时只记录 compaction 边界。运行中的外部变化到下一 run 才送达，不改已发请求。
 
 0066新增 memory_item_sources 反向索引投影，来源删除通过 run_id 索引分批清理 closed 版本；只剩被删来源的派生行删除，其余清 quote/已删来源。该投影从 source_run_ids 派生，没有第二份内容。no_signal 不取消后续 episode context；test/repro 才重读。项目来源超过50保留最新50，不使融合失败。

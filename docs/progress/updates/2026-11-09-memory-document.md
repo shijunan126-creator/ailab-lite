@@ -88,3 +88,11 @@ Work 首次有一次 cached=0，尽管请求是严格追加且 session/settings 
 本轮补充结果：prefix/summary/episode/review/OCR联合227 passed；升级运行时构建依赖后source-context/user/review安全组49 passed（此前3个文档fixture失败因本地缺少Office reader dist，未修改产品跳过）；PG审查/retention/迁移组23 passed /92 deselected，SQLite+PG查询计划8 passed（含closed source反向索引）。ABI5真模型第二次调用起Chat36608/37343=98.03%、Work34432/34820=98.89%，逐请求追加与会话设置检查通过；仍为服务doubles，不据此消除历史供应商冷失效边界。新增MemoryItemSource投影带来每条来源一行磁盘/索引开销，来源最多50，内容不复制，写入成本仍随活动行/有界来源数增长。
 
 删除边界追加回归：清空201行超出200条re-add tombstone保留窗口后，最早快照handle仍触发forgotten（按权威行存在性区分用户硬删除与Dreaming closed版本，不依赖墓碑窗口）；来源文件失效实际清除closed私密行。该组46 passed，窗口专项1 passed；来源投影刷新合并为一次批量delete，避免每活动行一条删除SQL。没有改0064。
+
+## 用户决策更正：会话记忆变化始终保持前缀
+
+基线 a79c712a，已先ff拉取Portal移动布局和新到旧排序。本次撤销此前审查项7：删除额外重建路径与其内部API字段，用户删除同Dreaming删除以handle-only block置于下一用户消息开头；旧system2原样保留到自然边界，新会话只读当前文档。静态规则补充质疑/提及记忆或可能过时时先list，最新list覆盖快照和历史更新。ADR0030/0035及prefix设计同步更正；此前删除重建的测试/数字仅为历史证据。
+
+本轮本地只跑改动的prefix/review模块及Ruff；完整套件由最终head CI执行，不合并、不部署。
+
+本次录制专项3 passed，确认用户删除/Dreaming删除都以handle-only block追加，旧前缀UTF-8序列化字节相等且没有额外边界查询。首次整组160 passed/2 failed来自新增fixture在首轮也误返回“已删除”，修正为首轮返回当前行后专项通过，最终prefix+review整组162 passed（194.32秒）。真模型相同多轮/删除/2h恢复场景Chat36864/37665=97.87%；Work首次25728/34505=74.56%（一次供应商全冷，严格追加检查仍过），一次复测34560/34880=99.08%。不隐藏首次未达标，不将供应商缓存可用性写成已修复。

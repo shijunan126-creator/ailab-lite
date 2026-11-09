@@ -671,14 +671,6 @@ def current_memory_context(run_id: str, db: Session = Depends(get_db), known_id:
 
     run = _run_or_404(db, run_id)
     document = memory_for_run(db.get(User, run.user_id), run)
-    from ..models import MemoryItem
-
-    existing = (
-        set(db.scalars(select(MemoryItem.id).where(MemoryItem.user_id == run.user_id, MemoryItem.id.in_(known_id)))) if known_id else set()
-    )
-    # User deletion removes the authoritative row; Dreaming deletion keeps its closed
-    # version and reason. Do not depend on the bounded re-add tombstone history here.
-    document["forgotten_ids"] = [identity for identity in known_id if identity not in existing]
     if known_id:
         from ..memory_recall.invalidations import for_handles
 
