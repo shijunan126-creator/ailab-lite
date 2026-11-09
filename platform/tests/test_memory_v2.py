@@ -595,3 +595,147 @@ def test_fact_correction_and_preference_change_close_old_version_with_as_of():
                 assert [e["content"] for e in model_view(document, as_of=before + timedelta(days=1))["entries"]] == [old]
                 closed = next(e for e in document["entries"] if e["content"] == old)
                 assert closed["invalid_at"] and closed["superseded_by"]
+
+
+def test_committed_dreaming_call_is_metered_under_same_live_lease(monkeypatch):
+    import asyncio
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from ailab_platform.catalog import get_catalog
+    from ailab_platform.db import SessionLocal, init_db
+    from ailab_platform.llm import LLMResponse
+    from ailab_platform.memory_dream import service
+    from ailab_platform.models import MemoryDreamRun, ModelUsage, User, utcnow
+
+    init_db()
+
+    class Model:
+        async def chat(self, *args, **kwargs):
+            return LLMResponse(content='{"promotions":[]}', usage={"prompt_tokens": 123, "completion_tokens": 7})
+
+    monkeypatch.setattr(service, "llm_for", lambda model: Model())
+    with SessionLocal() as db:
+        user = User(email=f"consolidation-meter-{utcnow().timestamp()}@test.invalid")
+        db.add(user)
+        db.flush()
+        job = MemoryDreamRun(
+            user_id=user.id,
+            local_date="2026-11-09",
+            status="applied",
+            claim_token="claim-meter",
+            claimed_until=utcnow() + timedelta(minutes=10),
+            report={"stage_committed": True},
+        )
+        db.add(job)
+        db.commit()
+        identity, owner = job.id, user
+
+    async def exercise():
+        context = service.dream_call.set((identity, "claim-meter"))
+        phase = service.consolidation_call.set(True)
+        try:
+            await service._chat([{"role": "user", "content": "synthetic"}], get_catalog().default_id(), owner)
+        finally:
+            service.dream_call.reset(context)
+            service.consolidation_call.reset(phase)
+
+    asyncio.run(exercise())
+    with SessionLocal() as db:
+        assert db.get(MemoryDreamRun, identity).status == "applied"
+        usage = db.scalar(select(ModelUsage).where(ModelUsage.job_id == identity))
+        assert usage.status == "settled" and usage.prompt_tokens == 123 and usage.completion_tokens == 7
+
+
+def test_tokenized_caches_are_byte_bounded_and_clearable():
+    from ailab_platform.memory_recall.retrieval import item_doc
+    from ailab_platform.memory_recall.search import _doc
+
+    for i in range(2000):
+        body = "".join(chr(0x4E00 + (i * 100 + j) % 20000) for j in range(400))
+        item_doc(str(i), "synthetic", body, ("合成实体",), "合成页面")
+        _doc(str(i), body, body, "合成标题")
+    assert item_doc.cache_bytes() <= 16 * 1024 * 1024
+    assert _doc.cache_bytes() <= 16 * 1024 * 1024
+    item_doc.cache_clear()
+    _doc.cache_clear()
+    assert item_doc.cache_bytes() == _doc.cache_bytes() == 0
+
+
+def test_extractor_excludes_test_episode_even_when_model_also_returns_a_fact(monkeypatch):
+    import asyncio
+    import json
+
+    from ailab_platform.memory_dream import service
+    from ailab_platform.models import MemoryEpisode, User, utcnow
+
+    async def chat(*args):
+        return json.dumps(
+            {
+                "skip_run_ids": ["run_test"],
+                "facts": [{"text": "用户关注测试上传", "kind": "interest", "source_quote": "测试一下上传功能", "confidence": 1}],
+            }
+        ), {}
+
+    monkeypatch.setattr(service, "_chat", chat)
+    episode = MemoryEpisode(
+        id="epi_test",
+        run_id="run_test",
+        user_id="usr_test",
+        observed_at=utcnow(),
+        digest=json.dumps({"user_said": "测试一下上传功能", "assistant_replied": ""}, ensure_ascii=False),
+    )
+    token = service.dream_excluded_runs.set([])
+    try:
+        result, _, _ = asyncio.run(service._extract([episode], [], User(id="usr_test")))
+        assert result == [] and service.dream_excluded_runs.get() == ["run_test"]
+    finally:
+        service.dream_excluded_runs.reset(token)
+
+
+def test_test_delivery_is_not_an_artifact_memory_but_formal_delivery_is(monkeypatch):
+    import asyncio
+
+    from sqlalchemy import select
+
+    from ailab_platform.db import SessionLocal, init_db
+    from ailab_platform.memory_dream import consolidation, service
+    from ailab_platform.models import Artifact, FileObject, MemoryDreamRun, MemoryItem, MemoryWorkItem, Run, User, utcnow
+
+    init_db()
+
+    async def extract(episodes, active, user):
+        service.dream_excluded_runs.get().extend(e.run_id for e in episodes if "测试" in service._user_part(e.digest))
+        return [], {}, "local-demo"
+
+    async def skip(*args):
+        return None
+
+    monkeypatch.setattr(service, "_extract", extract)
+    monkeypatch.setattr(consolidation, "consolidate", skip)
+    monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
+    with SessionLocal() as db:
+        user = User(email=f"test-artifacts-{utcnow().timestamp()}@test.invalid")
+        db.add(user)
+        db.flush()
+        runs = [
+            Run(user_id=user.id, prompt=prompt, model="local-demo", status="succeeded")
+            for prompt in ["测试一下文件生成", "请交付正式项目报告"]
+        ]
+        db.add_all(runs)
+        db.flush()
+        for i, run in enumerate(runs):
+            file = FileObject(user_id=user.id, filename=f"example{i}.pdf", storage_key=f"synthetic/{run.id}", status="ready")
+            db.add(file)
+            db.flush()
+            db.add(Artifact(run_id=run.id, file_id=file.id))
+        job = MemoryDreamRun(user_id=user.id, trigger="manual", local_date="2026-11-09")
+        db.add(job)
+        db.commit()
+        identity, uid, skipped_id = job.id, user.id, runs[0].id
+    asyncio.run(service.process_dream(identity))
+    with SessionLocal() as db:
+        items = list(db.scalars(select(MemoryItem).where(MemoryItem.user_id == uid)))
+        assert [e.content for e in items] == ["已交付文件：example1.pdf"]
+        assert db.get(MemoryWorkItem, skipped_id).state == "skipped"

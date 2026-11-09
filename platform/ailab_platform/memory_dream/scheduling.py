@@ -3,7 +3,7 @@
 import hashlib
 from contextlib import contextmanager
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -36,7 +36,7 @@ def can_start(db, row, job, now):
         .where(
             MemoryDreamRun.user_id == job.user_id,
             MemoryDreamRun.id != job.id,
-            or_(MemoryDreamRun.claimed_until > now, MemoryDreamRun.report["chain_running"].as_boolean().is_(True)),
+            MemoryDreamRun.claimed_until > now,
         )
         .limit(1)
     )

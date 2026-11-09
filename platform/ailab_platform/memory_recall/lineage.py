@@ -35,9 +35,11 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
     from ..skill_drafts.service import invalidate_drafts
 
     invalidate_drafts(db, user.id, conversation_ids)
+    from .retrieval import item_doc
     from .search import _doc
 
     _doc.cache_clear()
+    item_doc.cache_clear()
     run_ids = set(db.scalars(select(Run.id).where(Run.conversation_id.in_(conversation_ids), Run.user_id == user.id)))
     embeddings.delete_for_runs(db, list(run_ids))
     db.execute(delete(MemoryWorkItem).where(MemoryWorkItem.run_id.in_(run_ids)))
@@ -108,9 +110,11 @@ def purge_episodes_for_runs(db: Session, run_ids: list[str]) -> int:
     """Backstop for the hard purge of a conversation: no episode may outlive its run."""
     if not run_ids:
         return 0
+    from .retrieval import item_doc
     from .search import _doc
 
     _doc.cache_clear()
+    item_doc.cache_clear()
     embeddings.delete_for_runs(db, run_ids)
     db.execute(delete(MemoryWorkItem).where(MemoryWorkItem.run_id.in_(run_ids)))
     result = db.execute(delete(MemoryEpisode).where(MemoryEpisode.run_id.in_(run_ids)))

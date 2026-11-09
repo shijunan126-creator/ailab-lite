@@ -4,6 +4,7 @@ import asyncio
 import json
 from contextlib import asynccontextmanager, suppress
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -308,9 +309,21 @@ def test_first_output_deadline_on_real_slow_socket(monkeypatch):
     async def exercise():
         seen = []
         async with upstream("slow", seen) as address:
-            with pytest.raises(LLMError, match="deadline"):
-                await asyncio.wait_for(OpenAICompatibleClient(address).chat_stream([{"role": "user", "content": "hi"}], [], "primary"), 2.0)
-            assert len(seen) == 1
+            # Build the cold SSL/proxy transport before timing upstream output.
+            # HTTPX otherwise builds it even for loopback HTTP inside the 0.5s
+            # deadline, so a correct pre-dispatch timeout leaves seen empty.
+            transport = httpx.AsyncHTTPTransport()
+            try:
+                with pytest.raises(LLMError, match="deadline"):
+                    await asyncio.wait_for(
+                        OpenAICompatibleClient(address, transport=transport).chat_stream(
+                            [{"role": "user", "content": "hi"}], [], "primary"
+                        ),
+                        2.0,
+                    )
+                assert len(seen) == 1
+            finally:
+                await transport.aclose()
 
     from types import SimpleNamespace
 

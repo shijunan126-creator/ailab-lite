@@ -56,6 +56,7 @@ TERMINAL = set(RunStatus.TERMINAL)
 dream_call: ContextVar[tuple[str, str] | None] = ContextVar("dream_call", default=None)
 consolidation_call: ContextVar[bool] = ContextVar("consolidation_call", default=False)
 dream_context: ContextVar[list[dict]] = ContextVar("dream_context", default=[])
+dream_excluded_runs: ContextVar[list[str] | None] = ContextVar("dream_excluded_runs", default=None)
 dream_rejected: ContextVar[list[dict] | None] = ContextVar("dream_rejected", default=None)
 
 
@@ -152,7 +153,13 @@ def _run_out(run: MemoryDreamRun) -> MemoryDreamRunOut:
 def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
     return db.scalar(
         select(MemoryDreamRun)
-        .where(MemoryDreamRun.user_id == user_id, MemoryDreamRun.status.in_(("applied", "reverted")))
+        .where(
+            MemoryDreamRun.user_id == user_id,
+            or_(
+                MemoryDreamRun.status.in_(("applied", "reverted")),
+                (MemoryDreamRun.status == "skipped") & MemoryDreamRun.report["dreaming"]["expired"].as_integer().is_not(None),
+            ),
+        )
         .order_by(MemoryDreamRun.finished_at.desc(), MemoryDreamRun.created_at.desc())
         .limit(1)
     )
@@ -290,7 +297,7 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 input_run_ids=[r.id for r in runs],
                 token_usage={},
             )
-            backfill = bool(runs) and all((item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "backfill" for r in runs)
+            backfill = bool(runs) and any((item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "backfill" for r in runs)
             row.kind = "extract" if runs else "dream"
             row.priority = 20 if backfill else 10
             row.due_at = local.replace(hour=start // 60, minute=start % 60, second=0, microsecond=0).astimezone(UTC) + timedelta(
@@ -559,10 +566,10 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
     user_prompt = (
         "有界前文（仅用于理解指代，不是证据）：\n"
         + json.dumps(dream_context.get(), ensure_ascii=False)
-        + "\n\n新 episodes：\n"
-        + payload
         + "\n相关已有条目（仅去重参考）：\n"
         + json.dumps(related, ensure_ascii=False)
+        + "\n\n新 episodes：\n"
+        + payload
     )
     raw, usage = await _chat(
         [
@@ -580,6 +587,10 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
     if not isinstance(facts, list):
         raise DreamError("extract response has no facts list")
     episodes = _fit_episodes(episodes, settings.memory_dream_input_chars)
+    skipped = set(payload.get("skip_run_ids") or []) & {e.run_id for e in episodes}
+    if dream_excluded_runs.get() is not None:
+        dream_excluded_runs.get().extend(sorted(skipped))
+    episodes = [e for e in episodes if e.run_id not in skipped]
     out: list[dict] = []
     for item in facts:
         if not isinstance(item, dict):
@@ -886,7 +897,16 @@ async def process_dream(run_id: str) -> None:
             now = utcnow()
             job = db.get(MemoryDreamRun, run_id)
             if job and (job.report or {}).get("stage_committed"):
-                return False
+                if job.trigger == "edit" or (job.report or {}).get("dreaming") is not None:
+                    return False
+                if job.claimed_until and _aware(job.claimed_until) > now:
+                    return False
+                if not can_start(db, scheduler, job, now):
+                    return False
+                job.claim_token = token
+                job.claimed_until = now + timedelta(minutes=10)
+                db.commit()
+                return "consolidate"
             if not job or _aware(job.due_at) > now or not can_start(db, scheduler, job, now):
                 return False
             now = utcnow()
@@ -909,10 +929,20 @@ async def process_dream(run_id: str) -> None:
                 )
             return bool(changed)
 
-    if not await asyncio.to_thread(claim):
+    claimed = await asyncio.to_thread(claim)
+    if not claimed:
         return
     job_context = dream_call.set((run_id, token))
     try:
+        if claimed == "consolidate":
+            from .consolidation import consolidate
+
+            phase = consolidation_call.set(True)
+            try:
+                await consolidate(run_id, token)
+            finally:
+                consolidation_call.reset(phase)
+            return
         from .maintenance import edit, merge_projects
 
         def is_edit():
@@ -1016,6 +1046,8 @@ async def process_dream(run_id: str) -> None:
         context_token = dream_context.set(contexts)
         rejected = []
         rejected_token = dream_rejected.set(rejected)
+        excluded = []
+        excluded_token = dream_excluded_runs.set(excluded)
         try:
             if facts is None:
                 facts, usage, model = await _extract(episodes, active, user)
@@ -1034,7 +1066,7 @@ async def process_dream(run_id: str) -> None:
                                 if item is None:
                                     item = MemoryWorkItem(run_id=source.id, user_id=uid)
                                 item.candidates = [f for f in screened if source.id in f.get("evidence_run_ids", [])]
-                                item.state = "pending"
+                                item.state = "skipped" if source.id in excluded else "pending"
                                 episode = next(e for e in episodes if e.run_id == source.id)
                                 item.source_end = (
                                     json.loads(episode.digest).get("source_end", 0)
@@ -1052,6 +1084,7 @@ async def process_dream(run_id: str) -> None:
             dream_call.reset(context)
             dream_context.reset(context_token)
             dream_rejected.reset(rejected_token)
+            dream_excluded_runs.reset(excluded_token)
         usage = {k: int(usage.get(k, 0)) + int(judge_usage.get(k, 0)) for k in ("prompt_tokens", "completion_tokens", "cached_tokens")}
         changes = []
         consumed = [_hash(item["text"]) for item in rejected if item.get("outcome") in {"guard", "tombstone"}]
@@ -1139,6 +1172,9 @@ async def process_dream(run_id: str) -> None:
                     from ..memory_recall.search import delivered_files
 
                     for rid, files in delivered_files(db, uid, [r.id for r in runs]).items():
+                        work_item = db.get(MemoryWorkItem, rid)
+                        if work_item is not None and work_item.state == "skipped":
+                            continue
                         for file in files:
                             content = f"已交付文件：{file['filename']}"[:300]
                             if guard.reject_reason(content) or blocked_by_tombstone(tombstones_of(owner), content, [rid]):
@@ -1184,6 +1220,8 @@ async def process_dream(run_id: str) -> None:
                     )
                     for source in runs:
                         item = db.get(MemoryWorkItem, source.id)
+                        if item is not None and item.state == "skipped":
+                            continue
                         if item is None:
                             item = MemoryWorkItem(run_id=source.id, user_id=uid)
                         item.candidates = [f for f in (item.candidates or []) if _hash(f["text"]) not in consumed]
@@ -1279,7 +1317,7 @@ async def process_dream(run_id: str) -> None:
                     return run.trigger == "edit", run.user_id, run.project_id
 
             completed = await asyncio.to_thread(complete)
-            if completed:
+            if completed and claimed != "consolidate":
                 editing, _summary_user, _summary_project = completed
                 summary_context = consolidation_call.set(True)
                 try:

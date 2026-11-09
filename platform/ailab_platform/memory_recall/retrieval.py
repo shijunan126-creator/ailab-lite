@@ -1,14 +1,13 @@
 """Bounded lexical retrieval across facts and history; no automatic injection."""
 
 from datetime import UTC, datetime
-from functools import lru_cache
 
 from . import text
 from .policy import model_view
 from .search import _rows, search_history
 
 
-@lru_cache(maxsize=4096)
+@text.cached_doc
 def item_doc(identity, updated_at, content, entities, page):
     return text.build_doc(identity, (content, 1.0), (" ".join(entities), 1.0), (page, 0.5))
 
@@ -73,7 +72,7 @@ def search_memory(db, user, run, document, request, project_id, mode):
         history = search_history(
             db,
             user,
-            request.query,
+            " ".join([request.query, *matched_entities]),
             limit=10,
             exclude_conversation_id=run.conversation_id,
             project_id=project_id,

@@ -143,9 +143,16 @@ def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
                 if body.mode != (owner.options or {}).get("mode", "work"):
                     raise _error(409, UsageErrorCode.CALL_CONFLICT, message="mode differs from run")
             elif body.subject in {"memory_job", "skill_draft"}:
-                summary = body.subject == "memory_job" and body.mode == "summary"
-                allowed = {"applied", "skipped", "failed"} if summary else {"running"}
-                if owner.status not in allowed or owner.claim_token != body.attempt_id:
+                # Extraction commits before Dreaming; its terminal status is final,
+                # while the same fenced lease still authorizes metered consolidation.
+                terminal_stage = body.subject == "memory_job" and (owner.report or {}).get("stage_committed")
+                allowed = {"running", "applied", "skipped", "failed"} if terminal_stage else {"running"}
+                if (
+                    owner.status not in allowed
+                    or owner.claim_token != body.attempt_id
+                    or not owner.claimed_until
+                    or owner.claimed_until.replace(tzinfo=UTC) <= datetime.now(UTC)
+                ):
                     raise HTTPException(409, "memory job claim lost")
                 if body.subject == "skill_draft" and (
                     not owner.claimed_until or owner.claimed_until.replace(tzinfo=UTC) <= datetime.now(UTC)

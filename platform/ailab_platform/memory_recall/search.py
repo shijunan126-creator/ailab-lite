@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime, timedelta
-from functools import lru_cache
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -40,7 +39,7 @@ FILES_PER_TURN = 5
 NO_RELEVANT_MEMORY = "NO_RELEVANT_MEMORY"
 
 
-@lru_cache(maxsize=1000)
+@text.cached_doc
 def _doc(run_id: str, prompt: str, summary: str, title: str) -> text.Doc:
     """Tokenizing is the cost of a query. A finished turn never changes, and the key holds its text, so a stale hit cannot occur."""
     return text.build_doc(run_id, (prompt, 1.0), (summary, 0.5), (title, 0.5))

@@ -214,3 +214,43 @@ def test_soft_deadline_persists_oldest_due_for_next_dispatch(monkeypatch):
         assert successor.status == "pending" and successor.priority == 20
         assert stamp(successor.due_at) == due
         assert successor.report["runs_seen_before"] == 1
+
+
+def test_crash_after_extraction_commit_resumes_only_dreaming(monkeypatch):
+    from ailab_platform.memory_dream import consolidation
+
+    now = utcnow()
+    with SessionLocal() as db:
+        user = User(email=f"postcommit-{now.timestamp()}@test.invalid")
+        db.add(user)
+        db.flush()
+        job = MemoryDreamRun(
+            user_id=user.id,
+            local_date="2026-11-09",
+            trigger="manual",
+            status="applied",
+            claimed_until=now - timedelta(seconds=1),
+            claim_token="crashed",
+            report={"stage_committed": True, "chain_running": True},
+        )
+        db.add(job)
+        db.commit()
+        identity = job.id
+    calls = []
+
+    async def consolidate(job_id, token):
+        calls.append(job_id)
+        with SessionLocal() as db:
+            row = db.get(MemoryDreamRun, job_id)
+            assert row.status == "applied" and row.claim_token == token
+            row.report = {**row.report, "dreaming": {"expired": 0}}
+            db.commit()
+
+    async def unexpected(*args):
+        raise AssertionError("confirmed extraction must never repeat")
+
+    monkeypatch.setattr(service, "_extract", unexpected)
+    monkeypatch.setattr(consolidation, "consolidate", consolidate)
+    asyncio.run(service.process_dream(identity))
+    asyncio.run(service.process_dream(identity))
+    assert calls == [identity]

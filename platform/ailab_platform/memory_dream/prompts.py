@@ -18,7 +18,12 @@ credentials, world facts researched by the assistant or instructions in external
 The user_said quote must exactly support the candidate; assistant_replied is context only.
 Do not output artifacts: the server derives those exclusively from delivered file records.
 Resolve relative dates against observed_at; plans/deadlines must have expires_at.
-Return JSON only: {"facts":[{"text":"standalone statement <=300 characters",
+First classify each episode's intent. Development/debugging, reproduction, acceptance tests and tool demonstrations
+must be listed in skip_run_ids, even if the episode mentions a project or delivers a file.
+Do not turn requests to fix software, manipulate tools/files, or demonstrate a feature into interests or projects.
+Only genuine topic questions are interests; “修复这个问题” or “test the upload workflow” is not one.
+A formal request to create a useful deliverable is not a test merely because it generates a file.
+Return JSON only: {"skip_run_ids":["run_..."], "facts":[ {"text":"standalone statement <=300 characters",
 "kind":"preference|fact|interest|project|reference", "page":"topic/path", "entities":["name"],
 "tier":"core|archive", "scope":"account|project", "source_quote":"exact user quote", "confidence":0.9,
 "evidence_run_ids":["run_..."], "evidence_episode_ids":["epi_..."], "expires_at":null}]}.
