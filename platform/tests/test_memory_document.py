@@ -235,3 +235,47 @@ def test_list_is_read_only_full_document_and_correction_chain_resolves_net_state
         resolved = result["invalidations"][old["id"]]
         assert resolved["current"]["id"] == "mem_final" and resolved["current"]["content"] == "最终状态"
         assert resolved["change_type"] == "correction"
+
+
+def test_forgetting_current_version_redacts_closed_ancestors_and_undo():
+    from fastapi.testclient import TestClient
+
+    from ailab_platform.api.main import app
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.memory_recall.store import replace_entries
+    from ailab_platform.models import MemoryDreamRun, MemoryItem, User, utcnow
+    from tests.test_memory_hardening import put
+    from tests.test_memory_recall import _uid
+    from tests.test_skill_settings import _user
+
+    with TestClient(app) as c:
+        me = _user(c)
+        uid = _uid(c, me)
+        current = put(c, me, [{"content": "当前隐私"}])["entries"][0]
+        with SessionLocal() as db:
+            owner = db.get(User, uid)
+            ancestor = {
+                **current,
+                "id": "mem_private_ancestor",
+                "content": "旧隐私文本",
+                "invalid_at": utcnow().isoformat(),
+                "superseded_by": current["id"],
+            }
+            replace_entries(db, owner, [ancestor, current])
+            job = MemoryDreamRun(
+                user_id=uid,
+                status="applied",
+                trigger="manual",
+                local_date="2026-01-01",
+                timezone="UTC",
+                change_set={"items": [{"id": ancestor["id"], "before": ancestor, "after": None}]},
+            )
+            db.add(job)
+            db.commit()
+            did = job.id
+        response = c.delete(f"/v1/memory/items/{current['id']}?expected_revision=1", headers=me)
+        assert response.status_code == 200
+        assert "旧隐私文本" not in c.get(f"/v1/memory/dreams/{did}", headers=me).text
+        with SessionLocal() as db:
+            assert db.get(MemoryItem, "mem_private_ancestor") is None
+            assert db.get(User, uid).settings["memory"]["tombstones"]

@@ -30,6 +30,7 @@ def upgrade():
         postgresql_where=sa.text("status = 'active'"),
     )
     op.create_index("ix_memory_items_content", "memory_items", ["user_id", "content_hash"])
+    op.create_index("ix_memory_items_superseded", "memory_items", ["user_id", "superseded_by"])
     op.drop_table("memory_entity_aliases")
     op.drop_table("memory_entities")
     op.execute("UPDATE memory_items SET valid_to = updated_at WHERE status = 'closed' AND valid_to IS NULL")
@@ -37,6 +38,7 @@ def upgrade():
 
 
 def downgrade():
+    op.drop_index("ix_memory_items_superseded", table_name="memory_items")
     op.drop_index("ix_memory_episodes_context_run_id", table_name="memory_episodes")
     op.drop_column("memory_episodes", "context_run_id")
     op.add_column("memory_items", sa.Column("entities", sa.JSON(), nullable=False, server_default="[]"))

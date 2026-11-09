@@ -79,9 +79,9 @@ class External(Platform):
         return run
 
 
-async def evaluate(model):
+async def evaluate(model, modes=("chat", "work")):
     out = {}
-    for mode in ("chat", "work"):
+    for mode in modes:
         p = External(mode, model)
         rec = Recorder(model)
         loop = AgentLoop(platform=p, broker=FakeBroker(), llm=rec)
@@ -92,7 +92,10 @@ async def evaluate(model):
             assert terminal == ["succeeded"] * 4, terminal
             for left, right in zip(rec.requests, rec.requests[1:]):
                 assert left.get("tools") == right.get("tools")
+                for key in ("model", "temperature", "tool_choice", "thinking"):
+                    assert left.get(key) == right.get(key)
                 assert right["messages"][: len(left["messages"])] == left["messages"]
+            assert len(set(rec.sessions)) == 1
             updates = [
                 m
                 for m in rec.requests[-1]["messages"]
@@ -112,6 +115,7 @@ async def evaluate(model):
                 "external_update_count": len(updates),
                 "resume_idle_hours": 2,
                 "prefix_extensions": True,
+                "stable_session": True,
             }
         finally:
             rec.close()
@@ -123,6 +127,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
-    result = asyncio.run(evaluate(parser.parse_args().model))
+    parser.add_argument("--mode", choices=["chat", "work"])
+    args = parser.parse_args()
+    result = asyncio.run(evaluate(args.model, (args.mode,) if args.mode else ("chat", "work")))
     print(json.dumps(result, indent=2))
     raise SystemExit(not all(case["acceptance"]["passed"] for case in result.values()))

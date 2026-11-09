@@ -159,6 +159,29 @@ def _rewrite_copies(db: Session, user_id: str, rewrite) -> None:
 def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None:
     ids = {e["id"] for e in removed}
     hashes = {(e.get("project_id"), fact_hash(e["content"])) for e in removed}
+    frontier = set(ids)
+    ancestors = []
+    while frontier:
+        rows = list(
+            db.scalars(
+                select(MemoryItem).where(MemoryItem.user_id == user_id, MemoryItem.superseded_by.in_(frontier), MemoryItem.id.not_in(ids))
+            )
+        )
+        frontier = {row.id for row in rows}
+        ids.update(frontier)
+        ancestors.extend(rows)
+    if ancestors:
+        owner = db.get(User, user_id)
+        stored = dict((owner.settings or {}).get("memory") or {})
+        tombstones = list(stored.get("tombstones") or [])
+        for row in ancestors:
+            hashes.add((row.project_id, row.content_hash))
+            tombstones.append({"hash": row.content_hash, "run_ids": row.source_run_ids, "at": utcnow().isoformat()})
+        from ..contracts.memory import MAX_TOMBSTONES
+
+        stored["tombstones"] = tombstones[-MAX_TOMBSTONES:]
+        owner.settings = {**owner.settings, "memory": stored}
+        db.execute(delete(MemoryItem).where(MemoryItem.user_id == user_id, MemoryItem.id.in_([row.id for row in ancestors])))
 
     def rewrite(entry):
         if entry.get("id") in ids or (entry.get("project_id"), fact_hash(entry.get("content", entry.get("text", "")))) in hashes:
