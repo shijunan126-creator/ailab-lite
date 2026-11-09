@@ -165,7 +165,9 @@ def _drain_invalidation(db, file_id, limit):
     if runs:
         purge_episodes_for_runs(db, [run.id for run in runs])
         owner = db.get(User, item.user_id, populate_existing=True)
-        stored = (owner.settings or {}).get("memory") or {}
+        from ..memory_recall.store import entries_for, replace_entries
+
+        stored = {**((owner.settings or {}).get("memory") or {}), "entries": entries_for(owner)}
         removed_ids = {run.id for run in runs}
         entries = []
         changed = False
@@ -182,7 +184,11 @@ def _drain_invalidation(db, file_id, limit):
                 }
             entries.append(entry)
         if changed:
-            owner.settings = {**(owner.settings or {}), "memory": {**stored, "entries": entries, "revision": stored.get("revision", 0) + 1}}
+            replace_entries(db, owner, entries)
+            owner.settings = {
+                **(owner.settings or {}),
+                "memory": {**{k: v for k, v in stored.items() if k != "entries"}, "revision": stored.get("revision", 0) + 1},
+            }
     for run in runs:
         meta = dict(run.runtime_meta or {})
         meta["source_invalidated"] = True

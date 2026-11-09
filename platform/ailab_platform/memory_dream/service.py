@@ -152,7 +152,16 @@ def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
     )
 
 
-def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datetime, limit: int = 30, *, project_id: str | None = None, scoped: bool = False) -> list[Run]:
+def _new_runs(
+    db: Session,
+    user_id: str,
+    last: MemoryDreamRun | None,
+    now: datetime,
+    limit: int = 30,
+    *,
+    project_id: str | None = None,
+    scoped: bool = False,
+) -> list[Run]:
     from ..api.source_lifecycle import invalid_sources_query
 
     processed = (
@@ -166,7 +175,9 @@ def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datet
             .outerjoin(Conversation, Conversation.id == Run.conversation_id)
             .where(
                 Run.user_id == user_id,
-                or_(not scoped, Conversation.project_id == project_id) if project_id else or_(not scoped, Conversation.project_id.is_(None)),
+                or_(not scoped, Conversation.project_id == project_id)
+                if project_id
+                else or_(not scoped, Conversation.project_id.is_(None)),
                 Run.options["evaluation"].as_boolean().is_not(True),
                 Run.options["eval"].as_boolean().is_not(True),
                 Run.runtime_meta["evaluation"].as_boolean().is_not(True),
@@ -519,7 +530,7 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
         text = str(item.get("text") or "").strip()
         quote = str(item.get("source_quote") or "").strip()
         supported = [e for e in episodes if _quote_supported(quote, [e])]
-        if not text or not supported or len(text) > 1000 or len(quote) > 1000:
+        if not text or not supported or len(text) > 300 or len(quote) > 1000:
             if dream_rejected.get() is not None:
                 dream_rejected.get().append(
                     {
@@ -554,7 +565,9 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
         out.append(
             {
                 "text": text,
-                "kind": "user" if item.get("kind") == "user" else "memory",
+                "kind": item.get("kind") if item.get("kind") in {"preference", "fact", "interest", "project", "reference"} else "fact",
+                "page": str(item.get("page") or "工作与身份")[:120],
+                "expires_at": item.get("expires_at"),
                 "entities": entities,
                 "evidence_run_ids": sorted(evidence),
                 "evidence_episode_ids": sorted(episode_evidence),
@@ -570,7 +583,7 @@ def _screen(facts: list[dict], tombstones: list[dict]) -> list[dict]:
     """Drop what must not be stored however well it was quoted: credentials, instructions, deleted facts."""
     kept = []
     for fact in facts:
-        reason = guard.reject_reason(fact["text"]) or ("sensitive" if review_required(fact["text"]) else None)
+        reason = guard.reject_reason(fact["text"])
         blocked = blocked_by_tombstone(tombstones, fact["text"], fact.get("evidence_run_ids"))
         if reason:
             MEMORY_GUARD_REJECTED.labels(reason, "nightly").inc()
@@ -714,8 +727,6 @@ def _apply(
         now = utcnow()
         for change in plan.changes:
             if change.op == "add":
-                if review_required(change.content):
-                    continue
                 if blocked_by_tombstone(tombstones_of(user), change.content, change.evidence_run_ids):
                     raise DreamError("候选记忆已被用户删除")
                 for rid in change.evidence_run_ids:
@@ -739,6 +750,10 @@ def _apply(
                     MemoryEntryInput(
                         id=new_id("mem"),
                         kind=change.kind,
+                        page=change.page,
+                        expires_at=change.expires_at,
+                        tier="archive",
+                        origin="explicit",
                         content=change.content,
                         confidence=change.confidence,
                         evidence_run_ids=change.evidence_run_ids,
@@ -747,6 +762,7 @@ def _apply(
                         source_quote=change.source_quote,
                         valid_from=(episode.observed_at if episode else now),
                         project_id=change.project_id,
+                        status="review" if review_required(change.content) else "active",
                     )
                 )
                 for old_id in change.supersedes:
@@ -845,7 +861,13 @@ async def process_dream(run_id: str) -> None:
                     if not memory["enabled"] or (run.trigger == "cron" and not dream_settings(user).enabled):
                         _finish(db, run, "skipped", journal="自动记忆已关闭")
                         return
-                    runs = _new_runs(db, user.id, _last_success(db, user.id), utcnow(), project_id=run.project_id, scoped=run.trigger == "manual") if memory["auto_save"] else []
+                    runs = (
+                        _new_runs(
+                            db, user.id, _last_success(db, user.id), utcnow(), project_id=run.project_id, scoped=run.trigger == "manual"
+                        )
+                        if memory["auto_save"]
+                        else []
+                    )
                     if not runs:
                         _finish(db, run, "skipped", journal="没有新的对话", report={**(run.report or {}), "runs_seen": 0, "added": 0})
                         return
@@ -979,7 +1001,7 @@ async def process_dream(run_id: str) -> None:
                 continue
             if not verdict.get("duplicate_ids") and (fact.get("project_id"), _hash(fact["text"])) not in seen:
                 if (
-                    len(before["entries"]) + len(changes) >= 100
+                    len(before["entries"]) + len(changes) >= settings.memory_items_max
                     or sum(len(e["content"]) for e in before["entries"]) + sum(len(c.content) for c in changes) + len(fact["text"])
                     > MAX_CHARS
                 ):
@@ -988,7 +1010,9 @@ async def process_dream(run_id: str) -> None:
                 changes.append(
                     DreamChange(
                         op="add",
-                        kind=fact.get("kind", "memory"),
+                        kind=fact.get("kind", "fact"),
+                        page=fact.get("page"),
+                        expires_at=fact.get("expires_at"),
                         content=fact["text"],
                         confidence=fact["confidence"],
                         evidence_run_ids=fact["evidence_run_ids"],
@@ -1197,7 +1221,19 @@ async def process_dream_chain(run_id: str) -> None:
                     return
                 with user_critical_section(db, previous.user_id):
                     owner = db.get(User, previous.user_id, populate_existing=True)
-                    if not owner or not _memory_view(owner)["auto_save"] or not _new_runs(db, previous.user_id, None, utcnow(), limit=1, project_id=previous.project_id, scoped=previous.trigger == "manual"):
+                    if (
+                        not owner
+                        or not _memory_view(owner)["auto_save"]
+                        or not _new_runs(
+                            db,
+                            previous.user_id,
+                            None,
+                            utcnow(),
+                            limit=1,
+                            project_id=previous.project_id,
+                            scoped=previous.trigger == "manual",
+                        )
+                    ):
                         return
                     if db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == previous.user_id, active_job()).limit(1)):
                         return

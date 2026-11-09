@@ -17,7 +17,11 @@ def visible(entry: dict, project_id: str | None = None, mode: str = "shared", *,
     if scope != project_id and (scope is not None or (project_id is not None and mode == "isolated")):
         return False
     if as_of is None:
-        return not entry.get("superseded_by") and not entry.get("invalid_at")
+        return (
+            not entry.get("superseded_by")
+            and not entry.get("invalid_at")
+            and (not entry.get("expires_at") or datetime.fromisoformat(entry["expires_at"]).replace(tzinfo=UTC) > datetime.now(UTC))
+        )
     instant = as_of.replace(tzinfo=UTC) if as_of.tzinfo is None else as_of.astimezone(UTC)
     for key, before in (("valid_from", True), ("invalid_at", False)):
         if entry.get(key):
@@ -134,3 +138,30 @@ def same_history_pool(db, current, source):
     if left and project_mode(db, left) == "isolated":
         return left == right
     return not right or project_mode(db, right) == "shared"
+
+
+def priority(kind, origin):
+    return 0 if kind in {"user", "preference"} and origin != "inferred" else 2 if origin == "inferred" else 3 if kind == "project" else 1
+
+
+def core_catalog(memory):
+    from collections import defaultdict
+
+    entries = memory.get("entries", [])
+    core = sorted(
+        (e for e in entries if e.get("tier", "core") == "core"),
+        key=lambda e: (e.get("page", ""), priority(e["kind"], e.get("origin")), e["id"]),
+    )
+    chosen, used = [], 0
+    for entry in core:
+        cost = len(entry["content"]) + 16
+        if used + cost <= 1500:
+            chosen.append(entry)
+            used += cost
+    pages = defaultdict(int)
+    names = set()
+    for e in entries:
+        pages[e.get("page", "工作与身份")] += 1
+        names.update(str(n)[:20] for n in e.get("entities", []) if len(str(n)) <= 20)
+    catalog = "、".join([*sorted(pages, key=lambda p: (-pages[p], p)), *sorted(names)])[:300]
+    return chosen, catalog

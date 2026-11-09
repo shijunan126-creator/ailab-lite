@@ -21,7 +21,7 @@ from ..models import MemoryDreamRun, MemoryEpisode, MemoryWorkItem, Run, RunDeli
 from . import embeddings
 from .tombstones import fact_hash
 
-FORGET_DERIVED_FACTS = False  # True: also drop facts whose only evidence was the deleted conversation
+FORGET_DERIVED_FACTS = True  # True: also drop facts whose only evidence was the deleted conversation
 
 
 def forget_conversation(db: Session, user: User, conversation_id: str) -> dict:
@@ -64,7 +64,9 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
         if set(dream.input_run_ids or []) & run_ids:
             dream.report = {**(dream.report or {}), "candidates": []}
 
-    stored = (user.settings or {}).get("memory") or {}
+    from ..memory_recall.store import entries_for, replace_entries
+
+    stored = {**((user.settings or {}).get("memory") or {}), "entries": entries_for(user)}
     entries, changed, dropped = [], 0, 0
     for entry in stored.get("entries") or []:
         runs = set(entry.get("evidence_run_ids") or [])
@@ -88,7 +90,8 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
         changed += 1
     if changed or dropped:
         revision = int(stored.get("revision", 0)) + 1  # an open memory page must reload before it saves
-        user.settings = {**(user.settings or {}), "memory": {**stored, "revision": revision, "entries": entries}}
+        replace_entries(db, user, entries)
+        user.settings = {**(user.settings or {}), "memory": {**{k: v for k, v in stored.items() if k != "entries"}, "revision": revision}}
         db.add(user)
         record_audit(
             db,
