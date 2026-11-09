@@ -823,6 +823,16 @@ class MemoryDreamRun(Base):
             sqlite_where=text("status IN ('pending', 'running')"),
             postgresql_where=text("status IN ('pending', 'running')"),
         ),
+        Index(
+            "ix_memory_dream_active_user",
+            "user_id",
+            sqlite_where=text(
+                "status IN ('pending', 'running') OR claimed_until IS NOT NULL OR json_extract(report, '$.chain_running') = 1"
+            ),
+            postgresql_where=text(
+                "status IN ('pending', 'running') OR claimed_until IS NOT NULL OR (report->>'chain_running')::boolean IS TRUE"
+            ),
+        ),
         Index("ix_memory_dream_user_finished", "user_id", "finished_at"),
         Index("ix_memory_dream_user_date_trigger", "user_id", "local_date", "trigger"),
         Index("ix_memory_dream_status_created", "status", "created_at"),

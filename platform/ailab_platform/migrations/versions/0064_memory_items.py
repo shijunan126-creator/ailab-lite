@@ -33,6 +33,18 @@ def upgrade():
     op.drop_column("memory_dream_runs", "before_memory")
     op.drop_column("memory_dream_runs", "after_memory")
     op.drop_table("memory_summaries")
+    op.create_index(
+        "ix_memory_dream_active_user",
+        "memory_dream_runs",
+        ["user_id"],
+        sqlite_where=sa.text(
+            "status IN ('pending', 'running') OR claimed_until IS NOT NULL OR json_extract(report, '$.chain_running') = 1"
+        ),
+        postgresql_where=sa.text(
+            "status IN ('pending', 'running') OR claimed_until IS NOT NULL OR (report->>'chain_running')::boolean IS TRUE"
+        ),
+    )
+
     op.create_table(
         "memory_items",
         sa.Column("id", sa.String(40), primary_key=True),
@@ -150,6 +162,7 @@ def upgrade():
 
 
 def downgrade():
+    op.drop_index("ix_memory_dream_active_user", table_name="memory_dream_runs")
     # v1 requires the schema, but deleted derived summaries must not be recreated from private data.
     op.create_table(
         "memory_summaries",
