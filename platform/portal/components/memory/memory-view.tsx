@@ -27,7 +27,7 @@ type Run = {
   status: string;
   trigger?: string;
   error?: string;
-  report?: { reply?: string; changes?: { removed?: number }; runs_seen?: number; added?: number; next_id?: string };
+  report?: { reply?: string; changes?: { removed?: number }; runs_seen?: number; added?: number; changed?: number; next_id?: string };
 };
 const DONE = new Set(["applied", "skipped", "failed", "reverted", "evaluated"]);
 const scopeQuery = (projectId: string | null) => (projectId ? `?project_id=${encodeURIComponent(projectId)}` : "");
@@ -101,6 +101,7 @@ export function organizeNote(run: Run): string {
   const seen = run.report?.runs_seen;
   if (typeof seen !== "number" || seen <= 0) return "已整理";
   const added = run.report?.added || 0;
+  if (!added && run.report?.changed) return `看了 ${seen} 段对话，整理了 ${run.report.changed} 处记忆`;
   return added > 0 ? `看了 ${seen} 段对话，新增 ${added} 条` : `看了 ${seen} 段对话，没有需要长期记住的内容`;
 }
 

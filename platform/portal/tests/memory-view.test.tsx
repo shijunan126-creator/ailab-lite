@@ -27,6 +27,7 @@ const view: MemoryView = {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); });
 
 test("dates and organize notes", () => {
+  assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 12, added: 0, changed: 2 } }), "看了 12 段对话，整理了 2 处记忆");
   const now = new Date("2026-11-09T00:00:00");
   assert.equal(shortDate("2026-11-03T08:00:00", now), "11-03");
   assert.equal(shortDate("2025-01-02T08:00:00", now), "2025-01-02");

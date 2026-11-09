@@ -1282,7 +1282,9 @@ class AgentLoop:
             ):
                 raise ToolError("附件视觉页面不可读取，请重新准备；本轮未向模型发送不完整文档")
             parts.extend(image_parts)
-        return parts
+        from ..memory_recall.guard import escape_memory_tags
+
+        return escape_memory_tags(parts)
 
     async def _image_content(self, run_id, run, file, spec):
         parts = (

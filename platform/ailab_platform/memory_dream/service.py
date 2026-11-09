@@ -107,6 +107,7 @@ def _run_out(run: MemoryDreamRun) -> MemoryDreamRunOut:
         report["candidates"] = [{k: v for k, v in entry.items() if k != "evidence_run_ids"} for entry in report["candidates"]]
     report["runs_seen"] = int(report.get("runs_seen", len(run.input_run_ids or []))) + int(report.get("runs_seen_before", 0))
     report["added"] = int(report.get("added", 0)) + int(report.get("added_before", 0))
+    report["changed"] = int(report.get("changed", 0)) + int(report.get("changed_before", 0))
     return MemoryDreamRunOut(
         id=run.id,
         status="running" if report.get("chain_running") and not report.get("next_id") else run.status,
@@ -145,7 +146,7 @@ def _new_runs(
     user_id: str,
     last: MemoryDreamRun | None,
     now: datetime,
-    limit: int = 30,
+    limit: int = 100,
     *,
     project_id: str | None = None,
     scoped: bool = False,
@@ -358,7 +359,7 @@ def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
         digest = json.dumps(
             {
                 "user_said": source[offset : offset + chunk_chars],
-                "assistant_replied": _assistant_context(run.summary or ""),
+                "assistant_replied": _assistant_context(run.summary or "")[: min(300, settings.memory_dream_input_chars // 10)],
                 "source_end": min(offset + chunk_chars, len(source)),
                 **context,
             },
@@ -419,10 +420,15 @@ def _episode_payload(episodes: list[MemoryEpisode]) -> str:
 
 def _fit_episodes(episodes: list[MemoryEpisode], budget: int) -> list[MemoryEpisode]:
     """Fit a complete oldest prefix; unprocessed episodes remain eligible for the next batch."""
-    kept, payload = episodes, _episode_payload(episodes)
-    while len(payload) > budget and len(kept) > 1:
-        kept = kept[:-1]
-        payload = _episode_payload(kept)
+    kept, used = [], 2
+    for episode in episodes:
+        cost = len(_episode_payload([episode])) - 2 + (2 if kept else 0)
+        if used + cost > budget:
+            if not kept:
+                raise DreamError("单段对话超过整理输入预算，请增加输入预算")
+            break
+        kept.append(episode)
+        used += cost
     return kept
 
 
@@ -696,6 +702,7 @@ async def process_dream(run_id: str) -> None:
                     report={
                         "runs_seen": len(episodes),
                         "added": sum(x["op"] == "add" for x in audit),
+                        "changed": len(audit),
                         "ops": audit,
                         "ignored_runs": ignored,
                     },
@@ -838,6 +845,7 @@ async def _process_dream_chain(run_id: str) -> None:
                             "runs_seen_before": (previous.report or {}).get("runs_seen_before", 0)
                             + (previous.report or {}).get("runs_seen", 0),
                             "added_before": (previous.report or {}).get("added_before", 0) + (previous.report or {}).get("added", 0),
+                            "changed_before": (previous.report or {}).get("changed_before", 0) + (previous.report or {}).get("changed", 0),
                         },
                         input_run_ids=[],
                         token_usage={},

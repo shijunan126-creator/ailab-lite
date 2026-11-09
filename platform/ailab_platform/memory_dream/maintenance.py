@@ -81,7 +81,6 @@ async def edit(run_id, token):
         EDIT_SYSTEM,
         {
             "instruction": instruction,
-            "page": "\n".join(e["content"] for e in entries),
             "entries": [{k: e[k] for k in ("id", "kind", "content")} for e in entries],
         },
     )
@@ -111,7 +110,10 @@ async def edit(run_id, token):
                         # the model's text is checked like anything else that becomes memory; a malformed op is skipped, not fatal
                         try:
                             item = MemoryEntryInput(
-                                kind=op.get("kind") if action == "add" and op.get("kind") in {"user", "memory"} else "memory",
+                                kind=op.get("kind")
+                                if action == "add"
+                                and op.get("kind") in {"user", "memory", "fact", "preference", "project", "interest", "reference"}
+                                else "memory",
                                 content=str(op.get("content") or "").strip(),
                                 project_id=pid,
                                 origin="edited",

@@ -6,11 +6,9 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import pytest
 from fastapi.testclient import TestClient
 
 from ailab_platform.api.main import app
-from ailab_platform.contracts.memory import DreamPlan
 from ailab_platform.db import SessionLocal
 from ailab_platform.llm import LLMResponse
 from ailab_platform.memory_dream import service
@@ -18,13 +16,6 @@ from ailab_platform.models import MemoryDreamRun, MemoryEpisode, Run, RunEvent, 
 from tests.memory_fixtures import install_plan_builder, make_dream
 
 from .test_skill_settings import _user
-
-
-def test_dream_plan_is_append_only_and_requires_an_invalidation_target() -> None:
-    plan = DreamPlan.model_validate({"changes": [{"op": "invalidate", "id": "mem_a", "reason": "explicit replacement"}]})
-    assert plan.changes[0].op == "invalidate"
-    with pytest.raises(ValueError):
-        DreamPlan.model_validate({"changes": [{"op": "invalidate", "reason": "missing id"}]})
 
 
 def test_memory_routes_expose_dream_settings_and_history() -> None:

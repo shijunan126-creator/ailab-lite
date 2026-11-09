@@ -11,8 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 MAX_CHARS = 600000
 MAX_ENTRIES = 2000
 MAX_TOMBSTONES = 200
-DREAM_MAX_CHANGES = 5
-DREAM_TARGET_RATIO = 0.8
 DREAM_WINDOW_START = "02:00"
 DREAM_WINDOW_END = "05:00"
 
@@ -202,12 +200,6 @@ class DreamChange(BaseModel):
         if self.op == "add" and (not self.content.strip() or "\x00" in self.content):
             raise ValueError("change content is required")
         return self
-
-
-class DreamPlan(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    changes: list[DreamChange] = Field(default_factory=list, max_length=MAX_ENTRIES + DREAM_MAX_CHANGES)
-    journal: str = Field(default="", max_length=2000)
 
 
 class MemoryDreamRunOut(BaseModel):
