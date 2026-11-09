@@ -152,7 +152,7 @@ def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
     )
 
 
-def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datetime, limit: int = 40) -> list[Run]:
+def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datetime, limit: int = 30, *, project_id: str | None = None, scoped: bool = False) -> list[Run]:
     from ..api.source_lifecycle import invalid_sources_query
 
     processed = (
@@ -166,6 +166,10 @@ def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datet
             .outerjoin(Conversation, Conversation.id == Run.conversation_id)
             .where(
                 Run.user_id == user_id,
+                or_(not scoped, Conversation.project_id == project_id) if project_id else or_(not scoped, Conversation.project_id.is_(None)),
+                Run.options["evaluation"].as_boolean().is_not(True),
+                Run.options["eval"].as_boolean().is_not(True),
+                Run.runtime_meta["evaluation"].as_boolean().is_not(True),
                 Run.id.not_in(invalid_sources_query(user_id)),
                 Run.status.in_(TERMINAL),
                 ~processed,
@@ -296,6 +300,12 @@ def _source_text(db: Session, run: Run) -> str:
     return "\n\n".join([run.prompt or "", *(steers[i] for i in ids if i in steers)])
 
 
+def _assistant_context(value: str) -> str:
+    value = re.sub(r"```[^\n]*\n.*?(?:```|$)", "", value, flags=re.S)
+    value = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", value)
+    return value.strip()[:300]
+
+
 def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
     """Create immutable episode rows once; reuse them on a retry."""
     existing = {
@@ -311,7 +321,7 @@ def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
         digest = json.dumps(
             {
                 "user_said": source[offset : offset + chunk_chars],
-                "assistant_replied": (run.summary or "")[: min(1500, chunk_chars)],
+                "assistant_replied": _assistant_context(run.summary or ""),
                 "source_end": min(offset + chunk_chars, len(source)),
             },
             ensure_ascii=False,
@@ -835,9 +845,9 @@ async def process_dream(run_id: str) -> None:
                     if not memory["enabled"] or (run.trigger == "cron" and not dream_settings(user).enabled):
                         _finish(db, run, "skipped", journal="自动记忆已关闭")
                         return
-                    runs = _new_runs(db, user.id, _last_success(db, user.id), utcnow()) if memory["auto_save"] else []
+                    runs = _new_runs(db, user.id, _last_success(db, user.id), utcnow(), project_id=run.project_id, scoped=run.trigger == "manual") if memory["auto_save"] else []
                     if not runs:
-                        _finish(db, run, "skipped", journal="没有新的对话")
+                        _finish(db, run, "skipped", journal="没有新的对话", report={**(run.report or {}), "runs_seen": 0, "added": 0})
                         return
                     # A batch never combines evidence from different projects.
                     project_id = run_project(db, runs[0])
@@ -1062,6 +1072,8 @@ async def process_dream(run_id: str) -> None:
                             ),
                         },
                         "counts": counts,
+                        "runs_seen": len(runs),
+                        "added": counts["added"],
                         "candidates": outcomes,
                         "pending_after": "200+" if pending_after > 200 else pending_after,
                     }
@@ -1185,7 +1197,7 @@ async def process_dream_chain(run_id: str) -> None:
                     return
                 with user_critical_section(db, previous.user_id):
                     owner = db.get(User, previous.user_id, populate_existing=True)
-                    if not owner or not _memory_view(owner)["auto_save"] or not _new_runs(db, previous.user_id, None, utcnow(), limit=1):
+                    if not owner or not _memory_view(owner)["auto_save"] or not _new_runs(db, previous.user_id, None, utcnow(), limit=1, project_id=previous.project_id, scoped=previous.trigger == "manual"):
                         return
                     if db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == previous.user_id, active_job()).limit(1)):
                         return

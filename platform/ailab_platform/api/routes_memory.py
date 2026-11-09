@@ -326,7 +326,7 @@ def run_dream_now(
         memory = memory_for(user)
         if not memory["enabled"]:
             raise HTTPException(409, "记忆未开启")
-        pending_count = len(_new_runs(db, user.id, None, datetime.now(UTC), limit=201)) if memory["auto_save"] else 0
+        pending_count = len(_new_runs(db, user.id, None, datetime.now(UTC), limit=201, project_id=project_id, scoped=True)) if memory["auto_save"] else 0
         pending = "200+" if pending_count > 200 else pending_count
         active = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, active_job()).limit(1))
         if active:

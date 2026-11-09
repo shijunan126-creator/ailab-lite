@@ -17,9 +17,10 @@ _CUES = re.compile(
     "|".join(
         [
             "还记得|记得|上次|上回|之前|以前|先前|曾经|早些时候|前几天|前阵子|刚才|那次",
-            "我们|咱们|我|你|讨论过|聊过|说过|提到过|提过|谈过|讨论|聊到|提到|问过|做过",
+            "我们|咱们|讨论过|聊过|说过|提到过|提过|谈过|讨论|聊到|提到|问过|做过",
             "帮我|请问|一下|有关|关于|那个|这个|什么|怎么|是否|是不是|哪个|如何|结论|内容",
-            "remember|recall|earlier|previously|before|last time|we|you|discussed|talked about|mentioned",
+            r"(?:remember|recall|earlier|previously|before|last time|we|you|discussed|talked about|mentioned)",
+            r"(?<![㐀-䶿一-鿿])[我你](?![㐀-䶿一-鿿])",
         ]
     ),
     re.I,
