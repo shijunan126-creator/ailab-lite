@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime, timedelta
-from functools import lru_cache
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -40,7 +39,7 @@ FILES_PER_TURN = 5
 NO_RELEVANT_MEMORY = "NO_RELEVANT_MEMORY"
 
 
-@lru_cache(maxsize=1000)
+@text.cached_doc
 def _doc(run_id: str, prompt: str, summary: str, title: str) -> text.Doc:
     """Tokenizing is the cost of a query. A finished turn never changes, and the key holds its text, so a stale hit cannot occur."""
     return text.build_doc(run_id, (prompt, 1.0), (summary, 0.5), (title, 0.5))
@@ -57,7 +56,7 @@ def _snippet(body: str, matched: tuple[str, ...], limit: int = SNIPPET_CHARS) ->
     lowered = body.casefold()
     at = min((i for i in (lowered.find(t) for t in matched) if i >= 0), default=0)
     start = max(0, min(at - limit // 4, len(body) - limit))
-    return ("…" if start else "") + body[start : start + limit] + ("…" if start + limit < len(body) else "")
+    return (("…" if start else "") + body[start : start + limit - 2] + "…")[:limit]
 
 
 def _rows(
@@ -70,6 +69,7 @@ def _rows(
     before=None,
     after=None,
     cursor=None,
+    order="desc",
 ):
     from .policy import history_pool
 
@@ -92,7 +92,7 @@ def _rows(
             Run.superseded_by_run_id.is_(None),
             or_(Run.conversation_id.is_(None), Conversation.deleted_at.is_(None)),
         )
-        .order_by(Run.created_at.desc(), Run.id.desc())
+        .order_by(*((Run.created_at.asc(), Run.id.asc()) if order == "asc" else (Run.created_at.desc(), Run.id.desc())))
         .limit(MAX_DOCS)
     )
     from ..api.source_lifecycle import invalid_sources_query
@@ -159,6 +159,7 @@ def search_history(
     before: datetime | None = None,
     after: datetime | None = None,
     cursor: str | None = None,
+    order: str = "desc",
 ) -> dict:
     """Return the past turns that answer ``query`` or an explicit ``NO_RELEVANT_MEMORY``."""
     now = _aware(now or datetime.now(UTC))
@@ -171,7 +172,7 @@ def search_history(
     seen: set[str] = set()
     docs: list[text.Doc] = []
     by_key: dict[str, tuple] = {}
-    rows = _rows(db, user.id, since, exclude_conversation_id, project_id=project_id, before=before, after=after, cursor=cursor)
+    rows = _rows(db, user.id, since, exclude_conversation_id, project_id=project_id, before=before, after=after, cursor=cursor, order=order)
     for run_id, conv_id, created_at, prompt, summary, title in rows:
         fingerprint = f"{(prompt or '').strip()}\x00{(summary or '').strip()}"
         if fingerprint in seen:  # a forked conversation repeats its parent's turns
@@ -200,10 +201,21 @@ def search_history(
     dense_order = sorted(similar, key=lambda k: (-similar[k] * boost(k, DENSE_RECENCY_BOOST), k))
     # Reciprocal rank fusion: a turn found by both channels beats one found by either; scores of the two are not comparable.
     fused: dict[str, float] = {}
-    for order in (lex_order, dense_order):
-        for rank, key in enumerate(order):
+    for channel_order in (lex_order, dense_order):
+        for rank, key in enumerate(channel_order):
             fused[key] = fused.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
     ranked = sorted(fused, key=lambda k: (-fused[k], k))
+    if order == "asc":
+        ranked.sort(key=lambda k: (by_key[k][1], k))
+    counts, diverse = {}, []
+    for key in ranked:
+        cid = by_key[key][0]
+        if cid and counts.get(cid, 0) >= 2:
+            continue
+        if cid:
+            counts[cid] = counts.get(cid, 0) + 1
+        diverse.append(key)
+    ranked = diverse
 
     results = []
     files = delivered_files(db, user.id, ranked[:limit])

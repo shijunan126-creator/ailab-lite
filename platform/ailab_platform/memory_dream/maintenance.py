@@ -15,8 +15,8 @@ from ..locks import user_critical_section
 from ..memory_recall import guard
 from ..memory_recall.policy import visible
 from ..models import Project, User, utcnow
+from .changes import digest, record, scope_entries
 from .prompts import EDIT_SYSTEM, MERGE_SYSTEM
-from .summary import _facts, digest, regenerate, scope_entries, stale_scopes, summary_row
 
 log = logging.getLogger("ailab.memory")
 LOST_CLAIM = "整理任务已由其他进程接手"
@@ -59,8 +59,6 @@ async def edit(run_id, token):
     def prepare():
         with SessionLocal() as db:
             run = _check_claim(db, run_id, token)
-            if run.after_memory and (run.report or {}).get("_final_status") in {"applied", "skipped"}:
-                return
             user = db.get(User, run.user_id)
             with user_critical_section(db, user.id):
                 db.refresh(user)
@@ -73,28 +71,22 @@ async def edit(run_id, token):
                 entries = scope_entries(user, run.project_id)
                 if (run.report or {}).get("edit_source_digest", digest(entries)) != digest(entries):
                     raise DreamError("记忆已变化，请重试")
-                before = memory_for(user)
-                if run.before_memory and _facts(run.before_memory, run.project_id) != entries:
-                    raise DreamError("记忆已变化，请重试")
-                row = summary_row(db, user.id, run.project_id)
-                snapshot = {
-                    "text": row.text if row else "",
-                    "source_digest": row.source_digest if row else "",
-                    "generated_at": row.generated_at.isoformat() if row and row.generated_at else None,
-                }
-                run.before_memory = before
-                run.report = run.report or {"summary_before": snapshot}
-                db.commit()
-                return user, run.project_id, run.instruction, entries, run.report.get("summary_before", snapshot).get("text", "")
+                page = (run.report or {}).get("edit_page")
+                entries = [e for e in entries if not page or e.get("page") == page]
+                return user, run.project_id, run.instruction, entries
 
     snapshot = await asyncio.to_thread(prepare)
     if snapshot is None:
         return
-    user, pid, instruction, entries, summary = snapshot
+    user, pid, instruction, entries = snapshot
     result, usage = await call(
         user,
         EDIT_SYSTEM,
-        {"instruction": instruction, "summary": summary, "entries": [{k: e[k] for k in ("id", "kind", "content")} for e in entries]},
+        {
+            "instruction": instruction,
+            "page": "\n".join(e["content"] for e in entries),
+            "entries": [{k: e[k] for k in ("id", "kind", "content")} for e in entries],
+        },
     )
 
     def apply():
@@ -103,7 +95,8 @@ async def edit(run_id, token):
                 run = _check_claim(db, run_id, token)
                 owner = db.get(User, user.id, populate_existing=True)
                 current = memory_for(owner)
-                if scope_entries(owner, pid) != entries:
+                page = (run.report or {}).get("edit_page")
+                if [e for e in scope_entries(owner, pid) if not page or e.get("page") == page] != entries:
                     raise DreamError("记忆已变化，请重试")
                 if owner.disabled_at or not current["enabled"] or (pid and not db.get(Project, pid)):
                     raise DreamError("记忆未开启或项目已删除")
@@ -151,7 +144,6 @@ async def edit(run_id, token):
                 try:
                     # Other scopes/settings may change while the model waits. Undo must restore the
                     # document just before this commit, rather than overwrite those concurrent changes.
-                    run.before_memory = current
                     after = save(db, owner, current, modified, explicit=True, tombstones=True) if changed else current
                 except ValueError:
                     raise DreamError("记忆已满，先忘记一些内容再试")
@@ -159,9 +151,9 @@ async def edit(run_id, token):
                 if refused:
                     reply = "已处理可保存的内容；密钥或口令不能保存为记忆。" if changed else "密钥或口令不能保存为记忆。"
                 # forgetting is final (the deletion lineage clears every copy), so only an edit without removals can be undone
-                run.report = {**(run.report or {}), "changes": counts}
+                run.report = {**(run.report or {}), "changes": counts, "deletion": bool(counts["removed"])}
                 run.report = {**(run.report or {}), "reply": reply, "_final_status": "applied" if changed else "skipped"}
-                run.after_memory = after
+                record(run, current, after)
                 run.plan = {"edit": True}
                 run.token_usage = usage
                 _finish(db, run, "applied" if changed else "skipped")
@@ -286,13 +278,12 @@ async def merge_projects(run_id, token):
                                     entry["project_id"] = None
                         elif action != "keep_project":
                             raise DreamError("项目融合操作无效")
-                    run.before_memory = run.before_memory or before
                     after = (
                         save(db, owner, current, [e for e in modified if e["id"] not in removed])
                         if modified != current["entries"] or removed
                         else current
                     )
-                    run.after_memory = after
+                    record(run, current, after)
                     run.plan = {**(run.plan or {}), "merges": [*(run.plan or {}).get("merges", []), {"project_id": pid, **plan}]}
                     run.report = {**(run.report or {}), "merged_projects": [*(run.report or {}).get("merged_projects", []), pid]}
                     project.memory_merge_requested_at = None
@@ -317,24 +308,3 @@ async def merge_projects(run_id, token):
                     db.commit()
 
             await asyncio.to_thread(note)
-
-
-async def finish_summaries(run_id, token):
-    from ..models import MemoryDreamRun
-
-    def prepare():
-        with SessionLocal() as db:
-            run = db.get(MemoryDreamRun, run_id)
-            if not run or run.claim_token != token or run.status not in {"applied", "skipped", "failed"}:
-                return
-            user = db.get(User, run.user_id)
-            if not user or user.disabled_at:
-                return
-            return user.id, stale_scopes(db, user, limit=5, requested=run.project_id)
-
-    prepared = await asyncio.to_thread(prepare)
-    if not prepared:
-        return
-    uid, scopes = prepared
-    for pid in scopes:
-        await regenerate(uid, pid)

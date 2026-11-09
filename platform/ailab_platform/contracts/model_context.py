@@ -5,7 +5,7 @@ import json
 
 from pydantic import BaseModel, Field
 
-CONTEXT_ABI_VERSION = 1
+CONTEXT_ABI_VERSION = 2
 
 
 class SummaryUpdate(BaseModel):

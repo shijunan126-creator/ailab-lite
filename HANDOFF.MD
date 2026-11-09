@@ -1,3 +1,16 @@
+## 2026-11-09 Memory v2 迁移陷阱（实施中）
+
+- JSON 事实迁到 `memory_items` 后，读取、来源清理、项目融合、撤销与后台写入必须使用同一适配层；不能只迁 HTTP 管理入口。
+- 删除 `MemorySummary` ORM 前必须迁移既有摘要测试、查询计划测试和前缀快照测试，否则全套在 collection 阶段停止，不能冒称其他测试通过。0064现已删除旧摘要ORM/表，对应迁移降级须重建兼容表。
+- 工具 schema 升级须一起更新上下文 ABI 和录制请求的版本断言；缺省字段的历史快照也要能渲染。手动批次报告必须等待 chain 完成或提供 next_id，不能将单批新增当整次结果。
+- 本轮状态与未完成合同见[记录](docs/progress/updates/2026-11-09-memory-v2.md)。
+
+
+## 2026-11-09 全套测试只在 CI 跑；autouse fixture 拖垮 PG 时限
+
+- 用户确认：本地不再在推送前重复跑双库全套/E2E/Portal build，CI 是全套与验收记录；本地只跑 lint、改动模块测试和 CI 跑不了的（真模型、浏览器、真实数据副本迁移）。规则见 AGENTS.md §9。
+- PR172 首轮 CI 的 PG job 在 96% 处被 20 分钟上限取消：新加的 autouse 清理 fixture 每个测试都 `select` 全部 Run id 再 `NOT IN`，Run 表随全套增长，测试越跑越慢。本地 Mac 快、无时限，发现不了。autouse fixture 只比较少量“活”行（运行中 Run、有租约/pending 的整理任务），不要快照整表；不要靠调高 CI 时限掩盖。
+
 ## 2026-11-09 新会话首条消息不能先建空壳
 
 - 新会话的首条消息必须在同一用户锁和事务里完成 Run 准入、Conversation 和首条 Run 创建，失败整体回滚。先建 Conversation 再提交消息时，429/422 会留下 `runs=0` 的幽灵会话；前端进入详情页后消息被过滤，看起来像整段历史消失。见[记录](docs/progress/updates/2026-11-09-first-message-admission.md)。
@@ -1456,3 +1469,30 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 模型写出的图片网址如果被页面自动加载，就能把对话内容拼进 URL 外泄。GenUI 只加载工具结果里平台签名的 `/v1/web-images/<编码网址>.<签名>`，由 API 代取并缓存；其他 src 一律显示占位、不发请求。不要为了“能显示”放宽 CSP `img-src` 或允许任意 https 图片。
 - 全局输入框样式只匹配 `input[type="text"]` 等带 type 的选择器。新写的 `<input>` 不写 `type="text"` 就没有边框和内边距，看起来像普通文字。
 - 悬停才显示的行内操作只用 `opacity` 隐藏，不要再加 `pointer-events: none`：指针直接移到按钮位置时，命中的是下面的单元格，Playwright 点击也会被“intercepts pointer events”挡住。指针在按钮上本身就会让整行处于 hover。
+
+
+## Memory v2 契约与测试隔离（2026-11-09）
+
+- `memory_items` 是事实来源；不能在测试或产品中直接写 `User.settings.memory.entries` 后期待 API 读取它。旧数据只由迁移 0064 转换；合成测试使用关系条目写路径。SQLite ORM 时间可能无时区，输出 DTO 必须归一为 UTC。
+- 全局容量会看到共用测试数据库中别的测试留下的活动作业。测试 teardown 清理本例新建的作业租约与 pending/running 状态，以及仍 running 的交互 Run（背压输入），不提高生产容量；故障测试另证实未过期租约阻塞、过期租约释放容量。
+- 多批报告必须按持久 `next_id` 续链；终态提交不等于链末发布。后继创建与前驱链接同事务，持用户锁后重读前驱，避免重复投递再次创建后继和累计。
+- Ruff 从 `platform/` 运行。仓库根包含 vendor、历史复现与生成 Office 技能，不能对根运行 `ruff --fix/format .`。
+
+- PG `LIMIT 1` 的活动查询加入 JSON chain 条件后，即使有 user_id 索引也可能选顺扫；在双库创建覆盖 pending/running、claimed_until 非空、chain_running 的部分索引，不关闭顺扫/不放宽 EXPLAIN 断言。
+
+## 2026-11-09 Memory v2 后端质量续修
+
+- 核心预算必须先按语义优先级与 reinforced_at 选条，再按 page 展示；先分页面会挤掉明确偏好。手工记忆同样属于模型不可信数据，最终模型边界必须编码标签，不能只依赖写入过滤。
+- SQLite 的 SELECT FOR UPDATE 无效；调度准入用 singleton UPSERT 的数据库写锁，整个 claim 在工作线程内，不能持进程锁等待数据库锁。SQLite 已有表 ADD COLUMN 不能用 CURRENT_TIMESTAMP 默认值；0064 用常量默认再回填 created_at。
+- 只在提取提示词说“不保存测试事实”不够：artifact由交付表独立生成，必须共用已持久的来源排除结果，否则真实演示/复现文件仍进入记忆。
+- 提取终态提交后的Dreaming仍需实际模型调用与计费，不能沿用只允许旧summary模式的准入。有效租约+stage_committed允许后阶段，绝不重开终态；崩溃后只恢复未完成阶段，已提交结果不得重做。
+- 缓存预算要覆盖key中的原文和token字典，不能仅限制条目数量；新增通道也要接入忘记清理。供应商cached_tokens=0不等于前缀被改写，要比较请求并重放验证，不能挑选高命中调用报达标。
+- 慢socket测试的HTTPX transport会冷建SSL/proxy，即使URL是loopback HTTP。把构造放在首输出deadline里，初始化超过0.5秒时请求尚未发出就正确超时，seen=0断言因此失败；测试先建transport，保留实际TCP与原超时断言。
+
+- 调度循环不能无条件在每批后睡300秒：有实际进展且仍有到期积压时继续领取；无进展的背压/容量拒绝则等待，避免数据库空转。进展快照只取状态、完成时间及JSON标量，不加载plan/change_set正文；启动恢复也走同一并发调度。
+
+- 常驻core/catalog不能调用now，连expires_at过滤也会造成跨日静默改写。目录半衰期排序去掉共同now项；工具即时过滤时间，Dreaming持久关闭，边界外只追加core/名称变更和删除禁用。预算按最终转义字节/字符计算，页面分组在优先级选择之后。
+- 修订检测不能只比revision：实体/页面或政策可改变模型投影；同时比较确定性签名。后读的权威list优先于先读的context，避免删后重新注入；archive正文不作为修订通知追加。
+- 缓存验收按场景第二轮起累计≥95%，另逐调用核对旧前缀。用相邻provider prompt_tokens之差作为追加量，未命中量须≤追加量+固定缓存块容差；不可为提高比率删除必须回传的reasoning_content，不能用汇总高命中掩盖个别旧前缀丢失。端点粒度须单独确认，当前网关观测128，不泛化到其他后端。
+- 多实体别名索引查询也要显式order_by，再构造扩展词；主结果的id tie-break不能修复前面无序的浮点求和。工具片段必须按编码后的结果执行长度上限，否则标签多的存储内容会把360字放大；文件名也是不可信文本。
+- 真模型触发评测不能直接调用默认tools_for_chat/system_prompt_for：默认仍是document-v1，且会漏掉discovery、能力过滤和GenUI提示。复用生产_tools_for_run，并录制对比双system消息和完整schema。memory.search是动作别名，提示词须明确JSON的action/query字段；DSML或错误键名仍严格拒绝，不猜参执行。

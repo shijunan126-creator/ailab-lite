@@ -17,9 +17,10 @@ _CUES = re.compile(
     "|".join(
         [
             "还记得|记得|上次|上回|之前|以前|先前|曾经|早些时候|前几天|前阵子|刚才|那次",
-            "我们|咱们|我|你|讨论过|聊过|说过|提到过|提过|谈过|讨论|聊到|提到|问过|做过",
+            "我们|咱们|讨论过|聊过|说过|提到过|提过|谈过|讨论|聊到|提到|问过|做过",
             "帮我|请问|一下|有关|关于|那个|这个|什么|怎么|是否|是不是|哪个|如何|结论|内容",
-            "remember|recall|earlier|previously|before|last time|we|you|discussed|talked about|mentioned",
+            r"\b(?:remember|recall|earlier|previously|before|last time|we|you|discussed|talked about|mentioned)\b",
+            r"(?<![㐀-䶿一-鿿])[我你](?![㐀-䶿一-鿿])",
         ]
     ),
     re.I,
@@ -123,3 +124,50 @@ def search(query: list[str], docs: list[Doc]) -> list[Hit]:
             coverage = max(coverage, 0.6)
         hits.append(Hit(d.key, score, coverage, tuple(matched)))
     return hits
+
+
+def cached_doc(function):
+    """Bound retained source strings and token dictionaries to 16 MiB per channel."""
+    import sys
+    from collections import OrderedDict
+    from functools import wraps
+    from threading import Lock
+
+    cache = OrderedDict()
+    lock = Lock()
+    used = 0
+    budget = 16 * 1024 * 1024
+
+    def size(value):
+        return sys.getsizeof(value) + (sum(size(v) for v in value) if isinstance(value, tuple) else 0)
+
+    @wraps(function)
+    def wrapped(*key):
+        nonlocal used
+        with lock:
+            if key in cache:
+                cache.move_to_end(key)
+                return cache[key][0]
+        doc = function(*key)
+        cost = size(key) + sys.getsizeof(doc) + sys.getsizeof(doc.weighted_tf)
+        cost += sum(sys.getsizeof(k) + sys.getsizeof(v) for k, v in doc.weighted_tf.items()) + 256
+        with lock:
+            if key in cache:
+                return cache[key][0]
+            if cost <= budget:
+                while cache and used + cost > budget:
+                    _, (_, removed) = cache.popitem(last=False)
+                    used -= removed
+                cache[key] = (doc, cost)
+                used += cost
+        return doc
+
+    def clear():
+        nonlocal used
+        with lock:
+            cache.clear()
+            used = 0
+
+    wrapped.cache_clear = clear
+    wrapped.cache_bytes = lambda: used
+    return wrapped

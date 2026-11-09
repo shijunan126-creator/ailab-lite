@@ -21,7 +21,7 @@ from ..models import MemoryDreamRun, MemoryEpisode, MemoryWorkItem, Run, RunDeli
 from . import embeddings
 from .tombstones import fact_hash
 
-FORGET_DERIVED_FACTS = False  # True: also drop facts whose only evidence was the deleted conversation
+FORGET_DERIVED_FACTS = True  # True: also drop facts whose only evidence was the deleted conversation
 
 
 def forget_conversation(db: Session, user: User, conversation_id: str) -> dict:
@@ -35,9 +35,11 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
     from ..skill_drafts.service import invalidate_drafts
 
     invalidate_drafts(db, user.id, conversation_ids)
+    from .retrieval import item_doc
     from .search import _doc
 
     _doc.cache_clear()
+    item_doc.cache_clear()
     run_ids = set(db.scalars(select(Run.id).where(Run.conversation_id.in_(conversation_ids), Run.user_id == user.id)))
     embeddings.delete_for_runs(db, list(run_ids))
     db.execute(delete(MemoryWorkItem).where(MemoryWorkItem.run_id.in_(run_ids)))
@@ -64,7 +66,9 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
         if set(dream.input_run_ids or []) & run_ids:
             dream.report = {**(dream.report or {}), "candidates": []}
 
-    stored = (user.settings or {}).get("memory") or {}
+    from ..memory_recall.store import entries_for, replace_entries
+
+    stored = {**((user.settings or {}).get("memory") or {}), "entries": entries_for(user)}
     entries, changed, dropped = [], 0, 0
     for entry in stored.get("entries") or []:
         runs = set(entry.get("evidence_run_ids") or [])
@@ -88,7 +92,8 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
         changed += 1
     if changed or dropped:
         revision = int(stored.get("revision", 0)) + 1  # an open memory page must reload before it saves
-        user.settings = {**(user.settings or {}), "memory": {**stored, "revision": revision, "entries": entries}}
+        replace_entries(db, user, entries)
+        user.settings = {**(user.settings or {}), "memory": {**{k: v for k, v in stored.items() if k != "entries"}, "revision": revision}}
         db.add(user)
         record_audit(
             db,
@@ -105,9 +110,11 @@ def purge_episodes_for_runs(db: Session, run_ids: list[str]) -> int:
     """Backstop for the hard purge of a conversation: no episode may outlive its run."""
     if not run_ids:
         return 0
+    from .retrieval import item_doc
     from .search import _doc
 
     _doc.cache_clear()
+    item_doc.cache_clear()
     embeddings.delete_for_runs(db, run_ids)
     db.execute(delete(MemoryWorkItem).where(MemoryWorkItem.run_id.in_(run_ids)))
     result = db.execute(delete(MemoryEpisode).where(MemoryEpisode.run_id.in_(run_ids)))
@@ -121,10 +128,9 @@ def _rewrite_copies(db: Session, user_id: str, rewrite) -> None:
         return {**value, "entries": [next_ for entry in value.get("entries", []) if (next_ := rewrite(entry)) is not None]}
 
     for dream in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id).execution_options(yield_per=100)):
-        for field in ("before_memory", "after_memory"):
-            value = getattr(dream, field)
-            if value and (updated := document(value)) != value:
-                setattr(dream, field, updated)
+        from ..memory_dream.changes import redact
+
+        dream.change_set = redact(dream.change_set, rewrite)
         candidates = []
         for entry in (dream.report or {}).get("candidates", []):
             next_ = rewrite(entry)
@@ -164,13 +170,6 @@ def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None
     _rewrite_copies(db, user_id, rewrite)
     # Derived human summaries and undo text may contain a removed fact verbatim. Do not
     # retain them as an alternate read/restore route around the deletion fence.
-    from ..models import MemorySummary
-
-    scopes = {e.get("project_id") for e in removed}
-    for row in db.scalars(select(MemorySummary).where(MemorySummary.user_id == user_id)):
-        if row.project_id in scopes:
-            row.text = ""
-            row.source_digest = ""
     for dream in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id).execution_options(yield_per=100)):
         report = dict(dream.report or {})
         report.pop("summary_before", None)

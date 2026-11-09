@@ -126,12 +126,19 @@ cd portal && npm test && npm run build
 
 Tests build their own isolated settings (`tests/conftest.py`). Never point a test at a developer database; the Postgres test URLs are wiped. Start throwaway Redis/PostgreSQL on non-default ports and stop them afterwards.
 
+**Where the full suites run (2026-11-09).** CI is the full run; do not repeat it locally before pushing.
+
+- Locally: `ruff check`/`ruff format --check`, the tests of the modules you changed, and anything CI cannot run (real-model checks, a browser look at changed UI, migrations against a copy of real data).
+- CI: the full Python suite on SQLite and PostgreSQL, E2E, Portal tests and build, plus the other jobs. Its result on the exact commit to merge is the acceptance record.
+- Run a full suite locally only to reproduce a CI failure, or when the change cannot be pushed yet.
+- CI time limits are part of acceptance. A change that slows a suite (for example an autouse fixture whose cost grows with the database) is a bug to fix, not a reason to raise the limit.
+
 ## 10. Workflow
 
 - Work on a branch; keep unrelated user changes (e.g. `.DS_Store`) untouched.
 - Small, reviewable commits with conventional messages (`feat(ledger): …`, `fix(broker): …`). PR descriptions follow section 11.
 - Maintain the continuity records in section 0 with every meaningful change. Add reusable traps to `HANDOFF.MD`, update `docs/architecture/status-matrix.md` when a capability changes state, and record decisions that diverge from the target architecture as ADRs in `docs/architecture/adr/`. A handoff is incomplete if only the chat response contains its outcome or next step.
-- Before saying "done": lint, full Python suite, Portal build, and for UI changes a real browser check (see HANDOFF for the Playwright route).
+- Before saying "done": lint and the changed modules' tests locally, green CI on the final commit (full suites, Portal build), and for UI changes a real browser check (see HANDOFF for the Playwright route).
 
 ## 11. Pull requests
 

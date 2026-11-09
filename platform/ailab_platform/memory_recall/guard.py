@@ -61,3 +61,10 @@ def reject_reason(text: str, *, untrusted: bool = True) -> str | None:
     if untrusted and any(p.search(text) for p in _INJECTION_PATTERNS):
         return INJECTION
     return None
+
+
+def model_text(value: str) -> str:
+    """Encode delimiters at the final model boundary, including manually stored data."""
+    from html import escape
+
+    return escape(str(value), quote=False)

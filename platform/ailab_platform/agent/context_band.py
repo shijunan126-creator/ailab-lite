@@ -32,9 +32,22 @@ def bounded_memory(band, memory):
     from .prompts import memory_prompt
 
     snapshot = deepcopy(memory)
+    from datetime import UTC, datetime
+
+    from ..memory_recall.policy import priority
+    from ..memory_recall.store import stamp
+
     while band.cost(memory_prompt(snapshot)) > band.memory_budget:
         entries = snapshot.get("entries") or []
-        optional = next((i for i in range(len(entries) - 1, -1, -1) if entries[i].get("kind") != "user"), None)
+        optional = max(
+            (i for i, entry in enumerate(entries) if entry.get("kind") not in {"user", "preference"}),
+            key=lambda i: (
+                priority(entries[i].get("kind"), entries[i].get("origin")),
+                -stamp(entries[i].get("reinforced_at"), datetime.min.replace(tzinfo=UTC)).timestamp(),
+                entries[i]["id"],
+            ),
+            default=None,
+        )
         if optional is None:
             raise ContextPause("记忆固定结构超过上下文预算，已暂停")
         entries.pop(optional)

@@ -433,8 +433,8 @@ def test_system_prefix_is_shared_and_memory_changes_append_notes():
             return self.current
 
     async def exercise():
-        first = {"id": "m1", "kind": "user", "content": "中文"}
-        second = {"id": "m2", "kind": "user", "content": "简洁"}
+        first = {"id": "m1", "kind": "user", "content": "中文", "observed_at": "2026-01-01T00:00:00+00:00"}
+        second = {"id": "m2", "kind": "user", "content": "简洁", "observed_at": "2026-01-02T00:00:00+00:00"}
         p1, p2 = Platform("u1", first, "项目一"), Platform("u2", second, "项目二")
         llm1, llm2 = ScriptedLLM([LLMResponse(content="ok")]), ScriptedLLM([LLMResponse(content="ok")])
         await AgentLoop(platform=p1, broker=FakeBroker(), llm=llm1).process("r1", attempt_id="a")
@@ -452,7 +452,7 @@ def test_system_prefix_is_shared_and_memory_changes_append_notes():
         p1.current = {**p1.current, "revision": 3, "entries": [second]}
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
         assert messages[:2] == original
-        assert "记忆 m2：简洁" in messages[-2]["content"]
+        assert "核心记忆 m2：[2026-01-02] 简洁" in messages[-2]["content"]
         assert "记忆 m1 已删除，不得再使用" in messages[-1]["content"]
         assert "revision=" not in memory_prompt(p1.current)
 

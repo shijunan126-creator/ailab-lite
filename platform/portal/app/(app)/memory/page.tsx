@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MemoryCard } from "../../../components/memory/memory-summary";
+import { MemoryCard } from "../../../components/memory/memory-view";
 import Switch from "../../../components/switch";
 import { api, errorMessage } from "../../../lib/api";
 
@@ -15,7 +15,7 @@ const SWITCHES: { key: keyof Settings; label: string }[] = [
   { key: "reference_history", label: "引用历史对话" },
 ];
 
-/** What the AI remembers, as one summary, and the switches that decide whether it remembers at all. */
+/** What the AI remembers, as items and topic pages, and the switches that decide whether it remembers at all. */
 export default function MemoryPage() {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [saving, setSaving] = useState(false);

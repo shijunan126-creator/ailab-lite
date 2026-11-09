@@ -15,6 +15,7 @@ from ailab_platform.db import SessionLocal
 from ailab_platform.llm import LLMResponse
 from ailab_platform.memory_dream import service
 from ailab_platform.models import MemoryDreamRun, MemoryEpisode, Run, RunEvent, User
+from tests.memory_fixtures import make_dream
 
 from .test_skill_settings import _user
 
@@ -51,7 +52,7 @@ def test_memory_routes_expose_dream_settings_and_history() -> None:
             json={"expected_revision": 0, "enabled": True, "auto_save": True, "entries": [{"kind": "user", "content": "旧记忆"}]},
         ).json()["entries"][0]
         with SessionLocal() as db:
-            run = MemoryDreamRun(
+            run = make_dream(
                 user_id=me_doc["id"],
                 local_date="2026-10-26",
                 timezone="Asia/Shanghai",
@@ -61,7 +62,7 @@ def test_memory_routes_expose_dream_settings_and_history() -> None:
                 plan={"changes": [{"op": "add", "kind": "user", "content": "新记忆", "confidence": 0.9, "evidence_run_ids": []}]},
                 journal="ok",
                 before_memory={"entries": [entry], "enabled": True, "auto_save": True},
-                after_memory={"entries": [entry], "enabled": True, "auto_save": True},
+                after_memory={"revision": 1, "entries": [entry], "enabled": True, "auto_save": True},
                 token_usage={"prompt_tokens": 10, "completion_tokens": 2},
                 created_at=datetime.now(UTC),
                 finished_at=datetime.now(UTC),
@@ -148,7 +149,7 @@ def test_process_dream_applies_without_a_visible_run(monkeypatch) -> None:
                     )
                 )
             db.add(
-                MemoryDreamRun(
+                make_dream(
                     id="dream_test",
                     user_id=user.id,
                     local_date="2026-10-25",
@@ -157,7 +158,7 @@ def test_process_dream_applies_without_a_visible_run(monkeypatch) -> None:
                     trigger="cron",
                     input_run_ids=[],
                     before_memory={},
-                    after_memory={},
+                    after_memory=__import__("ailab_platform.api.routes_memory", fromlist=["memory_for"]).memory_for(user),
                     token_usage={},
                     created_at=datetime.now(UTC),
                 )
@@ -212,11 +213,10 @@ def test_dream_chat_bounds_its_output_tokens(monkeypatch) -> None:
 def test_extraction_prompt_distinguishes_durable_memory_from_task_requests() -> None:
     from ailab_platform.memory_dream.prompts import EXTRACT_SYSTEM
 
-    assert "an unrelated new conversation weeks later" in EXTRACT_SYSTEM
-    assert "Never infer a preference from repeated behaviour" in EXTRACT_SYSTEM
-    assert "at least two different conversations" not in EXTRACT_SYSTEM
-    assert "换个方式可视化" in EXTRACT_SYSTEM
-    assert "empty facts list is normal" in EXTRACT_SYSTEM
+    assert "only operation is ADD" in EXTRACT_SYSTEM
+    assert "interests" in EXTRACT_SYSTEM
+    assert "source_quote" in EXTRACT_SYSTEM
+    assert "test" in EXTRACT_SYSTEM
 
 
 def test_extract_prompt_keeps_an_oldest_prefix_to_fit_the_budget() -> None:
@@ -261,7 +261,7 @@ def test_reverting_a_dream_makes_the_invalidated_fact_visible_again() -> None:
                 {},
             )
             db.add(
-                MemoryDreamRun(
+                make_dream(
                     id="dream_revert",
                     user_id=user.id,
                     local_date="2026-10-26",
@@ -272,7 +272,7 @@ def test_reverting_a_dream_makes_the_invalidated_fact_visible_again() -> None:
                     plan={},
                     journal="",
                     before_memory={"entries": before["entries"], "enabled": before["enabled"], "auto_save": before["auto_save"]},
-                    after_memory={},
+                    after_memory=__import__("ailab_platform.api.routes_memory", fromlist=["memory_for"]).memory_for(user),
                     token_usage={},
                     created_at=datetime.now(UTC),
                 )
@@ -285,6 +285,7 @@ def test_reverting_a_dream_makes_the_invalidated_fact_visible_again() -> None:
 
 
 def test_a_failed_dream_is_retried_the_same_day(monkeypatch) -> None:
+    monkeypatch.setattr("ailab_platform.memory_dream.scheduling.offset", lambda *args: 0)
     with TestClient(app) as c:
         me = _user(c)
         me_doc = c.get("/v1/me", headers=me).json()
@@ -304,7 +305,7 @@ def test_a_failed_dream_is_retried_the_same_day(monkeypatch) -> None:
                     )
                 )
             db.add(
-                MemoryDreamRun(
+                make_dream(
                     id="dream_failed",
                     user_id=user.id,
                     local_date="2026-10-26",
@@ -338,7 +339,7 @@ def test_manual_trigger_allows_new_batches_same_day() -> None:
         me_doc = c.get("/v1/me", headers=me).json()
         with SessionLocal() as db:
             db.add(
-                MemoryDreamRun(
+                make_dream(
                     id="dream_manual",
                     user_id=me_doc["id"],
                     local_date=today,

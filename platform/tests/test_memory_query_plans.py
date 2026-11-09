@@ -53,7 +53,7 @@ def test_memory_pending_and_history_queries_use_bounded_indexed_paths(engine):
         event.listen(engine, "before_cursor_execute", capture)
         try:
             assert len(_rows(db, uid, None, None)) == 400
-            assert len(service._new_runs(db, uid, None, now)) == 40
+            assert len(service._new_runs(db, uid, None, now)) == 30
             assert len(service._new_runs(db, uid, None, now, limit=201)) == 100
         finally:
             event.remove(engine, "before_cursor_execute", capture)
@@ -116,8 +116,8 @@ def test_dream_budget_and_active_queries_have_indexed_paths(engine):
             assert "INDEX" in plan.upper() or "BITMAP" in plan.upper(), plan
 
 
-def test_summary_and_project_pool_queries_are_indexed(engine):
-    from ailab_platform.models import MemorySummary, Project
+def test_items_and_project_pool_queries_are_indexed(engine):
+    from ailab_platform.models import MemoryItem, Project
 
     run_migrations(engine)
     with Session(engine) as db:
@@ -138,24 +138,29 @@ def test_summary_and_project_pool_queries_are_indexed(engine):
             ],
         )
         db.execute(
-            insert(MemorySummary),
+            insert(MemoryItem),
             [
-                {"id": f"msum_plan_{i}", "user_id": user.id, "project_id": f"prj_plan_{i}", "text": "", "source_digest": ""}
+                {
+                    "id": f"msum_plan_{i}",
+                    "user_id": user.id,
+                    "project_id": f"prj_plan_{i}",
+                    "content": "plan",
+                    "kind": "fact",
+                    "page": "工作",
+                    "origin": "manual",
+                    "tier": "archive",
+                    "content_hash": str(i),
+                }
                 for i in range(4000)
             ],
         )
-        db.add(MemorySummary(user_id=user.id, text="", source_digest=""))
         db.commit()
         db.execute(text("ANALYZE"))
         queries = [
             select(Project.id).where(Project.user_id == user.id, Project.memory_mode == "shared"),
-            select(MemorySummary).where(MemorySummary.user_id == user.id, MemorySummary.project_id.is_(None)),
-            select(MemorySummary).where(MemorySummary.user_id == user.id, MemorySummary.project_id == "prj_plan_8"),
-            select(MemorySummary.id).where(MemorySummary.project_id == "prj_plan_8"),
-            select(Project.id, MemorySummary.source_digest)
-            .outerjoin(MemorySummary, (MemorySummary.project_id == Project.id) & (MemorySummary.user_id == user.id))
-            .where(Project.user_id == user.id)
-            .order_by(Project.updated_at.desc(), Project.id),
+            select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.project_id.is_(None)),
+            select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.project_id == "prj_plan_8"),
+            select(MemoryItem.id).where(MemoryItem.project_id == "prj_plan_8"),
         ]
         for query in queries:
             sql = str(query.compile(engine, compile_kwargs={"literal_binds": True}))

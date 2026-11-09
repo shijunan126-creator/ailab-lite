@@ -222,35 +222,6 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class MemorySummary(Base):
-    __tablename__ = "memory_summaries"
-    __table_args__ = (
-        Index("ix_memory_summaries_user", "user_id"),
-        Index(
-            "uq_memory_summary_account",
-            "user_id",
-            unique=True,
-            sqlite_where=text("project_id IS NULL"),
-            postgresql_where=text("project_id IS NULL"),
-        ),
-        Index(
-            "uq_memory_summary_project",
-            "user_id",
-            "project_id",
-            unique=True,
-            sqlite_where=text("project_id IS NOT NULL"),
-            postgresql_where=text("project_id IS NOT NULL"),
-        ),
-    )
-    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("msum"))
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
-    text: Mapped[str] = mapped_column(Text, default="", server_default="")
-    source_digest: Mapped[str] = mapped_column(String(64), default="", server_default="")
-    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
 class Conversation(Base):
     """A chat thread. Each user message starts one Run (a turn); turns share history and a sandbox workspace."""
 
@@ -852,9 +823,20 @@ class MemoryDreamRun(Base):
             sqlite_where=text("status IN ('pending', 'running')"),
             postgresql_where=text("status IN ('pending', 'running')"),
         ),
+        Index(
+            "ix_memory_dream_active_user",
+            "user_id",
+            sqlite_where=text(
+                "status IN ('pending', 'running') OR claimed_until IS NOT NULL OR json_extract(report, '$.chain_running') = 1"
+            ),
+            postgresql_where=text(
+                "status IN ('pending', 'running') OR claimed_until IS NOT NULL OR (report->>'chain_running')::boolean IS TRUE"
+            ),
+        ),
         Index("ix_memory_dream_user_finished", "user_id", "finished_at"),
         Index("ix_memory_dream_user_date_trigger", "user_id", "local_date", "trigger"),
         Index("ix_memory_dream_status_created", "status", "created_at"),
+        Index("ix_memory_dream_queue", "status", "priority", "due_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dream"))
@@ -863,6 +845,15 @@ class MemoryDreamRun(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     trigger: Mapped[str] = mapped_column(String(20), default="cron")
+    priority: Mapped[int] = mapped_column(
+        Integer, default=lambda ctx: 10 if ctx.get_current_parameters().get("trigger", "cron") == "cron" else 0, server_default="10"
+    )
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default="1970-01-01 00:00:00")
+    kind: Mapped[str] = mapped_column(
+        String(20),
+        default=lambda ctx: "edit" if ctx.get_current_parameters().get("trigger") == "edit" else "extract",
+        server_default="extract",
+    )
     project_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     instruction: Mapped[str] = mapped_column(Text, default="", server_default="")
     batch_index: Mapped[int] = mapped_column(Integer, default=1)
@@ -871,8 +862,7 @@ class MemoryDreamRun(Base):
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
     journal: Mapped[str] = mapped_column(Text, default="")
     report: Mapped[dict] = mapped_column(JSON, default=dict)
-    before_memory: Mapped[dict] = mapped_column(JSON, default=dict)
-    after_memory: Mapped[dict] = mapped_column(JSON, default=dict)
+    change_set: Mapped[dict] = mapped_column(JSON, default=dict)
     token_usage: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -1439,3 +1429,68 @@ class WebImageRef(Base):
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
     image_id: Mapped[str] = mapped_column(ForeignKey("web_images.id", ondelete="CASCADE"), primary_key=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MemoryItem(Base):
+    __tablename__ = "memory_items"
+    __table_args__ = (
+        Index("ix_memory_items_scope", "user_id", "project_id", "status", "tier"),
+        Index("ix_memory_items_page", "user_id", "project_id", "page", "updated_at", "id"),
+        Index(
+            "uq_memory_items_hash",
+            "user_id",
+            func.coalesce(text("project_id"), ""),
+            "content_hash",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+            postgresql_where=text("status = 'active'"),
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("mem"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="fact")
+    origin: Mapped[str] = mapped_column(String(20), default="manual")
+    tier: Mapped[str] = mapped_column(String(20), default="archive")
+    page: Mapped[str] = mapped_column(String(120), default="工作与身份")
+    content: Mapped[str] = mapped_column(Text)
+    entities: Mapped[list] = mapped_column(JSON, default=list)
+    source_run_ids: Mapped[list] = mapped_column(JSON, default=list)
+    source_quote: Mapped[str] = mapped_column(Text, default="")
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    support_conversations: Mapped[int] = mapped_column(Integer, default=1)
+    support_dates: Mapped[int] = mapped_column(Integer, default=1)
+    reinforced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Legacy adapter metadata, not another copy of the fact text.
+    metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+
+
+class MemoryEntity(Base):
+    __tablename__ = "memory_entities"
+    __table_args__ = (Index("uq_memory_entities_scope", "user_id", func.coalesce(text("project_id"), ""), "canonical", unique=True),)
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ent"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
+    canonical: Mapped[str] = mapped_column(String(120))
+    aliases: Mapped[list] = mapped_column(JSON, default=list)
+    conversations: Mapped[int] = mapped_column(Integer, default=1)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MemoryEntityAlias(Base):
+    """Indexed, disposable projection of canonical names and aliases."""
+
+    __tablename__ = "memory_entity_aliases"
+    __table_args__ = (Index("ix_memory_alias_lookup", "user_id", "name"),)
+    entity_id: Mapped[str] = mapped_column(ForeignKey("memory_entities.id", ondelete="CASCADE"), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))

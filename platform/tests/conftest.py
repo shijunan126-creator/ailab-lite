@@ -110,3 +110,58 @@ def release_test_document_jobs():
         db.execute(delete(DocumentOperation).where(DocumentOperation.id.not_in(before)))
         db.execute(delete(DocumentPreparation).where(DocumentPreparation.id.not_in(preparations)))
         db.commit()
+
+
+@pytest.fixture(autouse=True)
+def release_test_memory_jobs():
+    """Dream admission counts live leases and running interactive Runs across the whole database, so whatever a test
+    leaves live would throttle the next one. Only live rows are compared: snapshotting every Run id made each test
+    slower than the last and pushed the PostgreSQL suite past its CI limit."""
+    from sqlalchemy import inspect, or_, select, update
+
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import MemoryDreamRun, Run
+
+    def live(db):
+        jobs = set(
+            db.scalars(
+                select(MemoryDreamRun.id).where(
+                    or_(
+                        MemoryDreamRun.status.in_(("pending", "running")),
+                        MemoryDreamRun.claimed_until.is_not(None),
+                        MemoryDreamRun.report["chain_running"].as_boolean().is_(True),
+                    )
+                )
+            )
+        )
+        return jobs, set(db.scalars(select(Run.id).where(Run.status == "running")))
+
+    with SessionLocal() as db:
+        ready = inspect(db.get_bind()).has_table("memory_dream_runs")
+        before_jobs, before_runs = live(db) if ready else (set(), set())
+    yield
+    if not ready:
+        return
+    with SessionLocal() as db:
+        jobs, runs = live(db)
+        left = jobs - before_jobs
+        if left:
+            db.execute(update(MemoryDreamRun).where(MemoryDreamRun.id.in_(left)).values(claimed_until=None, claim_token=None))
+            db.execute(
+                update(MemoryDreamRun)
+                .where(MemoryDreamRun.id.in_(left), MemoryDreamRun.status.in_(("pending", "running")))
+                .values(status="failed")
+            )
+            for row in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.id.in_(left))):
+                if (row.report or {}).get("chain_running"):
+                    row.report = {**row.report, "chain_running": False}
+        if runs - before_runs:
+            db.execute(update(Run).where(Run.id.in_(runs - before_runs)).values(status="canceled"))
+        db.commit()
+
+
+@pytest.fixture(autouse=True)
+def isolate_model_pressure(monkeypatch):
+    from ailab_platform import model_pressure
+
+    monkeypatch.setattr(model_pressure, "_until", 0.0)

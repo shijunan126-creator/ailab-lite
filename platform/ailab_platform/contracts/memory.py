@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-MAX_CHARS = 12000
-MAX_ENTRIES = 100
+MAX_CHARS = 600000
+MAX_ENTRIES = 2000
 MAX_TOMBSTONES = 200
 DREAM_MAX_CHANGES = 5
 DREAM_TARGET_RATIO = 0.8
@@ -30,8 +30,14 @@ def valid_clock(value: str) -> str:
 class MemoryEntryInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str | None = Field(default=None, max_length=40)
-    kind: Literal["user", "memory"] = "memory"
-    content: str = Field(min_length=1, max_length=1000)
+    kind: Literal["user", "memory", "preference", "fact", "interest", "project", "artifact", "reference"] = "memory"
+    origin: Literal["explicit", "inferred", "chat", "manual"] | None = None
+    tier: Literal["core", "archive"] | None = None
+    page: str | None = Field(default=None, max_length=120)
+    reinforced_at: datetime | None = None
+    observed_at: datetime | None = None
+    expires_at: datetime | None = None
+    content: str = Field(min_length=1, max_length=300)
     # Optional metadata added by Phase 2. Omitting a field means "keep what is stored"; this
     # keeps older Portal/MemoryUpdate clients from wiping confidence and evidence.
     confidence: float | None = Field(default=None, ge=0, le=1)
@@ -75,6 +81,15 @@ class MemoryUpdate(BaseModel):
 
     @model_validator(mode="after")
     def bounded(self):
+        import re
+
+        active = [
+            (e.project_id, re.sub(r"[\W_]+", " ", e.content.casefold()).strip())
+            for e in self.entries
+            if not e.invalid_at and not e.suppressed and e.status != "review"
+        ]
+        if len(active) != len(set(active)):
+            raise ValueError("duplicate active memory content")
         ids = [e.id for e in self.entries if e.id]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate memory entry id")
@@ -85,17 +100,23 @@ class MemoryUpdate(BaseModel):
 
 class MemoryOperation(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["list", "search", "add", "replace", "remove"]
+    action: Literal["list", "search", "read", "add", "replace", "remove"]
+    page: str | None = Field(default=None, max_length=120)
+    before: datetime | None = None
+    after: datetime | None = None
     query: str = Field(default="", max_length=300)
     as_of: datetime | None = None
+    order: Literal["asc", "desc"] = "desc"
     expected_revision: int | None = Field(default=None, ge=0)
     id: str | None = Field(default=None, max_length=40)
-    kind: Literal["user", "memory"] = "memory"
+    kind: Literal["user", "memory", "preference", "fact", "interest", "project", "artifact", "reference"] = "memory"
     content: str = Field(default="", max_length=1000)
     explicit: bool = False
 
     @model_validator(mode="after")
     def valid_write(self):
+        if self.action == "search" and (not self.query.strip() or "\x00" in self.query):
+            raise ValueError("search query is required without NUL")
         if self.action in {"add", "replace"} and (not self.content.strip() or "\x00" in self.content):
             raise ValueError("memory content is required without NUL")
         return self
@@ -105,7 +126,6 @@ class RecallRequest(BaseModel):
     """Search the user's own past conversations."""
 
     model_config = ConfigDict(extra="forbid")
-    query: str = Field(default="", max_length=300)
     run_id: str | None = Field(default=None, max_length=40)
     cursor: str | None = Field(default=None, max_length=40)
     limit: int = Field(default=5, ge=1, le=10)
@@ -118,17 +138,10 @@ class RecallRequest(BaseModel):
     def utc_range(cls, value):
         return value.replace(tzinfo=UTC) if value and value.tzinfo is None else value
 
-    @field_validator("query")
-    @classmethod
-    def nonblank(cls, value):
-        if not value.strip() or "\x00" in value:
-            raise ValueError("query must contain text without NUL")
-        return value.strip()
-
     @model_validator(mode="after")
     def valid_request(self):
-        if not self.query and not self.run_id:
-            raise ValueError("query or run_id is required")
+        if not self.run_id and not (self.before or self.after):
+            raise ValueError("run_id or before/after is required")
         if self.before and self.after and self.before <= self.after:
             raise ValueError("before must follow after")
         return self
@@ -174,10 +187,13 @@ class DreamChange(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
-    op: Literal["add", "invalidate"]
+    op: Literal["add", "invalidate", "reinforce"]
     id: str | None = Field(default=None, max_length=40)
-    kind: Literal["user", "memory"] = "memory"
+    kind: Literal["user", "memory", "preference", "fact", "interest", "project", "artifact", "reference"] = "memory"
     content: str = Field(default="", max_length=1000)
+    page: str | None = Field(default=None, max_length=120)
+    tier: Literal["core", "archive"] = "archive"
+    expires_at: datetime | None = None
     confidence: float = Field(default=0.0, ge=0, le=1)
     evidence_run_ids: list[str] = Field(default_factory=list, max_length=20)
     evidence_episode_ids: list[str] = Field(default_factory=list, max_length=20)
@@ -217,3 +233,72 @@ class MemoryDreamRunOut(BaseModel):
     error: str = ""
     created_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+class MemorySource(BaseModel):
+    run_id: str
+    conversation_id: str | None
+    conversation_title: str
+    date: datetime
+
+
+class MemoryItem(BaseModel):
+    id: str
+    project_id: str | None
+    kind: Literal["preference", "fact", "interest", "project", "artifact", "reference"]
+    origin: Literal["explicit", "inferred", "chat", "manual"]
+    tier: Literal["core", "archive"]
+    page: str
+    content: str
+    status: Literal["active", "review", "suppressed", "closed"]
+    observed_at: datetime
+    valid_from: datetime
+    valid_to: datetime | None
+    expires_at: datetime | None
+    updated_at: datetime
+    sources: list[MemorySource] = Field(default_factory=list)
+
+
+class MemoryItemPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0)
+    content: str | None = Field(default=None, min_length=1, max_length=300)
+    tier: Literal["core", "archive"] | None = None
+    origin: Literal["explicit"] | None = None
+    status: Literal["active"] | None = None
+
+
+class MemoryEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    instruction: str = Field(min_length=1, max_length=500)
+    project_id: str | None = Field(default=None, min_length=1, max_length=40)
+    page: str | None = Field(default=None, max_length=120)
+    expected_revision: int = Field(ge=0)
+
+
+class MemoryItemsOut(BaseModel):
+    items: list[MemoryItem]
+    next_cursor: str | None
+
+
+class MemoryPage(BaseModel):
+    page: str
+    count: int
+    updated_at: datetime
+
+
+class MemoryActive(BaseModel):
+    id: str
+    status: str
+    trigger: str
+
+
+class MemoryView(BaseModel):
+    project_id: str | None
+    enabled: bool
+    memory_mode: str | None
+    merge_pending: bool
+    revision: int
+    active: MemoryActive | None
+    core: list[MemoryItem]
+    pages: list[MemoryPage]

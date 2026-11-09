@@ -522,11 +522,8 @@ def test_memory_prices_rendered_projection_and_protects_preferences(kind):
     assert band.cost(memory_prompt(memory)) < band.memory_budget
     assert bounded_memory(band, memory) == memory
     oversized = {"entries": [{"id": str(i), "kind": kind, "content": "汉" * 1000} for i in range(5)] + memory["entries"][-1:]}
-    if kind == "user":
-        with pytest.raises(ContextPause):
-            bounded_memory(band, oversized)
-    else:
-        assert bounded_memory(band, oversized)["entries"][-1]["id"] == "explicit"
+    assert band.cost(memory_prompt(oversized)) < band.memory_budget
+    assert bounded_memory(band, oversized)["entries"][-1]["id"] == "explicit"
 
 
 @pytest.mark.parametrize("keep_latest", [True, False])

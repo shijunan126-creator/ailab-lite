@@ -1,3 +1,12 @@
+# Memory v2 后端质量与评测（2026-11-09）
+
+- 分支 `feat/memory-v2-b`，实施基线 `feat/memory-v2-a@c6fe1d46`，base `origin/main@df83d8e`；已含前轮Portal。最终产品/测试冻结`72efcf3153576ee6533f9ec8ef140ff6210f1326`。仅本地提交，无部署、推送或PR。
+- 已完成质量修复、0064持久队列/恢复/计量、测试来源排除、无时钟常驻块与确定增量。检索/时效、ABI2真实触发及六场景真实缓存达到数值门槛；真实历史副本已删除。审查修复、§3–§15完成/偏差、提示词各轮数字和逐调用缓存只维护在[实施记录](updates/2026-11-09-memory-v2.md)。
+- 最终验证：SQLite2672/247跳过，PG/Redis2849/70跳过，前缀132/0跳过，全部0失败；隔离E2E194/15跳过，Portal274测试/build通过（各自基线见记录）。一次性PG/Redis及E2E服务已停止，临时数据/调试输出已清理。
+- 剩余边界：模型仍偶发无效JSON并被拒绝；提取质量未独立人工标注，2条兴趣价值偏弱；未测300真实用户整夜负载及真实服务链路缓存。下一步交主代理审阅本地提交，不自动推进部署或其他路线图。
+
+---
+
 # 首条消息与会话原子创建（2026-11-09）
 
 - 用户报告 `/c/cnv_bf66cafddac34d6a8b4a` 空白，原有 PRO 正文和失败记录消失。证据：Conversation 已创建，但 `runs=0`、`run_events=0`、`queued_messages=0`；首条消息返回 `429 too many active runs for this user`。工作树 `.worktrees/first-message-admission`，分支 `fix/first-message-admission`，base `origin/main@e47d22d8`；主工作区既有修改保留。

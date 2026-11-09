@@ -54,8 +54,9 @@ log = logging.getLogger("ailab.memory_dream")
 
 TERMINAL = set(RunStatus.TERMINAL)
 dream_call: ContextVar[tuple[str, str] | None] = ContextVar("dream_call", default=None)
-summary_call: ContextVar[bool] = ContextVar("summary_call", default=False)
+consolidation_call: ContextVar[bool] = ContextVar("consolidation_call", default=False)
 dream_context: ContextVar[list[dict]] = ContextVar("dream_context", default=[])
+dream_excluded_runs: ContextVar[list[str] | None] = ContextVar("dream_excluded_runs", default=None)
 dream_rejected: ContextVar[list[dict] | None] = ContextVar("dream_rejected", default=None)
 
 
@@ -70,8 +71,12 @@ def _aware(value: datetime | None) -> datetime:
 
 
 def active_job(now: datetime | None = None):
-    """A final batch still owns the user's job slot while its summaries are being refreshed."""
-    return or_(MemoryDreamRun.status.in_(("pending", "running")), MemoryDreamRun.claimed_until > _aware(now))
+    """The chain owns the user slot until its successor or final report is committed."""
+    return or_(
+        MemoryDreamRun.status.in_(("pending", "running")),
+        MemoryDreamRun.claimed_until > _aware(now),
+        MemoryDreamRun.report["chain_running"].as_boolean().is_(True),
+    )
 
 
 def _normalize(text: str) -> str:
@@ -125,9 +130,11 @@ def _run_out(run: MemoryDreamRun) -> MemoryDreamRunOut:
             report["candidates"] = []
     if "candidates" in report:
         report["candidates"] = [{k: v for k, v in entry.items() if k != "evidence_run_ids"} for entry in report["candidates"]]
+    report["runs_seen"] = int(report.get("runs_seen", len(run.input_run_ids or []))) + int(report.get("runs_seen_before", 0))
+    report["added"] = int(report.get("added", 0)) + int(report.get("added_before", 0))
     return MemoryDreamRunOut(
         id=run.id,
-        status=run.status,
+        status="running" if report.get("chain_running") and not report.get("next_id") else run.status,
         trigger=run.trigger,
         local_date=run.local_date,
         timezone=run.timezone,
@@ -146,13 +153,28 @@ def _run_out(run: MemoryDreamRun) -> MemoryDreamRunOut:
 def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
     return db.scalar(
         select(MemoryDreamRun)
-        .where(MemoryDreamRun.user_id == user_id, MemoryDreamRun.status.in_(("applied", "reverted")))
+        .where(
+            MemoryDreamRun.user_id == user_id,
+            or_(
+                MemoryDreamRun.status.in_(("applied", "reverted")),
+                (MemoryDreamRun.status == "skipped") & MemoryDreamRun.report["dreaming"]["expired"].as_integer().is_not(None),
+            ),
+        )
         .order_by(MemoryDreamRun.finished_at.desc(), MemoryDreamRun.created_at.desc())
         .limit(1)
     )
 
 
-def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datetime, limit: int = 40) -> list[Run]:
+def _new_runs(
+    db: Session,
+    user_id: str,
+    last: MemoryDreamRun | None,
+    now: datetime,
+    limit: int = 30,
+    *,
+    project_id: str | None = None,
+    scoped: bool = False,
+) -> list[Run]:
     from ..api.source_lifecycle import invalid_sources_query
 
     processed = (
@@ -166,6 +188,12 @@ def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datet
             .outerjoin(Conversation, Conversation.id == Run.conversation_id)
             .where(
                 Run.user_id == user_id,
+                or_(not scoped, Conversation.project_id == project_id)
+                if project_id
+                else or_(not scoped, Conversation.project_id.is_(None)),
+                Run.options["evaluation"].as_boolean().is_not(True),
+                Run.options["eval"].as_boolean().is_not(True),
+                Run.runtime_meta["evaluation"].as_boolean().is_not(True),
                 Run.id.not_in(invalid_sources_query(user_id)),
                 Run.status.in_(TERMINAL),
                 ~processed,
@@ -214,19 +242,36 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 zone = ZoneInfo(settings.memory_dream_default_timezone)
             local = now.astimezone(zone)
             start, end = local_window(ds)
-            if not start <= local.hour * 60 + local.minute < end:
+            from .scheduling import offset
+
+            if local.hour * 60 + local.minute < start + offset(user.id, end - start):
                 continue
             runs = _new_runs(db, user.id, _last_success(db, user.id), now) if document["auto_save"] else []
-            from ..models import Project
-            from .summary import stale_scopes
+            from ..models import MemoryItem, Project
 
-            if (
-                not runs
-                and not stale_scopes(db, user, limit=1)
-                and not db.scalar(
-                    select(Project.id).where(Project.user_id == user.id, Project.memory_merge_requested_at.is_not(None)).limit(1)
+            last = _last_success(db, user.id)
+            maintenance = db.scalar(
+                select(MemoryItem.id)
+                .where(
+                    MemoryItem.user_id == user.id,
+                    MemoryItem.status == "active",
+                    or_(
+                        MemoryItem.expires_at <= now,
+                        MemoryItem.updated_at
+                        > (_aware(last.finished_at) if last and last.finished_at else datetime.min.replace(tzinfo=UTC)),
+                        MemoryItem.created_at <= now - timedelta(days=7)
+                        if not last or not last.finished_at or _aware(last.finished_at) <= now - timedelta(days=7)
+                        else False,
+                    ),
                 )
-            ):
+                .limit(1)
+            )
+            merges = (
+                db.scalar(select(Project.id).where(Project.user_id == user.id, Project.memory_merge_requested_at.is_not(None)).limit(1))
+                if not runs
+                else None
+            )
+            if not runs and not maintenance and not merges:
                 continue
             local_date = local.date().isoformat()
             active = db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == user.id, active_job(now)).limit(1))
@@ -249,9 +294,13 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 status="pending",
                 trigger="cron",
                 input_run_ids=[r.id for r in runs],
-                before_memory={},
-                after_memory={},
                 token_usage={},
+            )
+            backfill = bool(runs) and any((item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "backfill" for r in runs)
+            row.kind = "extract" if runs else "merge" if merges else "dream"
+            row.priority = 20 if backfill else 10
+            row.due_at = local.replace(hour=start // 60, minute=start % 60, second=0, microsecond=0).astimezone(UTC) + timedelta(
+                minutes=offset(user.id, end - start)
             )
             db.add(row)
             try:
@@ -296,6 +345,12 @@ def _source_text(db: Session, run: Run) -> str:
     return "\n\n".join([run.prompt or "", *(steers[i] for i in ids if i in steers)])
 
 
+def _assistant_context(value: str) -> str:
+    value = re.sub(r"```[^\n]*\n.*?(?:```|$)", "", value, flags=re.S)
+    value = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", value)
+    return value.strip()[:300]
+
+
 def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
     """Create immutable episode rows once; reuse them on a retry."""
     existing = {
@@ -311,7 +366,7 @@ def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
         digest = json.dumps(
             {
                 "user_said": source[offset : offset + chunk_chars],
-                "assistant_replied": (run.summary or "")[: min(1500, chunk_chars)],
+                "assistant_replied": _assistant_context(run.summary or ""),
                 "source_end": min(offset + chunk_chars, len(source)),
             },
             ensure_ascii=False,
@@ -395,7 +450,7 @@ async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict
 
         def reserve():
             with SessionLocal() as db:
-                if summary_call.get():
+                if consolidation_call.get():
                     claimed = db.get(MemoryDreamRun, identity[0])
                     if (
                         not claimed
@@ -404,7 +459,7 @@ async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict
                         or not claimed.claimed_until
                         or _aware(claimed.claimed_until) <= utcnow()
                     ):
-                        raise DreamError("摘要任务已失效")
+                        raise DreamError("整理任务已失效")
                 else:
                     claimed = _check_claim(db, identity[0], identity[1])
                 claimed.claimed_until = utcnow() + timedelta(minutes=10)
@@ -417,7 +472,7 @@ async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict
                         job_id=identity[0],
                         attempt_id=identity[1],
                         alias=model,
-                        mode="summary" if summary_call.get() else "memory",
+                        mode="memory",
                         quiet=True,
                         max_output_tokens=call.max_output_tokens,
                         estimated_input_tokens=estimate,
@@ -459,6 +514,15 @@ async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict
 
             await asyncio.to_thread(settle)
         if call.usage:
+            from .scheduling import account_tokens
+
+            def account():
+                with SessionLocal() as db:
+                    job = db.get(MemoryDreamRun, identity[0]) if identity else None
+                    account_tokens(db, call.usage, job.kind if job else "extract", utcnow())
+
+            if identity:
+                await asyncio.to_thread(account)
             record_prompt_cache("memory", "memory", call.usage)
     if response.tool_calls or not response.content.strip():
         raise DreamError("dream model returned no final JSON")
@@ -478,13 +542,33 @@ def _json(text: str) -> dict:
         raise DreamError(f"invalid JSON: {exc}") from exc
 
 
+def extraction_tier(item, quote):
+    if item.get("tier") != "core":
+        return "archive"
+    kind = item.get("kind")
+    explicit = bool(re.search(r"以后|始终|总是|长期|记住|一直|每次|always|prefer", quote, re.I))
+    identity = bool(re.search(r"我是(?:一名|一个|位)?[^？?。\n]{1,40}|我的(?:职业|职位|身份)是|I am (?:a |an )", quote, re.I))
+    return "core" if (kind == "preference" and explicit) or (kind == "fact" and identity) else "archive"
+
+
 async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User) -> tuple[list[dict], dict, str]:
     model = settings.memory_dream_model or get_catalog().default_id()
     if not get_catalog().get(model):
         raise DreamError(f"dream model not found: {model}")
     payload = _episode_payload(_fit_episodes(episodes, settings.memory_dream_input_chars))
+    from ..memory_recall import text as lexical
+
+    terms = lexical.query_tokens(" ".join(_user_part(e.digest) for e in episodes))
+    docs = [lexical.build_doc(e["id"], (e["content"], 1), (" ".join(e.get("entities", [])), 1)) for e in active]
+    selected = {h.key for h in sorted(lexical.search(terms, docs), key=lambda h: (-h.score, h.key))[:10]}
+    related = [{"id": e["id"], "content": e["content"]} for e in active if e["id"] in selected]
     user_prompt = (
-        "有界前文（仅用于理解指代，不是证据）：\n" + json.dumps(dream_context.get(), ensure_ascii=False) + "\n\n新 episodes：\n" + payload
+        "有界前文（仅用于理解指代，不是证据）：\n"
+        + json.dumps(dream_context.get(), ensure_ascii=False)
+        + "\n相关已有条目（仅去重参考）：\n"
+        + json.dumps(related, ensure_ascii=False)
+        + "\n\n新 episodes：\n"
+        + payload
     )
     raw, usage = await _chat(
         [
@@ -502,14 +586,20 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
     if not isinstance(facts, list):
         raise DreamError("extract response has no facts list")
     episodes = _fit_episodes(episodes, settings.memory_dream_input_chars)
+    skipped = set(payload.get("skip_run_ids") or []) & {e.run_id for e in episodes}
+    if dream_excluded_runs.get() is not None:
+        dream_excluded_runs.get().extend(sorted(skipped))
+    episodes = [e for e in episodes if e.run_id not in skipped]
     out: list[dict] = []
     for item in facts:
         if not isinstance(item, dict):
             continue
+        if item.get("kind") == "artifact":
+            continue
         text = str(item.get("text") or "").strip()
         quote = str(item.get("source_quote") or "").strip()
         supported = [e for e in episodes if _quote_supported(quote, [e])]
-        if not text or not supported or len(text) > 1000 or len(quote) > 1000:
+        if not text or not supported or len(text) > 300 or len(quote) > 1000:
             if dream_rejected.get() is not None:
                 dream_rejected.get().append(
                     {
@@ -544,7 +634,10 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
         out.append(
             {
                 "text": text,
-                "kind": "user" if item.get("kind") == "user" else "memory",
+                "kind": item.get("kind") if item.get("kind") in {"preference", "fact", "interest", "project", "reference"} else "fact",
+                "page": str(item.get("page") or "工作与身份")[:120],
+                "tier": extraction_tier(item, quote),
+                "expires_at": item.get("expires_at"),
                 "entities": entities,
                 "evidence_run_ids": sorted(evidence),
                 "evidence_episode_ids": sorted(episode_evidence),
@@ -560,7 +653,7 @@ def _screen(facts: list[dict], tombstones: list[dict]) -> list[dict]:
     """Drop what must not be stored however well it was quoted: credentials, instructions, deleted facts."""
     kept = []
     for fact in facts:
-        reason = guard.reject_reason(fact["text"]) or ("sensitive" if review_required(fact["text"]) else None)
+        reason = guard.reject_reason(fact["text"])
         blocked = blocked_by_tombstone(tombstones, fact["text"], fact.get("evidence_run_ids"))
         if reason:
             MEMORY_GUARD_REJECTED.labels(reason, "nightly").inc()
@@ -655,10 +748,15 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
 
 def _fit(entries: list[MemoryEntryInput]) -> list[MemoryEntryInput]:
     """Keep active facts and recent invalid history inside the JSON budget."""
-    total = sum(len(e.content) for e in entries)
-    if total <= MAX_CHARS and len(entries) <= 100:
-        return entries
-    raise DreamError("记忆容量已满，请删除不再需要的内容后继续整理")
+    entries = list(entries)
+    candidates = sorted(
+        (e for e in entries if e.tier == "archive"), key=lambda e: (_aware(e.reinforced_at or e.observed_at or e.valid_from), e.id or "")
+    )
+    while len(entries) > settings.memory_items_max or sum(len(e.content) for e in entries) > MAX_CHARS:
+        if not candidates:
+            raise DreamError("记忆容量已满，请删除不再需要的内容后继续整理")
+        entries.remove(candidates.pop(0))
+    return entries
 
 
 def _apply(
@@ -680,32 +778,13 @@ def _apply(
         if expected_revision is not None and current["revision"] != expected_revision:
             raise DreamError("记忆已更新，稍后基于最新内容重试")
         entries = [
-            MemoryEntryInput(
-                id=e["id"],
-                kind=e["kind"],
-                content=e["content"],
-                confidence=e.get("confidence"),
-                evidence_run_ids=e.get("evidence_run_ids"),
-                evidence_episode_ids=e.get("evidence_episode_ids"),
-                entities=e.get("entities"),
-                source_quote=e.get("source_quote"),
-                valid_from=e.get("valid_from"),
-                invalid_at=e.get("invalid_at"),
-                superseded_by=e.get("superseded_by"),
-                last_used_at=e.get("last_used_at"),
-                suppressed=e.get("suppressed"),
-                project_id=e.get("project_id"),
-                status=e.get("status"),
-            )
-            for e in current["entries"]
+            MemoryEntryInput.model_validate({k: v for k, v in e.items() if k in MemoryEntryInput.model_fields}) for e in current["entries"]
         ]
         by_id = {e.id: e for e in entries}
         added = 0
         now = utcnow()
         for change in plan.changes:
             if change.op == "add":
-                if review_required(change.content):
-                    continue
                 if blocked_by_tombstone(tombstones_of(user), change.content, change.evidence_run_ids):
                     raise DreamError("候选记忆已被用户删除")
                 for rid in change.evidence_run_ids:
@@ -729,6 +808,10 @@ def _apply(
                     MemoryEntryInput(
                         id=new_id("mem"),
                         kind=change.kind,
+                        page=change.page,
+                        expires_at=change.expires_at,
+                        tier=change.tier,
+                        origin="explicit",
                         content=change.content,
                         confidence=change.confidence,
                         evidence_run_ids=change.evidence_run_ids,
@@ -737,6 +820,7 @@ def _apply(
                         source_quote=change.source_quote,
                         valid_from=(episode.observed_at if episode else now),
                         project_id=change.project_id,
+                        status="review" if review_required(change.content) else "active",
                     )
                 )
                 for old_id in change.supersedes:
@@ -751,12 +835,17 @@ def _apply(
                             target.invalid_at = observed
                             target.superseded_by = entries[-1].id
                 added += 1
+            elif change.op == "reinforce" and change.id in by_id:
+                target = by_id[change.id]
+                target.evidence_run_ids = sorted(set(target.evidence_run_ids or []) | set(change.evidence_run_ids))[:50]
+                target.evidence_episode_ids = sorted(set(target.evidence_episode_ids or []) | set(change.evidence_episode_ids))[:50]
+                target.reinforced_at = now
             elif change.op == "invalidate" and change.id in by_id:
                 target = by_id[change.id]
                 target.invalid_at = now
             else:
                 continue
-        if not added and not any(c.op == "invalidate" for c in plan.changes):
+        if not added and not any(c.op in {"invalidate", "reinforce"} for c in plan.changes):
             return current
         entries = _fit(entries)
         result = write_memory(
@@ -778,12 +867,20 @@ def _finish(db: Session, run: MemoryDreamRun, status: str, **fields) -> None:
     """Commit the batch outcome and cursor together, independently of derived summary work."""
     report = dict(fields.get("report") or run.report or {})
     report.pop("_final_status", None)
+    report["chain_running"] = run.trigger != "edit"
+    report["stage_committed"] = True
     fields["report"] = report
     run.status = "applied" if report.get("merged_projects") else status
     run.claimed_until = utcnow() + timedelta(minutes=10)
     for key, value in fields.items():
         setattr(run, key, value)
     run.finished_at = utcnow()
+    from ..metrics import MEMORY_DREAM_JOBS, MEMORY_DREAM_SECONDS
+
+    kind = run.kind if run.kind in {"extract", "dream", "edit", "merge"} else "extract"
+    MEMORY_DREAM_JOBS.labels(kind, run.status if run.status in {"applied", "failed", "skipped"} else "other").inc()
+    if run.started_at:
+        MEMORY_DREAM_SECONDS.labels(kind).observe(max(0, (run.finished_at - _aware(run.started_at)).total_seconds()))
     db.add(run)
     db.commit()
 
@@ -793,7 +890,24 @@ async def process_dream(run_id: str) -> None:
     token = new_id("claim")
 
     def claim():
-        with SessionLocal() as db:
+        from .scheduling import admission, can_start
+
+        with SessionLocal() as db, admission(db) as scheduler:
+            now = utcnow()
+            job = db.get(MemoryDreamRun, run_id)
+            if job and (job.report or {}).get("stage_committed"):
+                if job.trigger == "edit" or (job.report or {}).get("dreaming") is not None:
+                    return False
+                if job.claimed_until and _aware(job.claimed_until) > now:
+                    return False
+                if not can_start(db, scheduler, job, now):
+                    return False
+                job.claim_token = token
+                job.claimed_until = now + timedelta(minutes=10)
+                db.commit()
+                return "consolidate"
+            if not job or _aware(job.due_at) > now or not can_start(db, scheduler, job, now):
+                return False
             now = utcnow()
             changed = db.execute(
                 update(MemoryDreamRun)
@@ -803,14 +917,31 @@ async def process_dream(run_id: str) -> None:
                     or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < now),
                 )
                 .values(status="running", claim_token=token, claimed_until=now + timedelta(minutes=10), started_at=now)
+                .execution_options(synchronize_session=False)
             ).rowcount
             db.commit()
+            if changed:
+                from ..metrics import MEMORY_DREAM_WAIT
+
+                MEMORY_DREAM_WAIT.labels(job.kind if job.kind in {"extract", "dream", "edit", "merge"} else "extract").observe(
+                    max(0, (now - _aware(job.due_at)).total_seconds())
+                )
             return bool(changed)
 
-    if not await asyncio.to_thread(claim):
+    claimed = await asyncio.to_thread(claim)
+    if not claimed:
         return
     job_context = dream_call.set((run_id, token))
     try:
+        if claimed == "consolidate":
+            from .consolidation import consolidate
+
+            phase = consolidation_call.set(True)
+            try:
+                await consolidate(run_id, token)
+            finally:
+                consolidation_call.reset(phase)
+            return
         from .maintenance import edit, merge_projects
 
         def is_edit():
@@ -835,9 +966,15 @@ async def process_dream(run_id: str) -> None:
                     if not memory["enabled"] or (run.trigger == "cron" and not dream_settings(user).enabled):
                         _finish(db, run, "skipped", journal="自动记忆已关闭")
                         return
-                    runs = _new_runs(db, user.id, _last_success(db, user.id), utcnow()) if memory["auto_save"] else []
+                    runs = (
+                        _new_runs(
+                            db, user.id, _last_success(db, user.id), utcnow(), project_id=run.project_id, scoped=run.trigger == "manual"
+                        )
+                        if memory["auto_save"]
+                        else []
+                    )
                     if not runs:
-                        _finish(db, run, "skipped", journal="没有新的对话")
+                        _finish(db, run, "skipped", journal="没有新的对话", report={**(run.report or {}), "runs_seen": 0, "added": 0})
                         return
                     # A batch never combines evidence from different projects.
                     project_id = run_project(db, runs[0])
@@ -908,6 +1045,8 @@ async def process_dream(run_id: str) -> None:
         context_token = dream_context.set(contexts)
         rejected = []
         rejected_token = dream_rejected.set(rejected)
+        excluded = []
+        excluded_token = dream_excluded_runs.set(excluded)
         try:
             if facts is None:
                 facts, usage, model = await _extract(episodes, active, user)
@@ -926,7 +1065,7 @@ async def process_dream(run_id: str) -> None:
                                 if item is None:
                                     item = MemoryWorkItem(run_id=source.id, user_id=uid)
                                 item.candidates = [f for f in screened if source.id in f.get("evidence_run_ids", [])]
-                                item.state = "pending"
+                                item.state = "skipped" if source.id in excluded else "pending"
                                 episode = next(e for e in episodes if e.run_id == source.id)
                                 item.source_end = (
                                     json.loads(episode.digest).get("source_end", 0)
@@ -944,6 +1083,7 @@ async def process_dream(run_id: str) -> None:
             dream_call.reset(context)
             dream_context.reset(context_token)
             dream_rejected.reset(rejected_token)
+            dream_excluded_runs.reset(excluded_token)
         usage = {k: int(usage.get(k, 0)) + int(judge_usage.get(k, 0)) for k in ("prompt_tokens", "completion_tokens", "cached_tokens")}
         changes = []
         consumed = [_hash(item["text"]) for item in rejected if item.get("outcome") in {"guard", "tombstone"}]
@@ -967,18 +1107,28 @@ async def process_dream(run_id: str) -> None:
                 outcomes.append({**outcome, "outcome": "unsupported", "reason": "证据不足"})
                 consumed.append(_hash(fact["text"]))
                 continue
+            pending = next(
+                (
+                    c
+                    for c in changes
+                    if c.op == "add" and c.project_id == fact.get("project_id") and _hash(c.content) == _hash(fact["text"])
+                ),
+                None,
+            )
+            if pending:
+                pending.evidence_run_ids = sorted(set(pending.evidence_run_ids) | set(fact["evidence_run_ids"]))[:20]
+                pending.evidence_episode_ids = sorted(set(pending.evidence_episode_ids) | set(fact["evidence_episode_ids"]))[:20]
+                outcomes.append({**outcome, "outcome": "duplicate", "reason": "同批来源合并"})
+                consumed.append(_hash(fact["text"]))
+                continue
             if not verdict.get("duplicate_ids") and (fact.get("project_id"), _hash(fact["text"])) not in seen:
-                if (
-                    len(before["entries"]) + len(changes) >= 100
-                    or sum(len(e["content"]) for e in before["entries"]) + sum(len(c.content) for c in changes) + len(fact["text"])
-                    > MAX_CHARS
-                ):
-                    outcomes.append({**outcome, "outcome": "capacity", "reason": "记忆容量已满，候选保留待处理"})
-                    continue
                 changes.append(
                     DreamChange(
                         op="add",
-                        kind=fact.get("kind", "memory"),
+                        kind=fact.get("kind", "fact"),
+                        tier=fact.get("tier", "archive"),
+                        page=fact.get("page"),
+                        expires_at=fact.get("expires_at"),
                         content=fact["text"],
                         confidence=fact["confidence"],
                         evidence_run_ids=fact["evidence_run_ids"],
@@ -993,6 +1143,18 @@ async def process_dream(run_id: str) -> None:
                 seen.add((fact.get("project_id"), _hash(fact["text"])))
                 outcomes.append({**outcome, "outcome": "updated" if verdict.get("refines_ids") else "added", "reason": "有用户原话支持"})
             else:
+                duplicates = verdict.get("duplicate_ids") or [
+                    e["id"] for e in active if e.get("project_id") == fact.get("project_id") and _hash(e["content"]) == _hash(fact["text"])
+                ]
+                for duplicate_id in duplicates:
+                    changes.append(
+                        DreamChange(
+                            op="reinforce",
+                            id=duplicate_id,
+                            evidence_run_ids=fact["evidence_run_ids"],
+                            evidence_episode_ids=fact["evidence_episode_ids"],
+                        )
+                    )
                 outcomes.append({**outcome, "outcome": "duplicate", "reason": "已有相同记忆"})
             consumed.append(_hash(fact["text"]))
         plan = DreamPlan(changes=changes, journal=f"保留 {len(changes)} 组变更")
@@ -1005,6 +1167,44 @@ async def process_dream(run_id: str) -> None:
                     _validate_sources(db, owner, runs, project_id, expected_mode=mode, manual=trigger == "manual")
                     if _memory_view(owner)["revision"] != before["revision"]:
                         raise DreamError("记忆已更新，稍后重试")
+                    # Delivered artifacts have authoritative identities; model output cannot invent them.
+                    from ..memory_recall.search import delivered_files
+
+                    for rid, files in delivered_files(db, uid, [r.id for r in runs]).items():
+                        work_item = db.get(MemoryWorkItem, rid)
+                        if work_item is not None and work_item.state == "skipped":
+                            continue
+                        for file in files:
+                            content = f"已交付文件：{file['filename']}"[:300]
+                            if guard.reject_reason(content) or blocked_by_tombstone(tombstones_of(owner), content, [rid]):
+                                continue
+                            old = next(
+                                (
+                                    e
+                                    for e in before["entries"]
+                                    if e["content"] == content and e.get("project_id") == project_id and not e.get("invalid_at")
+                                ),
+                                None,
+                            )
+                            pending = next(
+                                (c for c in changes if c.op == "add" and c.project_id == project_id and c.content == content), None
+                            )
+                            if pending:
+                                pending.evidence_run_ids = sorted(set(pending.evidence_run_ids) | {rid})[:20]
+                                continue
+                            changes.append(
+                                DreamChange(
+                                    op="reinforce" if old else "add",
+                                    id=old["id"] if old else None,
+                                    kind="artifact",
+                                    content=content,
+                                    page="交付物",
+                                    evidence_run_ids=[rid],
+                                    confidence=1,
+                                    project_id=project_id,
+                                )
+                            )
+                    plan.changes = changes
                     after = (
                         _apply(
                             db,
@@ -1019,6 +1219,8 @@ async def process_dream(run_id: str) -> None:
                     )
                     for source in runs:
                         item = db.get(MemoryWorkItem, source.id)
+                        if item is not None and item.state == "skipped":
+                            continue
                         if item is None:
                             item = MemoryWorkItem(run_id=source.id, user_id=uid)
                         item.candidates = [f for f in (item.candidates or []) if _hash(f["text"]) not in consumed]
@@ -1036,6 +1238,7 @@ async def process_dream(run_id: str) -> None:
                     db.flush()
                     pending_after = len(_new_runs(db, uid, None, utcnow(), limit=201))
                     counts = {key: sum(1 for x in outcomes if x["outcome"] == key) for key in ("added", "updated", "duplicate", "deferred")}
+                    counts["added"] += sum(c.op == "add" and c.kind == "artifact" for c in changes)
                     counts.update(
                         {
                             "candidates": len(outcomes),
@@ -1062,9 +1265,14 @@ async def process_dream(run_id: str) -> None:
                             ),
                         },
                         "counts": counts,
+                        "runs_seen": len(runs),
+                        "added": counts["added"],
                         "candidates": outcomes,
                         "pending_after": "200+" if pending_after > 200 else pending_after,
                     }
+                    from .changes import record
+
+                    record(run, before, after)
                     _finish(
                         db,
                         run,
@@ -1074,8 +1282,6 @@ async def process_dream(run_id: str) -> None:
                         input_run_ids=[r.id for r in runs],
                         plan={**(run.plan or {}), **plan.model_dump(mode="json")},
                         journal=plan.journal,
-                        before_memory=run.before_memory or before,
-                        after_memory=after,
                         token_usage=usage,
                     )
 
@@ -1104,40 +1310,33 @@ async def process_dream(run_id: str) -> None:
                     # This also upgrades a recovered, already-applied legacy edit without replaying it.
                     if run.status == "running":
                         status = (run.report or {}).get("_final_status", "failed")
-                        if not run.after_memory:
-                            owner = db.get(User, run.user_id)
-                            run.after_memory = _memory_view(owner) if owner else {}
                         _finish(db, run, status)
                     if run.status not in {"applied", "skipped", "failed"}:
                         return
                     return run.trigger == "edit", run.user_id, run.project_id
 
             completed = await asyncio.to_thread(complete)
-            if completed:
-                editing, summary_user, summary_project = completed
-                summary_context = summary_call.set(True)
+            if completed and claimed != "consolidate":
+                editing, _summary_user, _summary_project = completed
+                summary_context = consolidation_call.set(True)
                 try:
-                    if editing:
-                        from .summary import regenerate
+                    if not editing:
+                        from .consolidation import consolidate
 
-                        await regenerate(summary_user, summary_project)
-                    else:
-                        from .maintenance import finish_summaries
-
-                        await finish_summaries(run_id, token)
+                        await consolidate(run_id, token)
                 except Exception:
-                    log.warning("memory summary generation failed run=%s", run_id)
+                    log.warning("memory consolidation failed run=%s", run_id)
 
                     def summary_failed():
                         with SessionLocal() as db:
                             row = db.get(MemoryDreamRun, run_id)
                             if row and row.claim_token == token and row.status in {"applied", "skipped", "failed"}:
-                                row.report = {**(row.report or {}), "summary_error": "摘要暂未更新，请稍后整理重试"}
+                                row.report = {**(row.report or {}), "consolidation_error": "条目整理未完成，请稍后重试"}
                                 db.commit()
 
                     await asyncio.to_thread(summary_failed)
                 finally:
-                    summary_call.reset(summary_context)
+                    consolidation_call.reset(summary_context)
         finally:
 
             def release():
@@ -1155,7 +1354,7 @@ async def process_dream(run_id: str) -> None:
                 dream_call.reset(job_context)
 
 
-async def process_dream_chain(run_id: str) -> None:
+async def _process_dream_chain(run_id: str) -> None:
     """Process bounded successive batches, creating each only after the previous commit."""
 
     def batch_limit():
@@ -1175,30 +1374,66 @@ async def process_dream_chain(run_id: str) -> None:
     remaining, limit = limits
     for batch in range(remaining):
         await process_dream(run_id)
-        if batch + 1 == remaining:
-            return
 
         def next_batch():
             with SessionLocal() as db:
                 previous = db.get(MemoryDreamRun, run_id)
-                if not previous or previous.status != "applied":
+                if not previous or previous.status in {"pending", "running"}:
                     return
+                if (previous.report or {}).get("next_id"):
+                    return previous.report["next_id"]
+                if (previous.report or {}).get("chain_complete"):
+                    return
+
                 with user_critical_section(db, previous.user_id):
+                    db.refresh(previous)
+                    if (previous.report or {}).get("next_id"):
+                        return previous.report["next_id"]
+                    if (previous.report or {}).get("chain_complete"):
+                        return
                     owner = db.get(User, previous.user_id, populate_existing=True)
-                    if not owner or not _memory_view(owner)["auto_save"] or not _new_runs(db, previous.user_id, None, utcnow(), limit=1):
+
+                    def publish():
+                        previous.report = {**(previous.report or {}), "chain_running": False, "chain_complete": True}
+                        db.commit()
+
+                    if previous.status != "applied" or (previous.trigger != "cron" and previous.batch_index >= limit):
+                        publish()
                         return
-                    if db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == previous.user_id, active_job()).limit(1)):
+                    if (
+                        not owner
+                        or not _memory_view(owner)["auto_save"]
+                        or not _new_runs(
+                            db,
+                            previous.user_id,
+                            None,
+                            utcnow(),
+                            limit=1,
+                            project_id=previous.project_id,
+                            scoped=previous.trigger == "manual",
+                        )
+                    ):
+                        publish()
                         return
+                    if db.scalar(
+                        select(MemoryDreamRun.id)
+                        .where(MemoryDreamRun.user_id == previous.user_id, MemoryDreamRun.id != previous.id, active_job())
+                        .limit(1)
+                    ):
+                        return
+                    carry = False
                     if previous.trigger == "cron":
                         ds = dream_settings(owner)
                         local = utcnow().astimezone(ZoneInfo(ds.timezone or settings.memory_dream_default_timezone))
                         start, end = local_window(ds)
-                        if (
-                            not ds.enabled
-                            or not start <= local.hour * 60 + local.minute < end
-                            or local.date().isoformat() != previous.local_date
-                        ):
+                        if not ds.enabled:
+                            publish()
                             return
+                        carry = (
+                            not start <= local.hour * 60 + local.minute < end
+                            or local.date().isoformat() != previous.local_date
+                            or previous.batch_index >= limit
+                        )
                         used = len(
                             list(
                                 db.scalars(
@@ -1212,8 +1447,7 @@ async def process_dream_chain(run_id: str) -> None:
                                 )
                             )
                         )
-                        if used >= limit:
-                            return
+                        carry = carry or used >= limit
                     row = MemoryDreamRun(
                         id=new_id("dream"),
                         user_id=previous.user_id,
@@ -1222,19 +1456,26 @@ async def process_dream_chain(run_id: str) -> None:
                         status="pending",
                         trigger=previous.trigger,
                         project_id=previous.project_id,
-                        batch_index=previous.batch_index + 1,
+                        batch_index=1 if carry else previous.batch_index + 1,
+                        priority=previous.priority,
+                        due_at=previous.due_at,
+                        kind=previous.kind,
+                        report={
+                            "runs_seen_before": (previous.report or {}).get("runs_seen_before", 0)
+                            + (previous.report or {}).get("runs_seen", 0),
+                            "added_before": (previous.report or {}).get("added_before", 0) + (previous.report or {}).get("added", 0),
+                        },
                         input_run_ids=[],
-                        before_memory={},
-                        after_memory={},
                         token_usage={},
                     )
                     db.add(row)
+                    previous.report = {**(previous.report or {}), "next_id": row.id, "chain_running": False, "chain_complete": True}
                     try:
                         db.commit()
                     except IntegrityError:
                         db.rollback()
                         return
-                    return row.id
+                    return None if carry else row.id
 
         run_id = await asyncio.to_thread(next_batch)
         if run_id is None:
@@ -1277,18 +1518,20 @@ def recover_pending(now: datetime | None = None) -> list[str]:
             db.scalars(
                 select(MemoryDreamRun)
                 .where(
-                    MemoryDreamRun.status.in_(("pending", "running")),
-                    MemoryDreamRun.created_at < stale,
+                    or_(MemoryDreamRun.status.in_(("pending", "running")), MemoryDreamRun.report["chain_running"].as_boolean().is_(True)),
+                    or_(MemoryDreamRun.status == "pending", MemoryDreamRun.created_at < stale),
+                    MemoryDreamRun.due_at <= now,
                     or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < now),
                 )
-                .order_by(MemoryDreamRun.created_at, MemoryDreamRun.id)
+                .order_by(MemoryDreamRun.priority, MemoryDreamRun.due_at, MemoryDreamRun.id)
                 .limit(100)
             )
         )
         for row in rows:
             if row.claimed_until and _aware(row.claimed_until) >= now:
                 continue
-            row.status = "pending"
+            if row.status in {"pending", "running"}:
+                row.status = "pending"
             row.claimed_until = None
             db.add(row)
         db.commit()
@@ -1299,17 +1542,69 @@ async def dream_forever() -> None:
     if not settings.memory_dream_enabled or settings.env == "test":
         return
     log.info("memory dream scheduler started")
-    try:
-        for run_id in await asyncio.to_thread(recover_pending):
-            await process_dream_chain(run_id)
-    except Exception:
-        log.exception("memory dream recovery failed")
     while True:
         try:
             recovered = await asyncio.to_thread(recover_pending)
             claimed = await asyncio.to_thread(claim_due)
-            for run_id in dict.fromkeys([*recovered, *claimed]):
-                await process_dream_chain(run_id)
+
+            def ordered():
+                from ..metrics import MEMORY_DREAM_QUEUE
+
+                with SessionLocal() as db:
+                    from sqlalchemy import func
+
+                    MEMORY_DREAM_QUEUE.set(
+                        db.scalar(select(func.count()).select_from(MemoryDreamRun).where(MemoryDreamRun.status == "pending"))
+                    )
+                    return list(
+                        db.scalars(
+                            select(MemoryDreamRun.id)
+                            .where(MemoryDreamRun.id.in_([*recovered, *claimed]))
+                            .order_by(MemoryDreamRun.priority, MemoryDreamRun.due_at, MemoryDreamRun.id)
+                        )
+                    )
+
+            jobs = await asyncio.to_thread(ordered)
+
+            def progress_snapshot():
+                with SessionLocal() as db:
+                    rows = db.execute(
+                        select(
+                            MemoryDreamRun.id,
+                            MemoryDreamRun.status,
+                            MemoryDreamRun.finished_at,
+                            MemoryDreamRun.report["chain_complete"].as_boolean(),
+                            MemoryDreamRun.report["dreaming"]["expired"].as_integer().is_not(None),
+                        ).where(MemoryDreamRun.id.in_(jobs))
+                    )
+                    return {row[0]: tuple(row[1:]) for row in rows}
+
+            before = await asyncio.to_thread(progress_snapshot)
+            semaphore = asyncio.Semaphore(settings.memory_dream_concurrency)
+
+            async def process(job):
+                async with semaphore:
+                    await process_dream_chain(job)
+
+            await asyncio.gather(*(process(job) for job in jobs))
+            after = await asyncio.to_thread(progress_snapshot)
+            if after != before:
+                # Drain ready backlog after progress, but retain the idle/backpressure
+                # delay when every attempted admission was refused.
+                def ready():
+                    with SessionLocal() as db:
+                        return db.scalar(
+                            select(MemoryDreamRun.id)
+                            .where(
+                                MemoryDreamRun.status == "pending",
+                                MemoryDreamRun.due_at <= utcnow(),
+                                or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < utcnow()),
+                            )
+                            .limit(1)
+                        )
+
+                if await asyncio.to_thread(ready):
+                    continue
         except Exception:
             log.exception("memory dream dispatch failed")
         await asyncio.sleep(settings.memory_dream_interval_seconds)
@@ -1345,3 +1640,7 @@ def metrics(db: Session, user_id: str) -> dict:
         "changes": changes,
         "avg_changes": round(changes / len(applied), 2) if applied else 0,
     }
+
+
+async def process_dream_chain(run_id: str) -> None:
+    await _process_dream_chain(run_id)

@@ -77,12 +77,20 @@ class ModelTransport(LLMClient):
                         call.reached_model = True
                     resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
             except httpx.TransportError as exc:  # timeouts, connection resets, DNS
+                if isinstance(exc, httpx.TimeoutException):
+                    from .model_pressure import record
+
+                    await asyncio.to_thread(record)
                 if call is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
                     call.reached_model = False
                 if last:
                     raise LLMError(f"model gateway unreachable after {attempts} attempts: {exc!r}", retryable=True) from exc
                 reason = repr(exc)
             else:
+                if resp.status_code == 429:
+                    from .model_pressure import record
+
+                    await asyncio.to_thread(record)
                 if resp.status_code < 400:
                     return resp.json()
                 if call is not None and 400 <= resp.status_code < 500 and resp.status_code != 408:
@@ -147,6 +155,9 @@ class ModelTransport(LLMClient):
             async with asyncio.timeout(settings.llm_total_timeout_seconds or settings.llm_timeout_seconds):
                 return await self._stream_once(messages, tools, model, user_id, on_text, on_reasoning)
         except TimeoutError as exc:
+            from .model_pressure import record
+
+            await asyncio.to_thread(record)
             raise LLMError("model total or first-output deadline exceeded", retryable=True) from exc
 
     async def _stream_once(self, messages, tools, model, user_id, on_text, on_reasoning) -> LLMResponse:
@@ -201,6 +212,10 @@ class ModelTransport(LLMClient):
                         else:
                             if call is not None and 400 <= resp.status_code < 500 and resp.status_code != 408:
                                 call.reached_model = False
+                            if resp.status_code == 429:
+                                from .model_pressure import record
+
+                                await asyncio.to_thread(record)
                             body = (await resp.aread()).decode("utf-8", "replace")[:300]
                             if resp.status_code not in RETRYABLE_STATUS or last:
                                 raise LLMError(
@@ -214,6 +229,10 @@ class ModelTransport(LLMClient):
                     exc.output_started = True
                 raise exc
             except (httpx.TransportError, json.JSONDecodeError) as exc:
+                if isinstance(exc, httpx.TimeoutException):
+                    from .model_pressure import record
+
+                    await asyncio.to_thread(record)
                 if call is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
                     call.reached_model = False
                 if last or state.emitted:
@@ -233,6 +252,9 @@ class ModelTransport(LLMClient):
             async with asyncio.timeout(settings.llm_total_timeout_seconds or settings.llm_timeout_seconds):
                 return await self._chat(messages, tools, model, user_id, max_tokens=max_tokens)
         except TimeoutError as exc:
+            from .model_pressure import record
+
+            await asyncio.to_thread(record)
             raise LLMError("model total deadline exceeded", retryable=True) from exc
 
     async def _chat(

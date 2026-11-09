@@ -8,21 +8,21 @@ import { api, type Project } from "../lib/api";
 vi.mock("../lib/api", () => ({ api: vi.fn(), errorMessage: String }));
 vi.mock("../lib/dialog", () => ({ confirmDialog: vi.fn(async () => true) }));
 vi.mock("../lib/projects", () => ({ projectsChanged: vi.fn() }));
-vi.mock("../components/memory/memory-summary", () => ({ MemoryDialog: () => <div>隔离摘要与编辑器</div> }));
+vi.mock("../components/memory/memory-view", () => ({
+  MemoryDialog: ({ editable, top }: { editable: boolean; top: () => React.ReactNode }) => <div>{top()}{editable ? "可编辑" : "只读"}</div>,
+}));
 const project = { id: "project", memory_mode: "shared" } as Project;
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
-test("shared project exposes only isolation setting and never loads summaries", async () => {
+test("shared project shows its memory read-only and switches to editable once isolated", async () => {
   render(<ProjectMemoryDialog project={project} onClose={() => {}} />);
-  assert.equal(screen.queryByText("隔离摘要与编辑器"), null);
-  assert.ok(screen.getByRole("switch", { name: "仅使用本项目记忆" }));
-  assert.equal(vi.mocked(api).mock.calls.length, 0);
+  assert.ok(screen.getByText("只读"));
   vi.mocked(api).mockResolvedValue({ ...project, memory_mode: "isolated" });
   fireEvent.click(screen.getByRole("switch", { name: "仅使用本项目记忆" }));
-  await waitFor(() => assert.ok(screen.getByText("隔离摘要与编辑器")));
+  await waitFor(() => assert.ok(screen.getByText("可编辑")));
 });
 
-test("isolated project exposes its summary and editor", () => {
+test("isolated project memory is editable", () => {
   render(<ProjectMemoryDialog project={{ ...project, memory_mode: "isolated" }} onClose={() => {}} />);
-  assert.ok(screen.getByText("隔离摘要与编辑器"));
+  assert.ok(screen.getByText("可编辑"));
 });
