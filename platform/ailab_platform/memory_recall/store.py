@@ -46,13 +46,25 @@ def entries_for(user):
         return []
     return [
         legacy(row)
-        for row in db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id).order_by(MemoryItem.created_at, MemoryItem.id))
+        for row in db.scalars(
+            select(MemoryItem)
+            .where(MemoryItem.user_id == user.id, MemoryItem.status.in_(("active", "review", "suppressed")))
+            .order_by(MemoryItem.created_at, MemoryItem.id)
+        )
     ]
 
 
 def replace_entries(db, user, entries):
     """Caller owns the user lock and revision CAS; changes join that transaction."""
-    rows = {r.id: r for r in db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id))}
+    rows = {
+        r.id: r
+        for r in db.scalars(
+            select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.status.in_(("active", "review", "suppressed")))
+        )
+    }
+    ids = {e["id"] for e in entries} - rows.keys()
+    if ids:
+        rows.update({r.id: r for r in db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.id.in_(ids)))})
     keep = {e["id"] for e in entries}
     for key, row in rows.items():
         if key not in keep:

@@ -42,7 +42,6 @@ def _entry(entry: dict) -> dict:
     out.setdefault("confidence", 1.0)
     out.setdefault("evidence_run_ids", [])
     out.setdefault("evidence_episode_ids", [])
-    out.setdefault("entities", [])
     out.setdefault("source_quote", "")
     out.setdefault("valid_from", entry.get("updated_at"))
     out.setdefault("invalid_at", None)
@@ -108,7 +107,9 @@ def _refuse_unsafe(content: str, source: str) -> None:
         raise HTTPException(422, f"{said}，不能保存为记忆")
 
 
-def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_removed: bool = True, restore: bool = False):
+def write_memory(
+    db, user, body, source, *, explicit: bool = False, tombstone_removed: bool = True, restore: bool = False, allow_overcap: bool = False
+):
     """Replace the memory document. ``explicit``: the user asked for the new entries by name.
 
     ``tombstone_removed``: entries that disappear are remembered as deleted (hash and evidence ids
@@ -182,7 +183,6 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
                 "confidence",
                 "evidence_run_ids",
                 "evidence_episode_ids",
-                "entities",
                 "source_quote",
                 "valid_from",
                 "invalid_at",
@@ -199,7 +199,7 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
                         if field in {"valid_from", "invalid_at", "last_used_at", "observed_at", "reinforced_at", "expires_at"}
                         else value
                     )
-            for field in ("evidence_run_ids", "evidence_episode_ids", "entities"):
+            for field in ("evidence_run_ids", "evidence_episode_ids"):
                 if merged.get(field):
                     merged[field] = list(dict.fromkeys(merged[field]))
             if changed:
@@ -228,16 +228,22 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
         "reference_history": body.reference_history if body.reference_history is not None else previous["reference_history"],
         "tombstones": tombstones[-MAX_TOMBSTONES:],
     }
+    from collections import defaultdict
+
     from ..config import settings
     from ..memory_recall.document import used_chars
     from ..memory_recall.store import replace_entries
 
-    scopes = {e.get("project_id") for e in entries}
-    for scope in scopes:
-        new_size = used_chars([e for e in entries if e.get("project_id") == scope])
-        old_size = used_chars([e for e in old.values() if e.get("project_id") == scope])
-        ceiling = int(settings.memory_doc_max_chars * (1.5 if explicit else 1))
-        if new_size > ceiling and new_size > old_size:
+    groups, old_groups = defaultdict(list), defaultdict(list)
+    for entry in entries:
+        groups[entry.get("project_id")].append(entry)
+    for entry in old.values():
+        old_groups[entry.get("project_id")].append(entry)
+    for scope, group in groups.items():
+        new_size = used_chars(group)
+        old_size = used_chars(old_groups[scope])
+        ceiling = int(settings.memory_doc_max_chars * (1.5 if explicit or source == "user" else 1))
+        if not allow_overcap and new_size > ceiling and new_size > old_size:
             raise HTTPException(422, "记忆容量已满，请先整理记忆再添加")
     replace_entries(db, user, entries)
     user.settings = {**(user.settings or {}), "memory": value}
@@ -258,8 +264,6 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
         "id": entry.id or new_id("mem"),
         "kind": entry.kind,
         "origin": entry.origin,
-        "tier": entry.tier,
-        "page": entry.page,
         "reinforced_at": entry.reinforced_at.isoformat() if entry.reinforced_at else now.isoformat(),
         "observed_at": entry.observed_at.isoformat() if entry.observed_at else now.isoformat(),
         "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
@@ -269,7 +273,6 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
         "confidence": entry.confidence if entry.confidence is not None else (1.0 if source == "user" else 0.8),
         "evidence_run_ids": list(entry.evidence_run_ids or []),
         "evidence_episode_ids": list(entry.evidence_episode_ids or []),
-        "entities": list(entry.entities or []),
         "source_quote": entry.source_quote or "",
         "valid_from": (entry.valid_from or now).isoformat(),
         "invalid_at": entry.invalid_at.isoformat() if entry.invalid_at else None,
@@ -549,13 +552,18 @@ def run_memory(
                 raise HTTPException(422, "用户之前删除过这条记忆；除非用户明确要求，不要再次保存")
             from ..memory_recall.document import kind as canonical_kind
 
-            if not any(
+            duplicate = any(
                 canonical_kind(e.model_dump()) == canonical_kind(item.model_dump())
                 and fact_hash(e.content) == fact_hash(item.content)
                 and e.project_id == project_id
                 for e in entries
-            ):
-                entries.append(item)
+            )
+            if duplicate:
+                result = model_view(current, project_id, mode=project_mode(db, project_id))
+                db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
+                db.commit()
+                return result
+            entries.append(item)
         else:
             match = next((i for i, e in enumerate(entries) if e.id == body.id), None)
             if match is None:
@@ -638,14 +646,16 @@ def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
     if user is None or not memory_for(user)["enabled"] or not memory_for(user)["reference_history"] or not run_permissions(db, run)["read"]:
         MEMORY_RECALL.labels("disabled").inc()
         raise HTTPException(422, "用户已关闭记忆，不能查询历史对话")
-    if notice := _query_budget(
-        db, run, "recall_history", body.query or body.run_id or str(body.before) + str(body.after) + str(body.cursor)
+    if not body.run_id and (
+        notice := _query_budget(
+            db, run, "recall_history", body.query or body.run_id or str(body.before) + str(body.after) + str(body.cursor)
+        )
     ):
         return notice
     if body.query:
         from ..memory_recall.search import search_history
 
-        return search_history(
+        result = search_history(
             db,
             user,
             body.query,
@@ -655,6 +665,7 @@ def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
             before=body.before,
             after=body.after,
         )
+        return {**result, "status": "OK" if result.get("results") else "NO_RELEVANT_MEMORY"}
     if not body.run_id:
         from ..memory_recall.retrieval import browse_history
 
@@ -679,6 +690,8 @@ def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
         source = db.get(Run, body.run_id)
         if not readable(source):
             raise HTTPException(404, "历史记录不存在")
+        if notice := _query_budget(db, run, "recall_history", body.run_id):
+            return notice
         out = {
             "run_id": source.id,
             "conversation_id": source.conversation_id,
@@ -726,7 +739,7 @@ def _queue_edit(body: MemoryEdit, background: BackgroundTasks, user: User = Depe
         from ..memory_dream.changes import digest, scope_entries
 
         run = MemoryDreamRun(
-            report={"edit_source_digest": digest(scope_entries(user, body.project_id)), "edit_page": body.page},
+            report={"edit_source_digest": digest(scope_entries(user, body.project_id))},
             user_id=user.id,
             local_date=datetime.now(UTC).astimezone(ZoneInfo(zone)).date().isoformat(),
             timezone=zone,
@@ -785,7 +798,6 @@ def _sources_for(db, user, rows):
             Conversation.deleted_at.is_(None),
             Run.superseded_by_run_id.is_(None),
         )
-        .limit(50)
     ).all()
     return {
         r.id: {"run_id": r.id, "conversation_id": r.conversation_id, "conversation_title": r.title or "历史对话", "date": r.created_at}
@@ -864,7 +876,7 @@ def patch_memory_item(item_id: str, body: MemoryItemPatch, user: User = Depends(
     with user_critical_section(db, user.id):
         db.refresh(user)
         row = db.get(MemoryItem, item_id)
-        if not row or row.user_id != user.id:
+        if not row or row.user_id != user.id or row.status == "closed":
             raise HTTPException(404, "记忆不存在")
         current = memory_for(user)
         if current["revision"] != body.expected_revision:

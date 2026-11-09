@@ -535,12 +535,14 @@ def purge_unused_assets(db: Session, now: datetime) -> int:
 def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> dict[str, int]:
     storage = storage or get_storage()
     now = now or datetime.now(UTC)
+    from ..memory_recall.retention import purge_closed
     from .process_snapshots import repair_snapshots
     from .source_lifecycle import drain_invalidations
     from .viewer_captures import purge as purge_captures
 
     stats = {}
     for kind, job in (
+        ("memory_versions", lambda: purge_closed(db, now)),
         ("viewer_captures", lambda: purge_captures(db, storage, now)),
         ("file_sources", lambda: drain_invalidations(db)),
         ("presign", lambda: purge_expired_presigns(db, storage, now)),

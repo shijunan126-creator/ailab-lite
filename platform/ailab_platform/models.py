@@ -1434,8 +1434,9 @@ class WebImageRef(Base):
 class MemoryItem(Base):
     __tablename__ = "memory_items"
     __table_args__ = (
-        Index("ix_memory_items_scope", "user_id", "project_id", "status", "tier"),
-        Index("ix_memory_items_page", "user_id", "project_id", "page", "updated_at", "id"),
+        Index("ix_memory_items_scope", "user_id", "project_id", "status"),
+        Index("ix_memory_items_retention", "status", "valid_to", "id"),
+        Index("ix_memory_items_content", "user_id", "content_hash"),
         Index(
             "uq_memory_items_hash",
             "user_id",
@@ -1452,10 +1453,7 @@ class MemoryItem(Base):
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(20), default="fact")
     origin: Mapped[str] = mapped_column(String(20), default="manual")
-    tier: Mapped[str] = mapped_column(String(20), default="archive")
-    page: Mapped[str] = mapped_column(String(120), default="工作与身份")
     content: Mapped[str] = mapped_column(Text)
-    entities: Mapped[list] = mapped_column(JSON, default=list)
     source_run_ids: Mapped[list] = mapped_column(JSON, default=list)
     source_quote: Mapped[str] = mapped_column(Text, default="")
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -1465,8 +1463,6 @@ class MemoryItem(Base):
     superseded_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active")
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
-    support_conversations: Mapped[int] = mapped_column(Integer, default=1)
-    support_dates: Mapped[int] = mapped_column(Integer, default=1)
     reinforced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     content_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

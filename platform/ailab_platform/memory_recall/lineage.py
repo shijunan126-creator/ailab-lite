@@ -17,7 +17,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import record_audit
-from ..models import MemoryDreamRun, MemoryEpisode, MemoryWorkItem, Run, RunDelivery, User, utcnow
+from ..models import MemoryDreamRun, MemoryEpisode, MemoryItem, MemoryWorkItem, Run, RunDelivery, User, utcnow
 from . import embeddings
 from .tombstones import fact_hash
 
@@ -163,6 +163,15 @@ def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None
             return None
         return entry
 
+    for scope, hashed in hashes:
+        db.execute(
+            delete(MemoryItem).where(
+                MemoryItem.user_id == user_id,
+                MemoryItem.project_id == scope,
+                MemoryItem.status == "closed",
+                MemoryItem.content_hash == hashed,
+            )
+        )
     _rewrite_copies(db, user_id, rewrite)
     # Derived human summaries and undo text may contain a removed fact verbatim. Do not
     # retain them as an alternate read/restore route around the deletion fence.
@@ -178,6 +187,7 @@ def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None
 
 def clear_memory_scope_copies(db: Session, user_id: str, project_id: str | None) -> None:
     """Clear the whole scope, including old snapshots and explicit edits queued before an empty clear."""
+    db.execute(delete(MemoryItem).where(MemoryItem.user_id == user_id, MemoryItem.project_id == project_id, MemoryItem.status == "closed"))
     _rewrite_copies(db, user_id, lambda entry: None if entry.get("project_id") == project_id else entry)
     for dream in db.scalars(
         select(MemoryDreamRun)

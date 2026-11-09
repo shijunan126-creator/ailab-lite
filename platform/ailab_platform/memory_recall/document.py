@@ -25,7 +25,7 @@ def render(entries):
             lines.append("## " + title)
         for e in items:
             date = str(e.get("observed_at") or e.get("valid_from") or e.get("updated_at") or "")[:10]
-            lines.append(f"- [{e['id']}] [{date}] {model_text(e['content'])}")
+            lines.append(f"- [{model_text(e['id'])}] [{date}] [{model_text(e.get('origin') or 'manual')}] {model_text(e['content'])}")
     return "\n".join(lines)
 
 

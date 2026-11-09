@@ -166,16 +166,16 @@ def test_recall_route_is_scoped_to_the_run_owner_and_refuses_when_memory_is_off(
         uid = _uid(c, me)
         _seed(uid, "部署 ERR_9001 的处理办法", "重启 broker", days_ago=3)
         run = _running(c, me)
-        url = f"/internal/runs/{run}/memory"
+        url = f"/internal/runs/{run}/recall"
         service_headers = attempt_headers(c, run)
-        ok = c.post(url, headers=service_headers, json={"action": "search", "query": "ERR_9001"})
+        ok = c.post(url, headers=service_headers, json={"query": "ERR_9001"})
         assert ok.status_code == 200 and ok.json()["results"][0]["assistant_replied"] == "重启 broker"
-        assert c.post(url, headers=me, json={"action": "search", "query": "ERR_9001"}).status_code == 403
-        assert c.post(url, headers=service_headers, json={"action": "search", "query": " "}).status_code == 422
-        miss = c.post(url, headers=service_headers, json={"action": "search", "query": "不存在的东西 zzzqqq"}).json()
+        assert c.post(url, headers=me, json={"query": "ERR_9001"}).status_code == 403
+        assert c.post(url, headers=service_headers, json={"query": " "}).status_code == 422
+        miss = c.post(url, headers=service_headers, json={"query": "不存在的东西 zzzqqq"}).json()
         assert miss["status"] == NO_RELEVANT_MEMORY
         c.put("/v1/memory", headers=me, json={"expected_revision": 0, "enabled": False, "auto_save": True, "entries": []})
-        assert c.post(url, headers=service_headers, json={"action": "search", "query": "ERR_9001"}).status_code == 422
+        assert c.post(url, headers=service_headers, json={"query": "ERR_9001"}).status_code == 422
 
 
 # --------------------------------------------------------------------------- write guard
@@ -244,12 +244,13 @@ def test_a_deleted_fact_is_not_resurrected_by_the_dream_unless_restated() -> Non
             == 200
         )
         with SessionLocal() as db:
-            tombs = service.tombstones_of(db.get(User, uid))
+            tombs = __import__("ailab_platform.memory_recall.tombstones", fromlist=["tombstones_of"]).tombstones_of(db.get(User, uid))
         assert len(tombs) == 1 and "深色" not in json.dumps(tombs, ensure_ascii=False)  # the deleted text is not kept
-        assert service._screen([{"text": "用户偏好深色主题。", "evidence_run_ids": []}], tombs) == []
-        assert service._screen([{"text": "用户偏好深色主题", "evidence_run_ids": ["run_new"]}], tombs) == []
-        other = {"text": "用户喜欢英文文档", "evidence_run_ids": ["run_new"]}
-        assert service._screen([other], tombs) == [other]
+        from ailab_platform.memory_recall.tombstones import blocked_by_tombstone
+
+        assert blocked_by_tombstone(tombs, "用户偏好深色主题。")
+        assert blocked_by_tombstone(tombs, "用户偏好深色主题", ["run_new"])
+        assert not blocked_by_tombstone(tombs, "用户喜欢英文文档", ["run_new"])
         # the agent is told no, but an explicit request from the user wins
         again = {**attempt_headers(c, run), "X-Delivery-Id": f"{run}:t2"}
         body = {"action": "add", "content": "用户偏好深色主题", "expected_revision": 2}
@@ -257,7 +258,7 @@ def test_a_deleted_fact_is_not_resurrected_by_the_dream_unless_restated() -> Non
         again = {**attempt_headers(c, run), "X-Delivery-Id": f"{run}:t3"}
         assert c.post(f"/internal/runs/{run}/memory", headers=again, json={**body, "explicit": True}).status_code == 200
         with SessionLocal() as db:
-            assert service.tombstones_of(db.get(User, uid)) == []
+            assert __import__("ailab_platform.memory_recall.tombstones", fromlist=["tombstones_of"]).tombstones_of(db.get(User, uid)) == []
 
 
 def test_suppressed_memory_stays_visible_to_the_user_but_not_the_model() -> None:
@@ -304,41 +305,26 @@ def test_dream_ignores_deleted_and_rewritten_turns() -> None:
         assert not {"我家狗叫 Momo", "旧版本的问题"} & set(prompts)
 
 
-def test_a_quote_only_the_assistant_said_cannot_support_a_fact(monkeypatch) -> None:
-    """Assistant self-contamination: 'You probably prefer Python' is not a user preference."""
-    with TestClient(app) as c:
-        me = _user(c)
-        uid = _uid(c, me)
-        run = _seed(uid, "帮我选个语言写脚本", "你大概率更喜欢 Python，我就用 Python 写。", days_ago=0)
-        _seed(uid, "对了，我以后周报都用中文写", "好的", days_ago=0)
+def test_a_quote_only_the_assistant_said_cannot_support_a_fact():
+    from types import SimpleNamespace
 
-        async def fake_chat(messages, model, user):
-            facts = [
-                {
-                    "text": "用户更喜欢 Python",
-                    "kind": "user",
-                    "evidence_run_ids": [run],
-                    "source_quote": "你大概率更喜欢 Python",
-                    "confidence": 0.95,
-                },
-                {
-                    "text": "用户周报使用中文",
-                    "kind": "user",
-                    "evidence_run_ids": [],
-                    "source_quote": "我以后周报都用中文写",
-                    "confidence": 0.95,
-                },
-            ]
-            return json.dumps({"facts": facts}, ensure_ascii=False), {"prompt_tokens": 1, "completion_tokens": 1}
+    from ailab_platform.memory_dream.document import apply_ops
 
-        monkeypatch.setattr(service, "_chat", fake_chat)
-        with SessionLocal() as db:
-            user = db.get(User, uid)
-            runs = service._new_runs(db, uid, None, datetime.now(UTC))
-            episodes = service._episodes(db, user, runs)
-            facts, _, _ = asyncio.run(service._extract(episodes, [], user))
-            db.commit()
-        assert [f["text"] for f in facts] == ["用户周报使用中文"]
+    ep = MemoryEpisode(
+        id="epi_one",
+        run_id="run_one",
+        observed_at=datetime.now(UTC),
+        digest=json.dumps({"user_said": "帮我选个语言", "assistant_replied": "你更喜欢Python"}),
+    )
+    result, audit = apply_ops(
+        [],
+        [],
+        [ep],
+        [{"op": "add", "kind": "preference", "content": "喜欢Python", "quote": "你更喜欢Python", "run": "run_one"}],
+        SimpleNamespace(settings={}),
+        None,
+    )
+    assert result == [] and audit == []
 
 
 # --------------------------------------------------------------------------- deletion lineage
@@ -440,7 +426,9 @@ def test_memory_prompt_is_compact_and_tells_the_model_how_to_use_history() -> No
     prompt = memory_prompt({"enabled": True, "revision": 3, "entries": [entry]})
     assert "喜欢简洁中文" in prompt and "[2026-10-20]" in prompt and "confidence" not in prompt
     assert "不要出现在提示词里的原话" not in prompt and "run_secret" not in prompt
-    assert "recall_history" in prompt and "memory.search" in prompt
+    from ailab_platform.agent.prompts import MEMORY_RULES
+
+    assert "recall_history" in MEMORY_RULES and "memory.search" not in MEMORY_RULES
 
 
 def test_a_long_prompt_cannot_turn_assistant_text_into_user_evidence() -> None:
@@ -471,9 +459,7 @@ def test_recall_names_the_next_hops_delivered_files_and_adjacent_turns() -> None
             live_id = live.id
         run = _running(c, me)
         url = f"/internal/runs/{run}/recall"
-        hit = c.post(
-            f"/internal/runs/{run}/memory", headers=attempt_headers(c, run), json={"action": "search", "query": "Q3 销售汇报"}
-        ).json()["results"][0]
+        hit = c.post(f"/internal/runs/{run}/recall", headers=attempt_headers(c, run), json={"query": "Q3 销售汇报"}).json()["results"][0]
         assert hit["run_id"] == first and hit["conversation_id"] == conv
         assert hit["files"] == [{"file_id": live_id, "filename": "Q3汇报.pptx"}]
         opened = c.post(url, headers=SERVICE, json={"run_id": first}).json()

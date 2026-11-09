@@ -14,10 +14,10 @@ from ailab_platform.api.routes_memory import memory_for
 from ailab_platform.db import SessionLocal
 from ailab_platform.memory_dream import service
 from ailab_platform.memory_dream.changes import digest
-from ailab_platform.memory_dream.prompts import DOCUMENT_SYSTEM, EDIT_SYSTEM, MERGE_SYSTEM
+from ailab_platform.memory_dream.prompts import DOCUMENT_SYSTEM, EDIT_SYSTEM
 from ailab_platform.memory_recall.policy import model_view
 from ailab_platform.models import MemoryDreamRun, Project, User
-from tests.memory_fixtures import make_dream, snapshot
+from tests.memory_fixtures import install_plan_builder, make_dream, snapshot
 from tests.run_claims import attempt_headers
 from tests.test_memory_hardening import put
 from tests.test_memory_recall import _running, _seed, _uid
@@ -41,8 +41,6 @@ def scripted(monkeypatch, *, ops=None, decisions=None, before=None):
             await asyncio.to_thread(before, system, user)
         if system == EDIT_SYSTEM:
             return json.dumps({"ops": ops or [], "reply": "已按要求更新。"}, ensure_ascii=False), {}
-        if system == MERGE_SYSTEM:
-            return json.dumps({"decisions": decisions or []}), {}
         return "### 偏好\n你喜欢简洁的中文回答。", {}
 
     monkeypatch.setattr(service, "_chat", chat)
@@ -76,10 +74,9 @@ def test_visibility_matrix_bootstrap_and_live_tools(api, mode, account):
     assert {e["id"] for e in c.get(f"/internal/runs/{rid}/model-input", headers=SERVICE).json()["memory"]["entries"]} == expected
     headers = attempt_headers(c, rid)
     c.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"})
-    for action in ("list",):
-        out = c.post(f"/internal/runs/{rid}/memory", headers=headers, json={"action": action, "query": "中文"})
-        assert out.status_code == 200, out.text
-        assert {e["id"] for e in out.json()["entries"]} == expected
+    out = c.get(f"/internal/runs/{rid}/memory-context", headers=headers)
+    assert out.status_code == 200
+    assert {e["id"] for e in out.json()["entries"]} == expected
 
 
 @pytest.mark.parametrize("mode", [None, "shared", "isolated"])
@@ -97,23 +94,13 @@ def test_history_pool_search_and_direct_read(api, mode):
     rid = c.post(f"/v1/conversations/{conv}/messages", headers=me, json={"prompt": "BLUEFIN"}).json()["id"]
     headers = attempt_headers(c, rid)
     c.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"})
-    out = c.post(f"/internal/runs/{rid}/memory", headers=headers, json={"action": "search", "query": "BLUEFIN"}).json()
+    out = c.post(f"/internal/runs/{rid}/recall", headers=headers, json={"query": "BLUEFIN"}).json()
     allowed = {sources[isolated]} if mode == "isolated" else {sources[None], sources[shared]}
     assert {e["run_id"] for e in out["results"]} == allowed
     for source in sources.values():
         assert c.post(f"/internal/runs/{rid}/recall", headers=SERVICE, json={"run_id": source}).status_code == (
             200 if source in allowed else 404
         )
-
-
-def test_pages_are_derived_without_model_calls_when_auto_save_off(api, monkeypatch):
-    c, me, _ = api
-    calls = scripted(monkeypatch)
-    assert c.get("/v1/memory/view", headers=me).json()["pages"] == []
-    put(c, me, [{"kind": "user", "content": "中文回答"}], auto_save=False)
-    assert c.post("/v1/memory/dream/run", headers=me).json()["status"] == "nothing"
-    assert c.get("/v1/memory/view", headers=me).json()["core"][0]["content"] == "中文回答"
-    assert not calls
 
 
 def test_edit_replace_revert_restores_item_and_scope(api, monkeypatch):
@@ -127,9 +114,11 @@ def test_edit_replace_revert_restores_item_and_scope(api, monkeypatch):
     result = edit(c, me, pid=pid)
     assert result["status"] == "applied"
     assert len(calls) == 1
-    assert c.get("/v1/memory/items", headers=me, params={"project_id": pid}).json()["items"][0]["content"] == "项目新偏好"
+    view = c.get("/v1/memory/view", headers=me, params={"project_id": pid}).json()
+    assert next(i for section in view["sections"] for i in section["items"])["content"] == "项目新偏好"
     assert c.post(f"/v1/memory/dreams/{result['id']}/revert", headers=me).json()["status"] == "reverted"
-    assert c.get("/v1/memory/items", headers=me, params={"project_id": pid}).json()["items"][0]["content"] == "项目旧偏好"
+    view = c.get("/v1/memory/view", headers=me, params={"project_id": pid}).json()
+    assert next(i for section in view["sections"] for i in section["items"])["content"] == "项目旧偏好"
     assert c.get("/v1/memory", headers=me).json()["entries"][0]["content"] == "中文回答"
 
 
@@ -181,11 +170,11 @@ def test_clear_scope_redacts_tombstones_and_all_statuses(api, monkeypatch):
         ],
     )
     response = c.delete("/v1/memory/entries", headers=me, params={"project_id": pid})
-    assert response.status_code == 200 and response.json()["pages"] == []
+    assert response.status_code == 200 and all(not s["items"] for s in response.json()["sections"])
     assert [e["content"] for e in c.get("/v1/memory", headers=me).json()["entries"]] == ["账号保留"]
     with SessionLocal() as db:
-        assert len(db.get(User, uid).settings["memory"]["tombstones"]) == 3
-    assert c.delete("/v1/memory/entries", headers=me).json()["pages"] == []
+        assert len(db.get(User, uid).settings["memory"]["tombstones"]) == 2
+    assert all(not s["items"] for s in c.delete("/v1/memory/entries", headers=me).json()["sections"])
 
 
 def test_shared_to_isolated_moves_only_complete_project_evidence(api):
@@ -218,53 +207,53 @@ def test_merge_outcomes_and_failure_atomicity(api, monkeypatch, failure):
     c, me, uid = api
     pid = project(c, me, "isolated")
     conv = c.post("/v1/conversations", headers=me, json={"project_id": pid}).json()["id"]
-    account_source = _seed(uid, "账号重复来源")
-    project_source = _seed(uid, "项目重复来源", conversation_id=conv)
-    old = (datetime.now(UTC) - timedelta(days=2)).isoformat()
-    recent = datetime.now(UTC).isoformat()
-    doc = put(
+    left = _seed(uid, "账号来源")
+    right = _seed(uid, "项目来源", conversation_id=conv)
+    before = put(
         c,
         me,
         [
-            {"content": "账号旧", "valid_from": old},
-            {"content": "账号重复", "evidence_run_ids": [account_source]},
-            {"content": "项目新", "project_id": pid, "valid_from": recent},
-            {"content": "项目重复", "project_id": pid, "evidence_run_ids": [project_source]},
-            {"content": "通用偏好", "project_id": pid},
-            {"content": "项目约定", "project_id": pid},
+            {"content": "Same fact", "evidence_run_ids": [left]},
+            {"content": "same fact!", "evidence_run_ids": [right], "project_id": pid},
+            {"content": "项目内容", "project_id": pid},
         ],
         auto_save=False,
     )
-    by_content = {e["content"]: e["id"] for e in doc["entries"]}
-    ids = [by_content[c] for c in ("账号旧", "账号重复", "项目新", "项目重复", "通用偏好", "项目约定")]
-    decisions = [
-        {"id": ids[2], "action": "contradicts", "account_id": ids[0]},
-        {"id": ids[3], "action": "duplicate_of", "account_id": ids[1]},
-        {"id": ids[4], "action": "to_account"},
-        {"id": ids[5], "action": "keep_project"},
-    ]
-    scripted(monkeypatch, decisions=decisions[:-1] if failure else decisions)
-    response = c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "shared"})
-    assert response.status_code == 200, response.text
-    current = c.get("/v1/memory", headers=me).json()
-    with SessionLocal() as db:
-        pending = db.get(Project, pid).memory_merge_requested_at
-        run = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == uid))
-        # a bad plan leaves this project's data and request as they were, without failing the rest of the job
-        assert run.status == ("skipped" if failure else "applied")
-        assert bool((run.report or {}).get("merge_errors")) == failure
+
+    async def no_model(*args):
+        raise AssertionError("project merge is program only")
+
+    monkeypatch.setattr(service, "_chat", no_model)
     if failure:
-        assert current["entries"] == doc["entries"] and current["revision"] == doc["revision"] and pending
+        from ailab_platform.memory_recall import store
+
+        original = store.replace_entries
+
+        def fail(*args):
+            original(*args)
+            raise ValueError("transaction failure")
+
+        monkeypatch.setattr(store, "replace_entries", fail)
+        with pytest.raises(ValueError, match="transaction failure"):
+            c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "shared"})
+        monkeypatch.setattr(store, "replace_entries", original)
+        assert c.get("/v1/memory", headers=me).json()["entries"] == before["entries"]
+        with SessionLocal() as db:
+            assert db.get(Project, pid).memory_mode == "isolated"
         return
-    entries = {e["id"]: e for e in current["entries"]}
-    assert ids[3] not in entries
-    assert set(entries[ids[1]]["evidence_run_ids"]) == {account_source, project_source}
-    assert entries[ids[0]]["superseded_by"] == ids[2]
-    assert entries[ids[2]]["project_id"] is None and entries[ids[4]]["project_id"] is None
-    assert entries[ids[5]]["project_id"] == pid and pending is None
-    assert c.post(f"/v1/memory/dreams/{run.id}/revert", headers=me).status_code == 200
-    assert len(c.get("/v1/memory", headers=me).json()["entries"]) == 6
-    assert c.get("/v1/memory/view", headers=me).status_code == 200
+    assert c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "shared"}).status_code == 200
+    current = c.get("/v1/memory", headers=me).json()
+    assert len(current["entries"]) == 2 and all(e["project_id"] is None for e in current["entries"])
+    assert set(current["entries"][0]["evidence_run_ids"]) == {left, right}
+    with SessionLocal() as db:
+        assert db.get(Project, pid).memory_merge_requested_at is None
+        run = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == uid, MemoryDreamRun.kind == "merge"))
+        did = run.id
+    assert c.post(f"/v1/memory/dreams/{did}/revert", headers=me).status_code == 200
+    restored = c.get("/v1/memory", headers=me).json()["entries"]
+    assert {(e["id"], e["content"], e["project_id"]) for e in restored} == {
+        (e["id"], e["content"], e["project_id"]) for e in before["entries"]
+    }
 
 
 def test_sensitive_agent_inference_rejected_but_explicit_saved(api):
@@ -338,8 +327,7 @@ def test_dream_extraction_scope_and_judge_candidates(api, monkeypatch, mode, exp
         return {0: {"supported": True}}, {}
 
     scripted(monkeypatch)
-    monkeypatch.setattr(service, "_extract", extract)
-    monkeypatch.setattr(service, "_judge", judge)
+    install_plan_builder(monkeypatch, extract)
     ds = c.get("/v1/memory", headers=me).json()["dream"]
     c.patch("/v1/memory/dream", headers=me, json={**ds, "enabled": False})
     response = c.post("/v1/memory/dream/run", headers=me, params={"project_id": pid})
@@ -347,66 +335,27 @@ def test_dream_extraction_scope_and_judge_candidates(api, monkeypatch, mode, exp
     assert result["status"] == "applied", result
     stored = next(e for e in c.get("/v1/memory", headers=me).json()["entries"] if e["content"] == "喜欢中文回答")
     assert stored["project_id"] == (pid if expected_scope else None)
-    assert any(e.get("project_id") is None for e in seen) == (mode == "shared")
+    assert stored["project_id"] == (pid if mode == "isolated" else None)
 
 
 def test_committed_merge_remains_revertible_when_later_extraction_fails(api, monkeypatch):
     c, me, uid = api
     pid = project(c, me, "isolated")
-    doc = put(c, me, [{"content": "中文回答偏好", "project_id": pid}])
-    conv = c.post("/v1/conversations", headers=me, json={"project_id": pid}).json()["id"]
-    _seed(uid, "一些待抽取的用户原话", days_ago=0, conversation_id=conv)
-    monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
-    scripted(monkeypatch, decisions=[{"id": doc["entries"][0]["id"], "action": "to_account"}])
+    put(c, me, [{"content": "项目偏好", "project_id": pid}])
+    _seed(uid, "新的用户偏好", days_ago=0)
+    assert c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "shared"}).status_code == 200
+    with SessionLocal() as db:
+        merged = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == uid, MemoryDreamRun.kind == "merge"))
+        did = merged.id
 
     async def unavailable(*args):
-        raise service.DreamError("抽取服务暂不可用")
+        raise service.DreamError("模型不可用")
 
-    monkeypatch.setattr(service, "_extract", unavailable)
-    c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "shared"})
-    with SessionLocal() as db:
-        # The committed merge starts a second batch for the still-pending conversations. PostgreSQL
-        # need not return the original batch first when an unordered query matches both jobs.
-        run = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == uid, MemoryDreamRun.batch_index == 1))
-        assert run.status == "applied" and run.error == "抽取服务暂不可用"
-        assert run.plan["merges"]
-        retry = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == uid, MemoryDreamRun.batch_index == 2))
-        assert retry.status == "failed" and retry.error == "抽取服务暂不可用"
-        did = run.id
+    monkeypatch.setattr(service, "_chat", unavailable)
+    failed = c.post("/v1/memory/dream/run", headers=me).json()["id"]
+    assert c.get(f"/v1/memory/dreams/{failed}", headers=me).json()["status"] == "failed"
     assert c.post(f"/v1/memory/dreams/{did}/revert", headers=me).status_code == 200
     assert c.get("/v1/memory", headers=me).json()["entries"][0]["project_id"] == pid
-
-
-@pytest.mark.parametrize("stage", ["extract", "judge"])
-def test_failed_extraction_still_refreshes_stale_summary(api, monkeypatch, stage):
-    c, me, uid = api
-    put(c, me, [{"kind": "user", "content": "中文回答"}])
-    _seed(uid, "一些待抽取的用户原话", days_ago=0)
-    monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
-    scripted(monkeypatch)
-
-    async def extracted(episodes, active, user):
-        return (
-            [{"text": "用户偏好中文", "source_quote": "用户原话", "evidence_run_ids": [episodes[0].run_id]}],
-            {},
-            "test-fast",
-        )
-
-    async def unavailable(*args):
-        raise service.DreamError("抽取服务暂不可用")
-
-    if stage == "judge":
-        monkeypatch.setattr(service, "_extract", extracted)
-    monkeypatch.setattr(service, "_" + stage, unavailable)
-    assert c.get("/v1/memory/view", headers=me).status_code == 200
-    response = c.post("/v1/memory/dream/run", headers=me)
-    result = c.get(f"/v1/memory/dreams/{response.json()['id']}", headers=me).json()
-    assert result["status"] == "failed" and result["error"] == "抽取服务暂不可用"
-    view = c.get("/v1/memory/view", headers=me).json()
-    assert view["core"][0]["content"] == "中文回答"
-    with SessionLocal() as db:
-        run = db.get(MemoryDreamRun, response.json()["id"])
-        assert run.claimed_until is None and "_final_status" not in (run.report or {})
 
 
 def test_recovered_edit_does_not_replay_operations_or_create_edit_chain(api, monkeypatch):
@@ -448,47 +397,6 @@ def test_edit_needs_no_summary_call_and_keeps_undo(api, monkeypatch):
     assert c.post(f"/v1/memory/dreams/{result['id']}/revert", headers=me).status_code == 200
 
 
-def test_cached_candidates_respect_new_isolation_and_sensitive_guard_is_consumed(api, monkeypatch):
-    from ailab_platform.models import MemoryWorkItem
-
-    c, me, uid = api
-    pid = project(c, me, "isolated")
-    conv = c.post("/v1/conversations", headers=me, json={"project_id": pid}).json()["id"]
-    prompt = "我喜欢中文。假设某人患有慢性病。"
-    rid = _seed(uid, prompt, conversation_id=conv, days_ago=0)
-    with SessionLocal() as db:
-        facts = [
-            {
-                "text": content,
-                "kind": "memory",
-                "entities": [],
-                "confidence": 0.95,
-                "source_quote": prompt,
-                "project_id": None,
-                "evidence_run_ids": [rid],
-                "evidence_episode_ids": [],
-            }
-            for content in ("用户喜欢中文", "用户患有慢性病")
-        ]
-        db.add(MemoryWorkItem(run_id=rid, user_id=uid, state="pending", source_end=len(prompt), candidates=facts))
-        db.commit()
-    scripted(monkeypatch)
-
-    async def judge(facts, active, user, model):
-        return {0: {"supported": True}, 1: {"supported": False}}, {}
-
-    monkeypatch.setattr(service, "_judge", judge)
-    response = c.post("/v1/memory/dream/run", headers=me, params={"project_id": pid})
-    out = c.get(f"/v1/memory/dreams/{response.json()['id']}", headers=me).json()
-    assert out["status"] == "applied", out
-    assert any(item["outcome"] == "unsupported" for item in out["report"]["candidates"])
-    entries = c.get("/v1/memory", headers=me).json()["entries"]
-    assert len(entries) == 1 and entries[0]["project_id"] == pid
-    with SessionLocal() as db:
-        work = db.get(MemoryWorkItem, rid)
-        assert work.state == "done" and work.candidates == []
-
-
 def test_nightly_auto_save_off_does_not_claim_conversation_only_work(api, monkeypatch):
     c, me, uid = api
     put(c, me, [], auto_save=False)
@@ -505,19 +413,12 @@ def test_blank_project_ids_are_rejected(api):
     assert post_edit(c, me, {"project_id": "", "instruction": "记住"}).status_code == 422
 
 
-def test_merge_undated_legacy_fact_cannot_override_known_newer_account_fact(api, monkeypatch):
+def test_merge_undated_legacy_fact_cannot_override_known_newer_account_fact(api):
     c, me, _uid = api
     pid = project(c, me, "isolated")
-    doc = put(c, me, [{"content": "当前账号事实"}, {"content": "旧项目事实", "project_id": pid}], auto_save=False)
-    with SessionLocal() as db:
-        from ailab_platform.models import MemoryItem
-
-        db.get(MemoryItem, doc["entries"][1]["id"]).valid_from = datetime(1970, 1, 1, tzinfo=UTC)
-        db.commit()
-    scripted(monkeypatch, decisions=[{"id": doc["entries"][1]["id"], "action": "contradicts", "account_id": doc["entries"][0]["id"]}])
-    c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "shared"})
-    entries = c.get("/v1/memory", headers=me).json()["entries"]
-    assert not entries[0]["invalid_at"] and entries[1]["superseded_by"] == entries[0]["id"]
+    put(c, me, [{"content": "账号新事实"}, {"content": "项目旧事实", "project_id": pid, "valid_from": "2000-01-01T00:00:00+00:00"}])
+    assert c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "shared"}).status_code == 200
+    assert {e["content"] for e in c.get("/v1/memory", headers=me).json()["entries"]} == {"账号新事实", "项目旧事实"}
 
 
 def test_isolation_rehomes_existing_evidence_from_soft_deleted_conversation(api):
@@ -556,8 +457,9 @@ def test_edit_skips_malformed_ops_and_reports_what_changed(api, monkeypatch):
 
 def test_edit_over_capacity_fails_with_a_reason(api, monkeypatch):
     c, me, _uid_value = api
-    put(c, me, [{"content": f"事实{i}"} for i in range(2000)])
-    scripted(monkeypatch, ops=[{"op": "add", "content": "再多一条"}])
+    monkeypatch.setattr(service.settings, "memory_doc_max_chars", 1000)
+    put(c, me, [{"content": str(i) + "长" * 180} for i in range(6)])
+    scripted(monkeypatch, ops=[{"op": "add", "content": "再多一条" + "长" * 180}])
     result = edit(c, me)
     assert result["status"] == "failed" and "记忆已满" in result["error"]
 
@@ -577,22 +479,21 @@ def test_pages_survive_turning_memory_off(api, monkeypatch):
     put(c, me, [{"kind": "user", "content": "中文回答"}])
     c.patch("/v1/memory/settings", headers=me, json={"enabled": False})
     view = c.get("/v1/memory/view", headers=me).json()
-    assert not view["enabled"] and view["core"][0]["content"] == "中文回答"
+    assert not view["enabled"] and view["sections"][1]["items"][0]["content"] == "中文回答"
 
 
 def test_mock_model_answers_memory_prompts():
     from ailab_platform.llm import _memory_answer
 
     assert _memory_answer("other", "{}") is None
-    assert json.loads(_memory_answer(DOCUMENT_SYSTEM + "\n附加规则", "[]")) == {"facts": []}
-    assert json.loads(_memory_answer(DOCUMENT_SYSTEM + "\n附加规则", "[]")) == {"results": []}
+    assert json.loads(_memory_answer(DOCUMENT_SYSTEM + "\n附加规则", "[]")) == {"ops": []}
+    assert json.loads(_memory_answer(DOCUMENT_SYSTEM + "\n附加规则", "[]")) == {"ops": []}
     entries = [{"id": "mem_a", "kind": "user", "content": "喜欢蓝色主题"}]
     forget = json.loads(_memory_answer(EDIT_SYSTEM, json.dumps({"instruction": "忘记蓝色主题", "entries": entries})))
     assert forget["ops"] == [{"op": "remove", "id": "mem_a"}]
     remember = json.loads(_memory_answer(EDIT_SYSTEM, json.dumps({"instruction": "记住我在上海", "entries": []})))
     assert remember["ops"][0]["content"] == "我在上海"
-    merged = json.loads(_memory_answer(MERGE_SYSTEM, json.dumps({"project": [{"id": "mem_p"}], "account": []})))
-    assert merged["decisions"] == [{"id": "mem_p", "action": "to_account"}]
+    assert json.loads(_memory_answer(DOCUMENT_SYSTEM, "[]")) == {"ops": []}
 
 
 @pytest.mark.parametrize("change", ["settings", "other_scope", "own_scope"])
@@ -645,7 +546,7 @@ def test_view_get_never_scans_history(api, monkeypatch):
 
     monkeypatch.setattr(service, "_new_runs", forbidden)
     value = c.get("/v1/memory/view", headers=me).json()
-    assert value["enabled"] and value["pages"] == []
+    assert value["enabled"] and all(not s["items"] for s in value["sections"])
 
 
 def test_redaction_only_writes_changed_rows_and_preserves_active_edit(api):

@@ -605,7 +605,16 @@ async def process_dream(run_id: str) -> None:
                 ]
                 if digest(shown) != digest(entries):
                     raise DreamError("记忆已变化，请重试")
-                changed, audit = apply_ops(current["entries"], entries, episodes, result.get("ops", []), user, scope)
+                ignored = {}
+                for item in result.get("ignored_runs", []):
+                    if (
+                        isinstance(item, dict)
+                        and item.get("run") in {e.run_id for e in episodes}
+                        and item.get("reason") in {"test", "repro", "no_signal"}
+                    ):
+                        ignored[item["run"]] = item["reason"]
+                evidence = [e for e in episodes if e.run_id not in ignored]
+                changed, audit = apply_ops(current["entries"], entries, evidence, result.get("ops", []), user, scope)
                 after = save(db, user, current, changed)
                 record(job, current, after)
                 for episode in episodes:
@@ -616,6 +625,8 @@ async def process_dream(run_id: str) -> None:
                     item.source_offset = json.loads(episode.digest).get("source_end", len(source.prompt))
                     item.source_end = item.source_offset
                     item.state = "done" if item.source_offset >= len(_source_text(db, source)) else "ready"
+                    if ignored.get(episode.run_id) in {"test", "repro"}:
+                        item.state = "skipped"
                     item.candidates = []
                     db.add(item)
                 _finish(
@@ -624,7 +635,12 @@ async def process_dream(run_id: str) -> None:
                     "applied",
                     input_run_ids=[e.run_id for e in episodes],
                     token_usage=usage,
-                    report={"runs_seen": len(episodes), "added": sum(x["op"] == "add" for x in audit), "ops": audit},
+                    report={
+                        "runs_seen": len(episodes),
+                        "added": sum(x["op"] == "add" for x in audit),
+                        "ops": audit,
+                        "ignored_runs": ignored,
+                    },
                     cursor_run_id=runs[-1].id if runs else None,
                 )
 

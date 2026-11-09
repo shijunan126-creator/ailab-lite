@@ -146,9 +146,7 @@ def test_items_and_project_pool_queries_are_indexed(engine):
                     "project_id": f"prj_plan_{i}",
                     "content": "plan",
                     "kind": "fact",
-                    "page": "工作",
                     "origin": "manual",
-                    "tier": "archive",
                     "content_hash": str(i),
                 }
                 for i in range(4000)

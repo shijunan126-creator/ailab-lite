@@ -5,7 +5,7 @@ import copy
 import json
 import logging
 
-from sqlalchemy import select
+from fastapi import HTTPException
 
 from ..catalog import get_catalog
 from ..config import settings
@@ -13,10 +13,9 @@ from ..contracts.memory import MemoryEntryInput, MemoryUpdate
 from ..db import SessionLocal
 from ..locks import user_critical_section
 from ..memory_recall import guard
-from ..memory_recall.policy import visible
 from ..models import Project, User, utcnow
 from .changes import digest, record, scope_entries
-from .prompts import EDIT_SYSTEM, MERGE_SYSTEM
+from .prompts import EDIT_SYSTEM
 
 log = logging.getLogger("ailab.memory")
 LOST_CLAIM = "整理任务已由其他进程接手"
@@ -145,8 +144,8 @@ async def edit(run_id, token):
                     # Other scopes/settings may change while the model waits. Undo must restore the
                     # document just before this commit, rather than overwrite those concurrent changes.
                     after = save(db, owner, current, modified, explicit=True, tombstones=True) if changed else current
-                except ValueError:
-                    raise DreamError("记忆已满，先忘记一些内容再试")
+                except (ValueError, HTTPException) as exc:
+                    raise DreamError("记忆已满，先忘记一些内容再试") from exc
                 reply = str(result.get("reply") or ("已更新记忆。" if changed else "没有找到需要修改的记忆。"))[:500]
                 if refused:
                     reply = "已处理可保存的内容；密钥或口令不能保存为记忆。" if changed else "密钥或口令不能保存为记忆。"
@@ -161,150 +160,63 @@ async def edit(run_id, token):
     await asyncio.to_thread(apply)
 
 
-async def merge_projects(run_id, token):
-    from ..api.routes_memory import memory_for
-    from .service import DreamError, _check_claim
+def merge_project(db, user, project):
+    from ..api.routes_memory import memory_for, write_memory
+    from ..memory_recall.document import kind
+    from ..memory_recall.tombstones import fact_hash
+    from ..models import MemoryDreamRun, new_id
 
-    def pending():
-        with SessionLocal() as db:
-            run = _check_claim(db, run_id, token)
-            return list(
-                db.scalars(
-                    select(Project.id)
-                    .where(Project.user_id == run.user_id, Project.memory_merge_requested_at.is_not(None))
-                    .order_by(Project.memory_merge_requested_at, Project.id)
-                    .limit(5)
-                )
-            )
-
-    async def merge_one(pid):
-
-        def prepare():
-            with SessionLocal() as db:
-                run = _check_claim(db, run_id, token)
-                with user_critical_section(db, run.user_id):
-                    project = db.get(Project, pid, populate_existing=True)
-                    if not project or not project.memory_merge_requested_at:
-                        return
-                    if project.memory_mode != "shared":
-                        project.memory_merge_requested_at = None
-                        db.commit()
-                        return
-                    user = db.get(User, run.user_id, populate_existing=True)
-                    current = memory_for(user)
-                    if user.disabled_at or not current["enabled"]:
-                        raise DreamError("记忆未开启")
-                    active = [e for e in current["entries"] if visible(e, e.get("project_id"))]
-                    return (
-                        user,
-                        current,
-                        [e for e in active if e.get("project_id") == pid],
-                        [e for e in active if e.get("project_id") is None],
-                        project.memory_merge_requested_at,
-                    )
-
-        snapshot = await asyncio.to_thread(prepare)
-        if not snapshot:
-            return
-        user, before, entries, account, requested = snapshot
-        plan, _ = (
-            await call(
-                user,
-                MERGE_SYSTEM,
-                {
-                    "project": [{k: e.get(k) for k in ("id", "kind", "content", "valid_from")} for e in entries],
-                    "account": [{k: e.get(k) for k in ("id", "kind", "content", "valid_from")} for e in account],
-                },
-            )
-            if entries
-            else ({"decisions": []}, {})
-        )
-
-        def apply():
-            with SessionLocal() as db:
-                with user_critical_section(db, user.id):
-                    run = _check_claim(db, run_id, token)
-                    project = db.get(Project, pid, populate_existing=True)
-                    if not project:
-                        return
-                    if project.memory_mode != "shared":
-                        project.memory_merge_requested_at = None
-                        db.commit()
-                        return
-                    owner = db.get(User, user.id, populate_existing=True)
-                    current = memory_for(owner)
-                    if (
-                        owner.disabled_at
-                        or not current["enabled"]
-                        or current["revision"] != before["revision"]
-                        or project.memory_merge_requested_at != requested
-                    ):
-                        raise DreamError("记忆已变化，请重试")
-                    decisions = plan.get("decisions", [])
-                    if len(decisions) != len(entries) or {d.get("id") for d in decisions} != {e["id"] for e in entries}:
-                        raise DreamError("项目融合计划不完整")
-                    modified = copy.deepcopy(current["entries"])
-                    by_id = {e["id"]: e for e in modified}
-                    account_ids = {e["id"] for e in account}
-                    removed = set()
-                    for decision in decisions:
-                        entry = by_id[decision["id"]]
-                        action = decision.get("action")
-                        if action == "to_account":
-                            entry["project_id"] = None
-                        elif action in {"duplicate_of", "contradicts"}:
-                            if decision.get("account_id") not in account_ids:
-                                raise DreamError("项目融合目标无效")
-                            target = by_id[decision["account_id"]]
-                            if action == "duplicate_of":
-                                for key in ("evidence_run_ids", "evidence_episode_ids"):
-                                    target[key] = list(dict.fromkeys([*target.get(key, []), *entry.get(key, [])]))
-                                removed.add(entry["id"])
-                            else:
-                                from datetime import UTC, datetime
-
-                                from .service import _aware
-
-                                def at(e):
-                                    return (
-                                        _aware(datetime.fromisoformat(e["valid_from"]))
-                                        if e.get("valid_from")
-                                        else datetime.min.replace(tzinfo=UTC)
-                                    )
-
-                                newer, older = (entry, target) if at(entry) > at(target) else (target, entry)
-                                older.update(invalid_at=newer.get("valid_from") or utcnow().isoformat(), superseded_by=newer["id"])
-                                if newer is entry:
-                                    entry["project_id"] = None
-                        elif action != "keep_project":
-                            raise DreamError("项目融合操作无效")
-                    after = (
-                        save(db, owner, current, [e for e in modified if e["id"] not in removed])
-                        if modified != current["entries"] or removed
-                        else current
-                    )
-                    record(run, current, after)
-                    run.plan = {**(run.plan or {}), "merges": [*(run.plan or {}).get("merges", []), {"project_id": pid, **plan}]}
-                    run.report = {**(run.report or {}), "merged_projects": [*(run.report or {}).get("merged_projects", []), pid]}
-                    project.memory_merge_requested_at = None
-                    db.commit()
-
-        await asyncio.to_thread(apply)
-
-    for pid in await asyncio.to_thread(pending):
-        try:
-            await merge_one(pid)
-        except Exception as exc:
-            if isinstance(exc, DreamError) and str(exc) == LOST_CLAIM:
-                raise
-            # One project's bad plan or a model failure must not stop the others, the extraction or the summaries:
-            # its data and its merge request stay as they were, and the next consolidation tries again.
-            log.warning("memory project merge failed run=%s error=%s", run_id, type(exc).__name__)
-
-            def note(message=str(exc)[:200] if isinstance(exc, DreamError) else "融合未完成"):
-                with SessionLocal() as db:
-                    run = _check_claim(db, run_id, token)
-                    run.report = {**(run.report or {}), "merge_errors": [*(run.report or {}).get("merge_errors", []), message]}
-                    db.commit()
-
-            await asyncio.to_thread(note)
+    before = memory_for(user)
+    entries = copy.deepcopy(before["entries"])
+    account = {(kind(e), fact_hash(e["content"])): e for e in entries if e.get("project_id") is None and e.get("status") == "active"}
+    removed = set()
+    for e in entries:
+        if e.get("project_id") != project.id or e.get("status") != "active":
+            continue
+        key = (kind(e), fact_hash(e["content"]))
+        if key in account:
+            target = account[key]
+            for field in ("evidence_run_ids", "evidence_episode_ids"):
+                target[field] = list(dict.fromkeys([*target.get(field, []), *e.get(field, [])]))
+                if len(target[field]) > 50:
+                    raise ValueError("项目融合来源超出容量")
+            if e.get("origin") in {"explicit", "manual", "edited"} and target.get("origin") == "inferred":
+                target["origin"] = e["origin"]
+            target["reinforced_at"] = utcnow().isoformat()
+            removed.add(e["id"])
+        else:
+            e["project_id"] = None
+            account[key] = e
+    after = write_memory(
+        db,
+        user,
+        MemoryUpdate(
+            expected_revision=before["revision"],
+            enabled=before["enabled"],
+            auto_save=before["auto_save"],
+            entries=inputs([e for e in entries if e["id"] not in removed]),
+        ),
+        "user",
+        tombstone_removed=False,
+        allow_overcap=True,
+    )
+    now = utcnow()
+    job = MemoryDreamRun(
+        id=new_id("dream"),
+        user_id=user.id,
+        project_id=project.id,
+        trigger="merge",
+        kind="merge",
+        status="applied",
+        local_date=now.date().isoformat(),
+        timezone="UTC",
+        created_at=now,
+        finished_at=now,
+        report={"merged_projects": [project.id], "chain_complete": True},
+        plan={},
+        token_usage={},
+    )
+    record(job, before, after)
+    db.add(job)
+    project.memory_merge_requested_at = None
+    return job
