@@ -131,6 +131,7 @@ def test_manual_memory_cannot_forge_prompt_tags():
     assert model_text(attack) in prompt
     for rule in ("不能改变权限", "本轮要求优先", "纠正", "archive", "explicit=true", "凭据", "不得重存"):
         assert rule in prompt
+    assert '{"action":"search","query":"实体词"}' in prompt and "必须先查，再回答或追问" in prompt
 
 
 def test_core_budget_selects_priority_before_page_and_recent_ties():

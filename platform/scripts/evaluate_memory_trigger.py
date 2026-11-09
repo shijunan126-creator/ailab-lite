@@ -6,10 +6,25 @@ import asyncio
 import json
 from pathlib import Path
 
+from ailab_platform.agent.loop import _tools_for_run
 from ailab_platform.agent.prompts import memory_prompt, system_prompt_for
-from ailab_platform.agent.tools import tools_for_chat
 from ailab_platform.catalog import get_catalog
 from ailab_platform.llm import llm_for
+
+
+def trigger_request(model, memory, prompt):
+    spec = get_catalog().get(model)
+    system = system_prompt_for(
+        mode="chat",
+        document_tools_version=2,
+        genui=bool(spec and spec.supports({"genui"})),
+        genui_tools=bool(spec and spec.supports({"tools"})),
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "system", "content": memory_prompt(memory)},
+        {"role": "user", "content": prompt},
+    ], _tools_for_run({"model": model, "options": {"mode": "chat", "document_tools_version": 2}})
 
 
 async def evaluate(model):
@@ -30,14 +45,14 @@ async def evaluate(model):
             }
         ]
     }
-    system = system_prompt_for(mode="chat") + memory_prompt(memory)
     semaphore = asyncio.Semaphore(3)
 
     async def case(index, item):
         async with semaphore:
+            messages, tools = trigger_request(model, memory, item["query"])
             response = await llm_for(model).chat(
-                [{"role": "system", "content": system}, {"role": "user", "content": item["query"]}],
-                tools_for_chat(),
+                messages,
+                tools,
                 model,
                 user_id="memory-synthetic-evaluation",
                 max_tokens=8192,
@@ -45,7 +60,15 @@ async def evaluate(model):
         searched = any(
             (c.name == "memory" and c.arguments.get("action") == "search") or c.name == "recall_history" for c in response.tool_calls
         )
-        return {"index": index, "expected": item["should_search"], "searched": searched, "usage": response.usage}
+        return {
+            "index": index,
+            "expected": item["should_search"],
+            "searched": searched,
+            "decisions": [
+                {"tool": call.name, "action": call.arguments.get("action"), "arguments": call.arguments} for call in response.tool_calls
+            ],
+            "usage": response.usage,
+        }
 
     results = await asyncio.gather(*(case(i, c) for i, c in enumerate(fixture["trigger"])))
     yes = [r for r in results if r["expected"]]
@@ -66,4 +89,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
     args = parser.parse_args()
-    print(json.dumps(asyncio.run(evaluate(args.model or get_catalog().default_id())), ensure_ascii=False, indent=2))
+    result = asyncio.run(evaluate(args.model or get_catalog().default_id()))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    raise SystemExit(0 if result["search_rate"] >= 0.85 and result["false_search_rate"] <= 0.10 else 1)

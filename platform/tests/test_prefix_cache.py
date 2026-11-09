@@ -2702,3 +2702,19 @@ def test_cache_acceptance_rejects_old_prefix_misses_even_when_scenario_ratio_pas
     assert missed["ratio"] > 0.95 and not missed["passed"]  # 182 old tokens lost, beyond one 128-token block
     accepted = cache_acceptance([{"prompt_tokens": 8520, "cached_tokens": 8448}, old, {"prompt_tokens": 9218, "cached_tokens": 8704}], 1)
     assert accepted["passed"] and all(c["passed"] for c in accepted["prefix_cache_checks"])
+
+
+@pytest.mark.parametrize("genui", [False, True])
+def test_trigger_evaluation_matches_recorded_production_chat_request(monkeypatch, genui):
+    from ailab_platform.catalog import get_catalog
+    from scripts.evaluate_memory_trigger import trigger_request
+
+    capabilities = {"tools", "vision"} | ({"genui"} if genui else set())
+    monkeypatch.setitem(get_catalog().models, "m", ModelSpec("m", "m", provider="mock", context_tokens=1000000, capabilities=capabilities))
+    memory = memory_prefix_fixture()
+    platform = MemoryPrefixPlatform([memory])
+    with scripted_server([{"content": "收到"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("turn0", attempt_id="a"))
+    messages, tools = trigger_request("m", memory, "请简短回复收到")
+    assert requests[0]["messages"] == messages
+    assert requests[0]["tools"] == tools
