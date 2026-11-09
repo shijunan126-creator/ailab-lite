@@ -37,6 +37,7 @@ def save(db, user, current, entries, *, explicit=False, tombstones=False):
         "user" if explicit else "nightly",
         explicit=explicit,
         tombstone_removed=tombstones,
+        allow_overcap=not explicit,
     )
 
 
@@ -170,14 +171,20 @@ def merge_project(db, user, project):
 
     before = memory_for(user)
     entries = copy.deepcopy(before["entries"])
-    account = {(kind(e), fact_hash(e["content"])): e for e in entries if e.get("project_id") is None and e.get("status") == "active"}
-    removed = set()
+    account = {}
     for e in entries:
-        if e.get("project_id") != project.id or e.get("status") != "active":
+        if e.get("project_id") is None and e.get("status") in {"active", "review"}:
+            key = (kind(e), fact_hash(e["content"]))
+            if key not in account or e.get("status") == "active":
+                account[key] = e
+    for e in entries:
+        if e.get("project_id") != project.id or e.get("status") not in {"active", "review"}:
             continue
         key = (kind(e), fact_hash(e["content"]))
         if key in account:
             target = account[key]
+            if e.get("status") == "active":
+                target["status"] = "active"
             for field in ("evidence_run_ids", "evidence_episode_ids"):
                 target[field] = list(dict.fromkeys([*target.get(field, []), *e.get(field, [])]))
                 if len(target[field]) > 50:
@@ -198,7 +205,7 @@ def merge_project(db, user, project):
             if e.get("origin") in {"explicit", "manual", "edited"} and target.get("origin") == "inferred":
                 target["origin"] = e["origin"]
             target["reinforced_at"] = utcnow().isoformat()
-            removed.add(e["id"])
+            e.update(invalid_at=utcnow().isoformat(), superseded_by=target["id"], superseded_reason="condense")
         else:
             e["project_id"] = None
             account[key] = e
@@ -209,7 +216,7 @@ def merge_project(db, user, project):
             expected_revision=before["revision"],
             enabled=before["enabled"],
             auto_save=before["auto_save"],
-            entries=inputs([e for e in entries if e["id"] not in removed]),
+            entries=inputs(entries),
         ),
         "user",
         tombstone_removed=False,
@@ -235,3 +242,23 @@ def merge_project(db, user, project):
     db.add(job)
     project.memory_merge_requested_at = None
     return job
+
+
+def merge_pending_projects(db, user):
+    from sqlalchemy import select
+
+    projects = list(
+        db.scalars(
+            select(Project)
+            .where(Project.user_id == user.id, Project.memory_mode == "shared", Project.memory_merge_requested_at.is_not(None))
+            .limit(20)
+        )
+    )
+    if projects:
+        with user_critical_section(db, user.id):
+            db.refresh(user)
+            for project in projects:
+                db.refresh(project)
+                if project.memory_mode == "shared" and project.memory_merge_requested_at:
+                    merge_project(db, user, project)
+            db.commit()

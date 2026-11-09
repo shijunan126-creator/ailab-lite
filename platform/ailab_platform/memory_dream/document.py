@@ -118,8 +118,8 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope):
         return [e for e in entries if e.get("project_id") == scope]
 
     candidates = sorted(
-        (e for e in active(scoped()) if e.get("origin") == "inferred" and len(e.get("evidence_run_ids", [])) <= 1),
-        key=lambda e: (str(e.get("reinforced_at") or e.get("observed_at") or ""), e["id"]),
+        (e for e in active(scoped()) if e.get("origin") == "inferred"),
+        key=lambda e: (str(e.get("reinforced_at") or e.get("observed_at") or ""), len(e.get("evidence_run_ids", [])), e["id"]),
     )
     for entry in candidates:
         if used_chars(scoped()) <= settings.memory_doc_max_chars:

@@ -49,3 +49,17 @@ isolated→shared 项目融合为**程序事务**，没有模型调用：活动�
 用户质疑或提及记忆、行可能过时时先 memory.list；最新 list 结果是当前事实，覆盖快照与此前更新块。空闲刷新后仍执行 parent compaction，发生压缩时只记录 compaction 边界。运行中的外部变化到下一 run 才送达，不改已发请求。
 
 0066新增 memory_item_sources 反向索引投影，来源删除通过 run_id 索引分批清理 closed 版本；只剩被删来源的派生行删除，其余清 quote/已删来源。该投影从 source_run_ids 派生，没有第二份内容。no_signal 不取消后续 episode context；test/repro 才重读。项目来源超过50保留最新50，不使融合失败。
+
+## 全系统审查收口（2026-11-10）
+
+写作用域只允许账号或isolated项目；shared项目的工具add/replace/remove写账号，0066标记遗留shared项目待程序融合。融合携带review，重复项目行关闭为condense重定向，不作删除通知。replace默认保留kind与origin，explicit请求提升保护，created_by=correction。
+
+清理90天旧版本及来源脱敏时，仍有后继的行保留无正文/引文/来源的重定向，避免截断快照纠正链；后继链消失后可回收。纠正通知给出新handle和替代的旧handle，observed记新到旧映射，相同目标只一条最终纠正。隐私清理仍删除真正无后继、仅依赖被删来源的派生行。
+
+claim_due的维护探测只读settings；prepare也只读，仅锁内apply写无可整理签名。维护无进展且仍超限时记录签名，文档变更前不再付费。兜底淘汰覆盖全部inferred行，优先最老、较少强化；受保护行不丢弃，既有保护超限可以保持但Dreaming不因它返回显式添加的422。
+
+suppressed为死状态：0066转换review，兼容输入映射review，页面可确认/删除；非显式重复review只提示待确认，显式重复激活；active去重不受review影响。Dreaming等模型期间内容变化按id+content hash逐op重验，拒绝冲突目标并应用其余操作。
+
+开关页读有界GET memory/settings，避免为开关加载全部scope/引文。旧GET memory仍供现有API/E2E读者，受2000行×200字合同限制，limit_chars使用配置cap。报告列表/计数读当前report，旧候选/plan快照由迁移丢弃，删除仅清undo和delivery当前结构。
+
+前缀优先的代价明确：策略关闭后，旧快照文本仍随请求发送到自然边界，但静态规则和失效块禁止使用；开启后不重建，按需memory.list取得当前文档。首轮快照已经最新，不浪费一次list；后续提到别处记忆、质疑行或修改快照外条目前才list，最新结果覆盖旧快照和更新块。此规则不放宽访问撤权的独立安全边界。

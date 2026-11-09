@@ -1,3 +1,10 @@
+## 2026-11-10 全系统记忆审查
+
+- shared项目写入scope必须先归一为账号，不能把run_project直接当写scope；遗留project行用0066标记并在用户锁内程序融合。重复行保留condense重定向，review一起迁移；纠正沿链给当前handle。
+- 删除/90天回收旧版本不能断开superseded_by：有后继时清正文/quote/sources留空重定向；无后继才删。保留空跳转也要从回收候选排除，避免占满每批前列。
+- claim_due不能写user.settings，维护探测只读；no-progress signature在锁内prepare/apply记录。逐op对照显示时id/hash，不能一次并发编辑中止整批。review重复添加需明确确认，suppressed兼容输入转review。
+- 开关只取GET memory/settings；首轮不list。关闭策略仍发送旧快照至边界但禁止使用，开启按需list，是前缀优先的明确代价。
+
 ## 2026-11-09 PR174 审查陷阱
 
 - 存储 status=suppressed 必须能经 MemoryEntryInput 往返；不能只修单个 HTTP 入口。created_by 不等于 superseded_reason，合并后用户再编辑仍是 correction；evicted 不推，因为仅移出空间。

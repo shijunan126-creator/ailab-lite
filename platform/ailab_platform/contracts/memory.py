@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-MAX_CHARS = 600000
 MAX_ENTRIES = 2000
+MAX_CHARS = MAX_ENTRIES * 200
 MAX_TOMBSTONES = 200
 DREAM_WINDOW_START = "02:00"
 DREAM_WINDOW_END = "05:00"
@@ -50,6 +50,12 @@ class MemoryEntryInput(BaseModel):
     suppressed: bool | None = None
     project_id: str | None = Field(default=None, max_length=40)
     status: Literal["active", "review", "suppressed"] | None = None
+
+    @model_validator(mode="after")
+    def legacy_suppression(self):
+        if self.suppressed or self.status == "suppressed":
+            self.status, self.suppressed = "review", False
+        return self
 
     @field_validator("content")
     @classmethod
@@ -276,3 +282,10 @@ class MemoryView(BaseModel):
     max_chars: int
     review: list[MemoryItem]
     sections: list[MemorySection]
+
+
+class MemorySettingsOut(BaseModel):
+    enabled: bool
+    auto_save: bool
+    reference_history: bool
+    dream: MemoryDreamSettings

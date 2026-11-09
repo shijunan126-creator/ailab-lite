@@ -365,7 +365,7 @@ MEMORY = {
     "type": "function",
     "function": {
         "name": "memory",
-        "description": "用户质疑或提及记忆、记忆可能过时，或需修改快照外条目时list读完整当前文档；"
+        "description": "首轮快照已是当前文档，无需list；后续轮提及别处记忆、质疑某行或修改快照外条目前list；"
         "写操作无需revision；replace/remove用活动行id，行已变化时先list。仅用户要求时explicit=true；自主保存静默。",
         "parameters": {
             "type": "object",

@@ -130,24 +130,8 @@ def _rewrite_copies(db: Session, user_id: str, rewrite) -> None:
         from ..memory_dream.changes import redact
 
         dream.change_set = redact(dream.change_set, rewrite)
-        candidates = []
-        for entry in (dream.report or {}).get("candidates", []):
-            next_ = rewrite(entry)
-            if next_ is not None:
-                candidates.append(
-                    {**next_, "related": [item for related in next_.get("related", []) if (item := rewrite(related)) is not None]}
-                )
-        if candidates != (dream.report or {}).get("candidates", []):
-            dream.report = {**(dream.report or {}), "candidates": candidates}
-        changes = [next_ for entry in (dream.plan or {}).get("changes", []) if (next_ := rewrite(entry)) is not None]
-        if changes != (dream.plan or {}).get("changes", []):
-            dream.plan = {**(dream.plan or {}), "changes": changes}
-    for item in db.scalars(
-        select(MemoryWorkItem).where(MemoryWorkItem.user_id == user_id, MemoryWorkItem.state == "pending").execution_options(yield_per=100)
-    ):
-        updated = [next_ for entry in item.candidates or [] if (next_ := rewrite(entry)) is not None]
-        if updated != (item.candidates or []):
-            item.candidates = updated
+        dream.plan = {}
+        dream.report = {k: v for k, v in (dream.report or {}).items() if k != "candidates"}
     for delivery in db.scalars(
         select(RunDelivery).join(Run, Run.id == RunDelivery.run_id).where(Run.user_id == user_id).execution_options(yield_per=100)
     ):
@@ -284,9 +268,20 @@ def redact_closed_sources(db, user_id, run_ids):
         for row in rows:
             remaining = [rid for rid in row.source_run_ids if rid not in run_ids]
             if not remaining and (row.metadata_ or {}).get("source") != "user":
-                db.delete(row)
+                if row.superseded_by:
+                    blank_redirect(db, row)
+                else:
+                    db.delete(row)
             else:
                 row.source_run_ids = remaining
                 row.source_quote = ""
                 db.execute(delete(MemoryItemSource).where(MemoryItemSource.memory_id == row.id, MemoryItemSource.run_id.in_(run_ids)))
         db.flush()
+
+
+def blank_redirect(db, row):
+    from ..models import MemoryItemSource
+
+    row.content, row.source_quote, row.source_run_ids = "", "", []
+    row.metadata_ = {"source": (row.metadata_ or {}).get("source"), "evidence_deleted": True}
+    db.execute(delete(MemoryItemSource).where(MemoryItemSource.memory_id == row.id))

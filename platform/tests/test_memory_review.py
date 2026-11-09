@@ -89,7 +89,7 @@ def test_writes_with_suppressed_row(path, monkeypatch):
                 after = save(db, user, before, before["entries"])
                 assert after["revision"] == before["revision"]
                 db.commit()
-        assert next(e for e in c.get("/v1/memory", headers=me).json()["entries"] if e["id"] == paused)["status"] == "suppressed"
+        assert next(e for e in c.get("/v1/memory", headers=me).json()["entries"] if e["id"] == paused)["status"] == "review"
 
 
 def test_noop_and_scope_signature_ignore_global_revision():
@@ -111,7 +111,7 @@ def test_protected_overcap_does_not_call_manual_dream(monkeypatch):
         assert response.json()["status"] == "nothing", response.text
         with SessionLocal() as db:
             user = db.get(User, _uid(c, me))
-            assert user.settings["memory"]["nothing_condensable"]
+            assert "nothing_condensable" not in user.settings["memory"]
         assert maintenance_needed([{"id": "mem_i", "kind": "fact", "content": "长" * 1200, "origin": "inferred"}])
 
 

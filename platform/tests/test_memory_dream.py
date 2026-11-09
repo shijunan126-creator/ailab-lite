@@ -41,7 +41,7 @@ def test_memory_routes_expose_dream_settings_and_history() -> None:
                 status="applied",
                 trigger="cron",
                 input_run_ids=[],
-                plan={"changes": [{"op": "add", "kind": "user", "content": "新记忆", "confidence": 0.9, "evidence_run_ids": []}]},
+                report={"changed": 1, "ops": [{"op": "add", "new_id": "mem_new"}]},
                 journal="ok",
                 before_memory={"entries": [entry], "enabled": True, "auto_save": True},
                 after_memory={"revision": 1, "entries": [entry], "enabled": True, "auto_save": True},
@@ -53,7 +53,7 @@ def test_memory_routes_expose_dream_settings_and_history() -> None:
             db.commit()
             run_id = run.id
         listed = c.get("/v1/memory/dreams", headers=me).json()
-        assert listed[0]["id"] == run_id and listed[0]["changes"][0]["content"] == "新记忆"
+        assert listed[0]["id"] == run_id and listed[0]["report"]["changed"] == 1
         detail = c.get(f"/v1/memory/dreams/{run_id}", headers=me).json()
         assert detail["before"][0]["content"] == "旧记忆"
         reverted = c.post(f"/v1/memory/dreams/{run_id}/revert", headers=me)

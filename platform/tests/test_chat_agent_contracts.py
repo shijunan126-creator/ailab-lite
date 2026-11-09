@@ -456,6 +456,10 @@ def test_system_prefix_is_shared_and_memory_changes_append_notes():
         assert messages[:2] == original
         assert "已删除，不得再使用：[m1]" in messages[-1]["content"]
         assert messages[-1]["content"].endswith("下一轮用户要求")
-        assert "revision=3" in memory_prompt(p1.current)
+        assert "中文" in original[1]["content"] and "简洁" not in original[1]["content"]
+        assert all(policy in original[1]["content"] for policy in ("enabled=true", "auto_save=true", "reference_history=true"))
+        current = memory_prompt(p1.current)
+        assert "简洁" in current and "中文" not in current
+        assert "revision=" not in current and all("revision=" not in m["content"] for m in original)
 
     asyncio.run(exercise())

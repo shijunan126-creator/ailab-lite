@@ -26,7 +26,7 @@ export default function MemoryPage() {
     loads.current?.abort();
     const controller = new AbortController();
     loads.current = controller;
-    api<Doc>("/v1/memory", { signal: controller.signal })
+    api<Doc>("/v1/memory/settings", { signal: controller.signal })
       .then((value) => {
         if (controller.signal.aborted) return;
         setDoc({ enabled: value.enabled, auto_save: value.auto_save, reference_history: value.reference_history !== false, dream: value.dream });

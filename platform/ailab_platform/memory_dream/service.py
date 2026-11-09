@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 from ..catalog import get_catalog
 from ..config import settings
 from ..contracts.memory import (
-    DreamChange,
     MemoryDreamRunOut,
 )
 from ..db import SessionLocal
@@ -79,32 +78,8 @@ def _active(entries: list[dict]) -> list[dict]:
 
 
 def _run_out(run: MemoryDreamRun) -> MemoryDreamRunOut:
-    plan = run.plan or {}
     changes = []
-    from sqlalchemy.orm import object_session
-
-    from ..api.source_lifecycle import visible_memory_entries
-
-    db = object_session(run)
-    items = plan.get("changes") or []
-    if db:
-        items = visible_memory_entries(db, run.user_id, items)
-    for item in items:
-        try:
-            changes.append(DreamChange.model_validate(item))
-        except ValueError:
-            continue
     report = dict(run.report or {})
-    if db and report.get("candidates"):
-        from ..api.source_lifecycle import invalid_sources_query
-
-        invalid = db.scalar(
-            select(Run.id).where(Run.id.in_(run.input_run_ids or []), Run.id.in_(invalid_sources_query(run.user_id))).limit(1)
-        )
-        if invalid:
-            report["candidates"] = []
-    if "candidates" in report:
-        report["candidates"] = [{k: v for k, v in entry.items() if k != "evidence_run_ids"} for entry in report["candidates"]]
     report["runs_seen"] = int(report.get("runs_seen", len(run.input_run_ids or []))) + int(report.get("runs_seen_before", 0))
     report["added"] = int(report.get("added", 0)) + int(report.get("added_before", 0))
     report["changed"] = int(report.get("changed", 0)) + int(report.get("changed_before", 0))
@@ -207,6 +182,9 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 cursor.value = {"after": user.id}
                 db.commit()
                 break
+            from .maintenance import merge_pending_projects
+
+            merge_pending_projects(db, user)
             ds = dream_settings(user)
             document = _memory_view(user)
             if not ds.enabled or not document["enabled"]:
@@ -560,7 +538,7 @@ async def process_dream(run_id: str) -> None:
     token = new_id("claim")
 
     def prepare():
-        from ..memory_recall.document import active, maintenance_needed, used_chars
+        from ..memory_recall.document import active, maintenance_needed
         from .scheduling import admission, can_start
 
         with SessionLocal() as db, admission(db) as scheduler:
@@ -596,9 +574,9 @@ async def process_dream(run_id: str) -> None:
                 if not runs and job.trigger == "cron":
                     pid = next(
                         (
-                            scope
-                            for scope in {e.get("project_id") for e in document["entries"]}
-                            if used_chars([e for e in document["entries"] if e.get("project_id") == scope]) > settings.memory_doc_max_chars
+                            candidate
+                            for candidate in {e.get("project_id") for e in document["entries"]}
+                            if maintenance_needed([e for e in document["entries"] if e.get("project_id") == candidate], owner)
                         ),
                         pid,
                     )
@@ -606,7 +584,7 @@ async def process_dream(run_id: str) -> None:
                 runs = [x for x in runs if run_project(db, x) == pid]
                 scope = pid if mode == "isolated" else None
                 entries = active([e for e in document["entries"] if e.get("project_id") == scope])
-                if not runs and not maintenance_needed(entries, owner):
+                if not runs and not maintenance_needed(entries, owner):  # read-only: apply() records under the user lock
                     _finish(db, job, "skipped", report={"runs_seen": 0, "added": 0})
                     job.claimed_until = None
                     db.commit()
@@ -637,7 +615,7 @@ async def process_dream(run_id: str) -> None:
 
         def apply():
             from ..api.routes_memory import memory_for
-            from .changes import digest, record
+            from .changes import record
             from .maintenance import save
 
             with SessionLocal() as db, user_critical_section(db, owner.id):
@@ -659,8 +637,15 @@ async def process_dream(run_id: str) -> None:
                 shown = [
                     e for e in current["entries"] if e.get("project_id") == scope and visible(e, scope, mode="isolated", standing=True)
                 ]
-                if digest(shown) != digest(entries):
-                    raise DreamError("记忆已变化，请重试")
+                from ..memory_recall.tombstones import fact_hash
+
+                old_targets = {e["id"]: e for e in entries}
+                current_targets = {e["id"]: e for e in shown}
+                unchanged = [
+                    e
+                    for identity, e in old_targets.items()
+                    if identity in current_targets and fact_hash(e["content"]) == fact_hash(current_targets[identity]["content"])
+                ]
                 ignored = {}
                 for item in result.get("ignored_runs", []):
                     if (
@@ -674,9 +659,16 @@ async def process_dream(run_id: str) -> None:
                 stale_context = {e.run_id for e in episodes if ignored.get(e.context_run_id) in {"test", "repro"}}
                 evidence = [e for e in episodes if e.run_id not in ignored and e.run_id not in stale_context]
                 redact_episode_context(db, [rid for rid, reason in ignored.items() if reason in {"test", "repro"}])
-                changed, audit = apply_ops(current["entries"], entries, evidence, result.get("ops", []), user, scope)
+                changed, audit = apply_ops(current["entries"], unchanged, evidence, result.get("ops", []), user, scope)
                 after = save(db, user, current, changed)
                 record(job, current, after)
+                if not runs:
+                    from ..memory_recall.document import render, used_chars
+
+                    if used_chars([e for e in after["entries"] if e.get("project_id") == scope]) > settings.memory_doc_max_chars:
+                        memory = dict(user.settings.get("memory") or {})
+                        memory["nothing_condensable"] = _hash(render([e for e in after["entries"] if e.get("project_id") == scope]))
+                        user.settings = {**user.settings, "memory": memory}
                 for episode in episodes:
                     item = db.get(MemoryWorkItem, episode.run_id)
                     if item is None:
@@ -1003,7 +995,9 @@ def list_runs(db: Session, user_id: str, limit: int = 30) -> list[MemoryDreamRun
     out = []
     for row in rows:
         item = _run_out(row)
-        item.report = {k: v for k, v in item.report.items() if k in {"scope", "counts", "pending_after"}}
+        item.report = {
+            k: v for k, v in item.report.items() if k in {"runs_seen", "added", "changed", "next_id", "chain_running", "chain_complete"}
+        }
         out.append(item)
     return out
 
@@ -1016,7 +1010,7 @@ def metrics(db: Session, user_id: str) -> dict:
     tokens = sum(
         int((r.token_usage or {}).get("prompt_tokens", 0)) + int((r.token_usage or {}).get("completion_tokens", 0)) for r in applied
     )
-    changes = sum(len((r.plan or {}).get("changes") or []) for r in applied)
+    changes = sum(int((r.report or {}).get("changed", len((r.report or {}).get("ops") or []))) for r in applied)
     return {
         "runs": len(rows),
         "applied": len(applied),

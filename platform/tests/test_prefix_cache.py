@@ -2374,7 +2374,7 @@ def test_changed_memory_records_one_delta_and_preserves_system(origin):
     blocks = [m for m in requests[-1]["messages"] if str(m.get("content", "")).startswith("<memory_update>")]
     assert len(blocks) == 1
     assert "已删除，不得再使用：[mem_core]" in blocks[0]["content"]
-    assert "已更正，以此为准，旧内容作废：[mem_archive] 最终更正内容（2026-11-09）" in blocks[0]["content"]
+    assert "已更正，以此为准：[mem_archive] 最终更正内容（2026-11-09）" in blocks[0]["content"]
     assert "不推送新增" not in blocks[0]["content"]
     assert requests[0]["messages"][:2] == requests[-1]["messages"][:2]
 
@@ -2674,36 +2674,75 @@ def test_idle_memory_refresh_is_conditional_recorded_boundary(hours, changed, re
 
 
 def test_condensation_is_not_pushed_but_later_correction_of_version_is():
-    initial = memory_prefix_fixture()
-    condensed = copy.deepcopy(initial)
-    condensed["revision"] = 2
-    condensed["entries"][0].update(id="mem_condensed", content="合并后的同义表达", change_type="condense")
-    corrected = copy.deepcopy(condensed)
-    corrected["revision"] = 3
-    corrected["entries"][0].update(content="后来真实更正", superseded_reason="correction", updated_at="2026-11-09")
+    from fastapi.testclient import TestClient
 
-    class Platform(MemoryPrefixPlatform):
-        async def get_memory_invalidations(self, run_id, handles):
-            doc = await self.get_memory_context(run_id)
-            current = next(e for e in doc["entries"] if e["kind"] == "preference")
-            doc["invalidations"] = {
-                h: {"current": current, "change_type": "condense" if run_id == "turn1" else "correction"}
-                for h in handles
-                if h != "mem_archive"
-            }
-            return doc
+    from ailab_platform.api.main import app
+    from ailab_platform.api.routes_memory import memory_for
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.memory_dream.document import apply_ops
+    from ailab_platform.memory_recall.invalidations import for_handles
+    from ailab_platform.memory_recall.store import replace_entries
+    from ailab_platform.models import User
+    from tests.test_memory_hardening import put
+    from tests.test_memory_recall import _uid
+    from tests.test_skill_settings import _user
 
-    platform = Platform([initial, condensed, corrected])
-    with scripted_server([{"content": "1"}, {"content": "2"}, {"content": "3"}]) as (url, requests):
-        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
-        for i in range(3):
-            asyncio.run(loop.process(f"turn{i}", attempt_id=f"a{i}"))
-    for left, right in pairwise(requests):
-        assert_extension(left, right)
-    assert not any(m.get("role") == "user" and "<memory_update>" in str(m.get("content")) for m in requests[1]["messages"])
-    text = requests[-1]["messages"][-1]["content"]
-    assert "已更正，以此为准，旧内容作废：[mem_core] 后来真实更正" in text
-    assert "合并后的同义表达" not in text
+    with TestClient(app) as client:
+        me = _user(client)
+        uid = _uid(client, me)
+        ids = ["mem_a" + uid[4:20], "mem_b" + uid[4:20]]
+        initial = put(
+            client, me, [{"id": i, "kind": "preference", "origin": "inferred", "content": "偏好" + str(n)} for n, i in enumerate(ids)]
+        )
+        stage = [-1]
+
+        class Platform(MemoryPrefixPlatform):
+            async def get_memory_context(self, run_id):
+                index = int(run_id[-1])
+                with SessionLocal() as db:
+                    user = db.get(User, uid)
+                    if stage[0] < index:
+                        current = memory_for(user)
+                        if index == 1:
+                            entries, _ = apply_ops(
+                                current["entries"],
+                                current["entries"],
+                                [],
+                                [{"op": "merge", "ids": ids, "content": "合并后的同义表达"}],
+                                user,
+                                None,
+                            )
+                            replace_entries(db, user, entries)
+                        if index == 2:
+                            row = memory_for(user)["entries"][0]
+                            row.update(content="后来真实更正", superseded_reason="correction")
+                            replace_entries(db, user, [row])
+                        db.commit()
+                        stage[0] = index
+                    return memory_for(user)
+
+            async def get_memory_invalidations(self, run_id, handles):
+                doc = await self.get_memory_context(run_id)
+                with SessionLocal() as db:
+                    doc["invalidations"] = for_handles(db, uid, handles, doc, None, "shared")
+                return doc
+
+        platform = Platform([initial] * 3)
+        with scripted_server([{"content": "1"}, {"content": "2"}, {"content": "3"}]) as (url, requests):
+            loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+            for i in range(3):
+                asyncio.run(loop.process(f"turn{i}", attempt_id=f"a{i}"))
+        for left, right in pairwise(requests):
+            assert_extension(left, right)
+        assert not requests[1]["messages"][-1]["content"].startswith("<memory_update>")
+        observed = platform.checkpoints["turn2"]["state"]["memory_observed"]["entries"]
+        current_id = observed[0]["id"]
+        text = requests[-1]["messages"][-1]["content"]
+        assert f"已更正，以此为准：[{current_id}] 后来真实更正" in text
+        assert f"替代 [{ids[0]}]" in text
+        assert text.count("已更正，以此为准：") == 1
+        assert len(observed) == 1 and set(observed[0]["_replaces_handles"]) == set(ids)
+        assert observed[0]["_snapshot_handle"] == current_id
 
 
 def test_untrusted_memory_tag_forging_is_encoded_in_user_and_tool_requests():
@@ -2769,7 +2808,7 @@ def test_user_and_dream_deletion_preserve_snapshot_and_push_handle_only(user_del
 def test_latest_list_overrides_snapshot_and_earlier_updates_in_static_rules():
     from ailab_platform.agent.prompts import MEMORY_RULES, memory_prompt
 
-    assert all(text in MEMORY_RULES for text in ("我之前跟你说过", "你记错了", "记忆行可能过时", "先 memory.list", "覆盖快照和此前更新块"))
+    assert all(text in MEMORY_RULES for text in ("我之前跟你说过", "你记错了", "先 memory.list", "覆盖快照和此前更新块"))
     assert "最新 list" not in memory_prompt(memory_prefix_fixture())
 
 
@@ -2799,3 +2838,16 @@ def test_idle_refresh_still_enters_parent_compaction(monkeypatch):
     assert "新事实" in requests[1]["messages"][1]["content"]
     events = [p for name, p in platform.events if name == "agent.context_boundary"]
     assert len(events) == 1 and events[0]["reason"] == "compacted"
+
+
+def test_memory_enabled_mid_conversation_uses_list_without_rewriting_snapshot():
+    initial = {**memory_prefix_fixture(), "enabled": False}
+    latest = {**memory_prefix_fixture(), "enabled": True}
+    platform = MemoryPrefixPlatform([initial, latest])
+    with scripted_server([{"content": "1"}, {"content": "2"}]) as (url, requests):
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        asyncio.run(loop.process("turn0", attempt_id="a0"))
+        asyncio.run(loop.process("turn1", attempt_id="a1"))
+    assert_extension(*requests)
+    assert "enabled=false" in requests[-1]["messages"][1]["content"]
+    assert "设置：记忆已开启，需了解当前记忆时用 memory.list" in requests[-1]["messages"][-1]["content"]

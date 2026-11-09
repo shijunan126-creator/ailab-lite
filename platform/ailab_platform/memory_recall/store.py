@@ -34,8 +34,8 @@ def legacy(row):
         "invalid_at": row.valid_to.isoformat() if row.valid_to else None,
         "expires_at": row.expires_at.isoformat() if row.expires_at else None,
         "superseded_by": row.superseded_by,
-        "status": row.status,
-        "suppressed": row.status == "suppressed",
+        "status": "review" if row.status == "suppressed" else row.status,
+        "suppressed": False,
         "confidence": row.confidence,
         "updated_at": stamp(row.updated_at).isoformat(),
         "reinforced_at": stamp(row.reinforced_at).isoformat(),
@@ -74,7 +74,7 @@ def replace_entries(db, user, entries):
     # Close superseded rows before inserts so the partial unique index sees the final state.
     for e in entries:
         if e["id"] in rows and (e.get("invalid_at") or e.get("suppressed")):
-            rows[e["id"]].status = "suppressed" if e.get("suppressed") else "closed"
+            rows[e["id"]].status = "review" if e.get("suppressed") else "closed"
     db.flush()
     now = utcnow()
     for e in entries:
@@ -96,7 +96,9 @@ def replace_entries(db, user, entries):
         row.valid_to = stamp(e.get("invalid_at"))
         row.expires_at = stamp(e.get("expires_at"))
         row.superseded_by = e.get("superseded_by")
-        row.status = "suppressed" if e.get("suppressed") else "closed" if row.valid_to else e.get("status", "active")
+        row.status = (
+            "review" if e.get("suppressed") or e.get("status") == "suppressed" else "closed" if row.valid_to else e.get("status", "active")
+        )
         row.confidence = e.get("confidence", 1.0)
         row.reinforced_at = stamp(e.get("reinforced_at"), row.reinforced_at if not fresh else now)
         row.content_hash = fact_hash(row.content)

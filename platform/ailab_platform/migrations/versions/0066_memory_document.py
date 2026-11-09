@@ -10,12 +10,20 @@ depends_on = None
 
 
 def upgrade():
+    op.execute("UPDATE memory_items SET status = 'review' WHERE status = 'suppressed'")
+    op.execute(
+        "UPDATE projects SET memory_merge_requested_at = CURRENT_TIMESTAMP WHERE memory_mode = 'shared' "
+        "AND EXISTS (SELECT 1 FROM memory_items WHERE memory_items.project_id = projects.id "
+        "AND memory_items.status IN ('active', 'review'))"
+    )
+
     op.create_table(
         "memory_item_sources",
         sa.Column("memory_id", sa.String(40), sa.ForeignKey("memory_items.id", ondelete="CASCADE"), primary_key=True),
         sa.Column("run_id", sa.String(40), primary_key=True),
     )
     op.create_index("ix_memory_item_sources_run_id", "memory_item_sources", ["run_id"])
+    op.execute("UPDATE memory_dream_runs SET plan = '{}'")
     db = op.get_bind()
     rows = db.execute(sa.text("SELECT id, source_run_ids FROM memory_items")).mappings()
     import json
@@ -25,6 +33,13 @@ def upgrade():
         for rid in set(ids or []):
             db.execute(sa.text("INSERT INTO memory_item_sources(memory_id,run_id) VALUES (:mid,:rid)"), {"mid": row["id"], "rid": rid})
 
+    for row in db.execute(sa.text("SELECT id, report FROM memory_dream_runs")).mappings():
+        report = json.loads(row["report"]) if isinstance(row["report"], str) else dict(row["report"] or {})
+        report.pop("candidates", None)
+        db.execute(
+            sa.text("UPDATE memory_dream_runs SET report = :report WHERE id = :id").bindparams(sa.bindparam("report", type_=sa.JSON)),
+            {"report": report, "id": row["id"]},
+        )
     op.add_column("memory_items", sa.Column("created_by", sa.String(20), nullable=False, server_default="addition"))
     op.add_column("memory_items", sa.Column("superseded_reason", sa.String(20), nullable=True))
     op.add_column("memory_episodes", sa.Column("context_run_id", sa.String(40), nullable=True))

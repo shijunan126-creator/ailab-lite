@@ -192,7 +192,7 @@ def test_inflight_dream_cannot_resurrect_a_deleted_fact(monkeypatch):
         asyncio.run(service.process_dream_chain(did))
         assert c.get("/v1/memory", headers=me).json()["entries"] == []
         with SessionLocal() as db:
-            assert db.get(MemoryDreamRun, did).status == "failed"
+            assert db.get(MemoryDreamRun, did).status == "applied"
 
 
 def test_extract_quote_must_belong_to_the_claimed_source():

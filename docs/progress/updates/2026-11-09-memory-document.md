@@ -96,3 +96,13 @@ Work 首次有一次 cached=0，尽管请求是严格追加且 session/settings 
 本轮本地只跑改动的prefix/review模块及Ruff；完整套件由最终head CI执行，不合并、不部署。
 
 本次录制专项3 passed，确认用户删除/Dreaming删除都以handle-only block追加，旧前缀UTF-8序列化字节相等且没有额外边界查询。首次整组160 passed/2 failed来自新增fixture在首轮也误返回“已删除”，修正为首轮返回当前行后专项通过，最终prefix+review整组162 passed（194.32秒）。真模型相同多轮/删除/2h恢复场景Chat36864/37665=97.87%；Work首次25728/34505=74.56%（一次供应商全冷，严格追加检查仍过），一次复测34560/34880=99.08%。不隐藏首次未达标，不将供应商缓存可用性写成已修复。
+
+## 2026-11-10 全系统独立审查（基线02f0e066）
+
+同批处理14项：shared写账号及0066遗留修复、来源清理/retention空重定向、融合condense跳转携带review、replace保留origin/kind、scheduler只读、无进展签名/全部inferred兜底、review确认/死suppressed、逐op并发、纠正新handle/净聚合、settings小DTO、报告死读者清理、首轮免list与开启提示、真实for_handles合并链回归、前缀优先的关闭/开启代价文档。保留Portal a79c712a，最小Portal变更仅开关fetch从memory到memory/settings；新增对应组件测试，无其他UI调整。
+
+本地：改动模块组112 passed/47 skipped；chat/projects/系统审查47 passed/1 skipped；PG审查/retention/迁移/EXPLAIN27 passed（90 deselected）；Portal三个改动模块13 passed。prefix/recall初次195过/1失败为suppressed旧布尔断言，已转为review状态合同，最终重跑另记。没有本地完整套件/build。
+
+02f0e066 CI已核对：SQLite2失败/2730过/216跳过，PG2失败/2860过/86跳过；两库都是同两个旧revision=N断言，没有新增PG缺陷。本轮断言改为冻结内容/策略及no revision，定向通过。
+
+真模型按相同多轮/外部失效/2h恢复脚本：Chat36992/37707=98.10%，Work34432/34919=98.61%（第二次调用起），请求严格追加、settings/session稳定检查通过。它仍是AgentLoop配服务doubles，不是部署整栈；历史供应商偶发全冷边界不抹除。无需新依赖；空重定向占少量索引行，来源投影每条最多50行，清理/查找有界且双库验证。没有部署或合并。

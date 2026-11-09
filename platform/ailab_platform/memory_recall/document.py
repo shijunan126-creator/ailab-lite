@@ -47,7 +47,7 @@ def write_result(before, after):
     }
 
 
-def maintenance_needed(entries, user=None):
+def maintenance_needed(entries, user=None, *, record=False):
     """Protected content cannot be shrunk by a maintenance-only call."""
     from hashlib import sha256
 
@@ -60,7 +60,7 @@ def maintenance_needed(entries, user=None):
         return False
     protected = [e for e in active(entries) if e.get("origin") in {"explicit", "edited", "manual"}]
     possible = used_chars(protected) <= settings.memory_doc_max_chars and len(protected) < len(active(entries))
-    if not possible and user is not None:
+    if not possible and user is not None and record:
         memory = dict((user.settings or {}).get("memory") or {})
         memory["nothing_condensable"] = signature
         user.settings = {**(user.settings or {}), "memory": memory}

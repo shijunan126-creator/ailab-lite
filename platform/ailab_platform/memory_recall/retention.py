@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from ..config import settings
 from ..locks import user_critical_section
@@ -10,10 +10,16 @@ from ..models import MemoryDreamRun, MemoryItem, User
 
 
 def purge_closed(db, now):
+    from sqlalchemy.orm import aliased
+
+    successor = aliased(MemoryItem)
+    live_successor = select(successor.id).where(successor.id == MemoryItem.superseded_by).exists()
     candidates = list(
         db.execute(
             select(MemoryItem.id, MemoryItem.user_id)
-            .where(MemoryItem.status == "closed", MemoryItem.valid_to < now - timedelta(days=90))
+            .where(
+                MemoryItem.status == "closed", MemoryItem.valid_to < now - timedelta(days=90), (MemoryItem.content != "") | ~live_successor
+            )
             .order_by(MemoryItem.valid_to, MemoryItem.id)
             .limit(settings.gc_batch_size)
         )
@@ -35,10 +41,13 @@ def purge_closed(db, now):
                 protected.update(item["id"] for item in (delta or {}).get("items", []))
             ids = [row.id for row in candidates if row.user_id == uid and row.id not in protected]
             if ids:
-                removed += db.execute(
-                    delete(MemoryItem).where(
-                        MemoryItem.id.in_(ids), MemoryItem.status == "closed", MemoryItem.valid_to < now - timedelta(days=90)
-                    )
-                ).rowcount
+                from .lineage import blank_redirect
+
+                for row in db.scalars(select(MemoryItem).where(MemoryItem.id.in_(ids))):
+                    if row.superseded_by and db.get(MemoryItem, row.superseded_by):
+                        blank_redirect(db, row)
+                    else:
+                        db.delete(row)
+                        removed += 1
             db.commit()
     return removed

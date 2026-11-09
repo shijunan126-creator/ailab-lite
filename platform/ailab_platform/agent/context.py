@@ -939,7 +939,7 @@ class ContextManager:
             state["memory_update_turn"] = marker
             return
         after = {e["id"]: e for e in latest.get("entries", [])}
-        lines, known = [], []
+        lines, known, corrections = [], [], {}
         if latest.get("enabled", True) and latest.get("read_enabled", True):
             for old in observed.get("entries", []):
                 handle = old.get("_snapshot_handle", old["id"])
@@ -955,11 +955,30 @@ class ContextManager:
                 corrected = old.get("content") != entry.get("content") and change != "condense"
                 if corrected:
                     date = str(entry.get("updated_at") or entry.get("observed_at") or entry.get("valid_from") or "")[:10]
-                    lines.append(f"已更正，以此为准，旧内容作废：[{model_text(handle)}] {model_text(entry['content'])}（{date}）")
+                    correction = corrections.setdefault(entry["id"], {"entry": entry, "date": date, "handles": []})
+                    if handle not in correction["handles"]:
+                        correction["handles"].append(handle)
                 # Condensation changes the version link, but keeps the snapshot's meaning.
-                known.append({**entry, "content": old["content"] if change == "condense" else entry["content"], "_snapshot_handle": handle})
+                known.append(
+                    {
+                        **entry,
+                        "content": old["content"] if change == "condense" else entry["content"],
+                        "_snapshot_handle": entry["id"] if corrected else handle,
+                        "_replaces_handle": handle if corrected else old.get("_replaces_handle"),
+                    }
+                )
         else:
             known = observed.get("entries", [])
+        for identity, correction in corrections.items():
+            replaced = "、".join("[" + model_text(h) + "]" for h in correction["handles"])
+            lines.append(
+                f"已更正，以此为准：[{model_text(identity)}] "
+                f"{model_text(correction['entry']['content'])}（{correction['date']}）（替代 {replaced}）"
+            )
+        for entry in known:
+            if entry["id"] in corrections:
+                entry["_replaces_handles"] = corrections[entry["id"]]["handles"]
+        known = list({(e["id"], e.get("_snapshot_handle")): e for e in known}.values())
         policies = {
             "enabled": ("记忆", "不得使用或写入记忆"),
             "auto_save": ("自动记忆", "仅在用户明确要求时保存"),
@@ -969,7 +988,17 @@ class ContextManager:
         }
         for key, (label, instruction) in policies.items():
             if observed.get(key, True) != latest.get(key, True):
-                lines.append("设置：" + label + ("已开启" if latest.get(key, True) else "已关闭，" + instruction))
+                lines.append(
+                    "设置："
+                    + label
+                    + (
+                        "已开启，需了解当前记忆时用 memory.list"
+                        if latest.get(key, True) and key in {"enabled", "read_enabled"}
+                        else "已开启"
+                        if latest.get(key, True)
+                        else "已关闭，" + instruction
+                    )
+                )
         if lines:
             prefix = "<memory_update>\n" + "\n".join(dict.fromkeys(lines)) + "\n</memory_update>\n"
             message = messages[index]

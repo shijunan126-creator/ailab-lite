@@ -277,7 +277,7 @@ def test_suppressed_memory_stays_visible_to_the_user_but_not_the_model() -> None
         entries = [{"id": e["id"], "kind": e["kind"], "content": e["content"]} for e in saved["entries"]]
         entries[1]["suppressed"] = True
         c.put("/v1/memory", headers=me, json={"expected_revision": 1, "enabled": True, "auto_save": True, "entries": entries})
-        assert [e["suppressed"] for e in c.get("/v1/memory", headers=me).json()["entries"]] == [False, True]
+        assert [e["status"] for e in c.get("/v1/memory", headers=me).json()["entries"]] == ["active", "review"]
         run = _running(c, me)
         seen = [e["content"] for e in c.get(f"/internal/runs/{run}/model-input", headers=SERVICE).json()["memory"]["entries"]]
         assert seen == ["喜欢简洁中文"]

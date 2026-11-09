@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-CONTEXT_CHARS = 4000
-CONTEXT_FACTS = 20
-
 
 def visible(
     entry: dict, project_id: str | None = None, mode: str = "shared", *, as_of: datetime | None = None, standing: bool = False
