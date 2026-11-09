@@ -451,49 +451,32 @@ export type Project = {
 /** shared: the project reads and feeds the account memory; isolated: it only uses its own. */
 export type MemoryMode = "shared" | "isolated";
 
-/** One remembered item (mirrors contracts/memory.py MemoryItemOut). */
+/** One line of a scope's memory document (mirrors contracts/memory.py MemoryItemOut). */
 export type MemoryItem = {
   id: string;
   project_id: string | null;
   kind: "preference" | "fact" | "interest" | "project" | "reference";
-  origin: "explicit" | "inferred" | "chat" | "manual";
-  tier: "core" | "archive"; // core: in every conversation; archive: looked up when a conversation touches it
-  page: string;
+  origin: "explicit" | "chat" | "inferred" | "edited"; // inferred: the AI concluded it; the rest the user said or wrote
   content: string;
-  status: "active" | "review" | "suppressed" | "closed";
+  status: "active" | "review";
   observed_at: string | null;
-  valid_from: string | null;
-  valid_to: string | null;
-  expires_at: string | null;
   updated_at: string;
-  support_conversations: number;
   sources: { run_id: string; conversation_id: string | null; conversation_title: string | null; date: string }[];
 };
 
-/** The archive items of one kind: the first few, and for interests the topics they fall under. */
-export type MemorySection = {
-  kind: MemoryItem["kind"];
-  count: number;
-  items: MemoryItem[];
-  groups: { name: string; count: number; preview: string[] }[];
-};
-
-/** GET /v1/memory/view: one scope (the account, or one project) laid out the way the AI uses it. */
+/** GET /v1/memory/view: one scope's whole memory document (the account, or one project), by kind. It is bounded, so it is never paged. */
 export type MemoryView = {
   project_id: string | null;
   enabled: boolean;
   memory_mode: MemoryMode | null; // null for the account
-  merge_pending: boolean; // an isolated project became shared and its items are waiting to be merged
+  merge_pending: boolean; // an isolated project became shared and its lines are waiting to be merged
   revision: number; // the compare-and-set fence every change sends back
   active: { id: string; status: string; trigger: string } | null; // a consolidation or edit in progress
-  total: number;
-  core: MemoryItem[];
-  review: MemoryItem[]; // sensitive items the AI may not use until the user confirms them
-  sections: MemorySection[];
+  used_chars: number;
+  max_chars: number;
+  review: MemoryItem[]; // sensitive lines the AI may not use until the user confirms them
+  sections: { kind: MemoryItem["kind"]; items: MemoryItem[] }[];
 };
-
-/** GET /v1/memory/items: a filtered list, newest first. */
-export type MemoryItems = { items: MemoryItem[]; next_cursor: string | null };
 
 export type EventItem = {
   seq: number;

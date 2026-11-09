@@ -11,20 +11,17 @@ vi.mock("../lib/dialog", () => ({ confirmDialog: vi.fn(async () => true) }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a> }));
 
 const item = (id: string, content: string, extra: Partial<MemoryItem> = {}): MemoryItem => ({
-  id, project_id: null, kind: "preference", origin: "explicit", tier: "archive", page: "偏好", content, status: "active",
-  observed_at: "2026-11-03T08:00:00Z", valid_from: null, valid_to: null, expires_at: null, updated_at: "2026-11-03T08:00:00Z",
-  support_conversations: 1, sources: [{ run_id: "run_1", conversation_id: "conv_1", conversation_title: "周报", date: "2026-11-03" }], ...extra,
+  id, project_id: null, kind: "preference", origin: "explicit", content, status: "active",
+  observed_at: "2026-11-03T08:00:00Z", updated_at: "2026-11-03T08:00:00Z",
+  sources: [{ run_id: "run_1", conversation_id: "conv_1", conversation_title: "周报", date: "2026-11-03" }], ...extra,
 });
 const view: MemoryView = {
-  project_id: null, enabled: true, memory_mode: null, merge_pending: false, revision: 7, active: null, total: 4,
-  core: [item("mem_core", "回答先给结论", { tier: "core" })],
+  project_id: null, enabled: true, memory_mode: null, merge_pending: false, revision: 7, active: null, used_chars: 40, max_chars: 6000,
   review: [],
   sections: [
-    { kind: "project", count: 1, items: [item("mem_proj", "在做 AILab 记忆模块", { kind: "project", page: "项目/AILab" })], groups: [] },
-    {
-      kind: "interest", count: 2, items: [],
-      groups: [{ name: "金融科技", count: 2, preview: ["乐信", "英伟达"] }],
-    },
+    { kind: "preference", items: [item("mem_core", "回答先给结论")] },
+    { kind: "project", items: [item("mem_proj", "在做 AILab 记忆模块", { kind: "project" })] },
+    { kind: "interest", items: [item("mem_fin", "关注乐信季度业绩", { kind: "interest", origin: "inferred" })] },
   ],
 };
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); });
@@ -37,42 +34,37 @@ test("dates and organize notes", () => {
   assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 12, added: 0 } }), "看了 12 段对话，没有需要长期记住的内容");
 });
 
-test("lays memory out as what is always used, then what is looked up by kind, with the source conversation", async () => {
+test("shows the whole document by kind, each line with its source conversation, from one read", async () => {
   vi.mocked(api).mockResolvedValue(view);
   render(<MemoryPanel projectId={null} title="记忆" />);
   await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
-  assert.ok(screen.getByText("每次对话都记着"));
-  assert.ok(screen.getByText("在做的事"));
-  assert.ok(screen.getByText("关注的话题"));
-  assert.ok(screen.getByText("乐信、英伟达"));
+  for (const title of ["偏好", "在做的事", "关注的话题"]) assert.ok(screen.getByText(title));
+  assert.ok(screen.getByText("关注乐信季度业绩"));
+  assert.equal(screen.queryByText("关于你"), null); // an empty kind is not shown
   assert.equal(screen.getAllByText("周报")[0].closest("a")?.getAttribute("href"), "/c/conv_1");
+  assert.deepEqual(vi.mocked(api).mock.calls.map(([path]) => path), ["/v1/memory/view"]);
+  assert.equal(screen.queryByText(/快满了/), null);
 });
 
-test("an empty core says how to fill it; nothing at all says where memory comes from", async () => {
-  vi.mocked(api).mockResolvedValue({ ...view, core: [] });
+test("nothing at all says where memory comes from; a nearly full document says it will be condensed", async () => {
+  vi.mocked(api).mockResolvedValue({ ...view, sections: [] });
   const first = render(<MemoryPanel projectId={null} title="记忆" />);
-  await waitFor(() => assert.ok(screen.getByText(/还没有。说一句/)));
+  await waitFor(() => assert.ok(screen.getByText(/每晚整理时记下/)));
   first.unmount();
-  vi.mocked(api).mockResolvedValue({ ...view, total: 0, core: [], sections: [] });
+  vi.mocked(api).mockResolvedValue({ ...view, used_chars: 5200 });
   render(<MemoryPanel projectId={null} title="记忆" />);
-  await waitFor(() => assert.ok(screen.getByText(/AI 会在对话中和每晚整理时记下/)));
+  await waitFor(() => assert.ok(screen.getByText("快满了，下次整理会合并精简")));
 });
 
-test("a topic loads its items on demand; deleting one sends the revision it was read at", async () => {
-  vi.mocked(api).mockImplementation(async (path) =>
-    String(path).startsWith("/v1/memory/items?")
-      ? { items: [item("mem_fin", "关注乐信季度业绩", { kind: "interest", page: "兴趣/金融科技", origin: "inferred" })], next_cursor: null }
-      : view
-  );
+test("an inferred line is marked and can be confirmed; deleting one sends the revision it was read at", async () => {
+  vi.mocked(api).mockResolvedValue(view);
   render(<MemoryPanel projectId={null} title="记忆" />);
-  await waitFor(() => assert.ok(screen.getByText("金融科技")));
-  assert.equal(vi.mocked(api).mock.calls.filter(([path]) => String(path).startsWith("/v1/memory/items")).length, 0);
-  fireEvent.click(screen.getByText("金融科技"));
   await waitFor(() => assert.ok(screen.getByText("关注乐信季度业绩")));
-  const call = vi.mocked(api).mock.calls.find(([path]) => String(path).startsWith("/v1/memory/items"))!;
-  const q = new URLSearchParams(String(call[0]).split("?")[1]);
-  assert.deepEqual([q.get("kind"), q.get("group"), q.get("tier")], ["interest", "金融科技", "archive"]);
-  assert.ok(screen.getByText("推断"));
+  assert.equal(screen.getAllByText("推断").length, 1);
+  fireEvent.click(screen.getByLabelText("更多操作 关注乐信季度业绩"));
+  await act(async () => { fireEvent.click(screen.getByText("确认无误")); });
+  const confirm = vi.mocked(api).mock.calls.find(([path, o]) => path === "/v1/memory/items/mem_fin" && o?.method === "PATCH");
+  assert.deepEqual(JSON.parse(confirm![1]!.body as string), { expected_revision: 7, origin: "explicit" });
   fireEvent.click(screen.getByLabelText("更多操作 关注乐信季度业绩"));
   await act(async () => { fireEvent.click(screen.getByText("删除")); });
   assert.equal(vi.mocked(confirmDialog).mock.calls.length, 1);
@@ -147,30 +139,4 @@ test("an item is edited in place and saved with the revision it was read at", as
   const patch = vi.mocked(api).mock.calls.find(([path, o]) => path === "/v1/memory/items/mem_core" && o?.method === "PATCH");
   assert.deepEqual(JSON.parse(patch![1]!.body as string), { expected_revision: 7, content: "回答先给结论，再给依据" });
   await waitFor(() => assert.equal(screen.queryByLabelText("编辑记忆"), null));
-});
-
-test("search appears once there is enough to search, and drops answers to an older query", async () => {
-  vi.mocked(api).mockResolvedValue({ ...view, total: 3 });
-  const small = render(<MemoryPanel projectId={null} title="记忆" />);
-  await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
-  assert.equal(screen.queryByLabelText("搜索记忆"), null);
-  small.unmount();
-  vi.mocked(api).mockImplementation(async (path) => {
-    const q = new URLSearchParams(String(path).split("?")[1] || "").get("q");
-    if (q === "乐信") return { items: [item("mem_fin", "关注乐信季度业绩", { kind: "interest" })], next_cursor: null };
-    if (q) return { items: [], next_cursor: null };
-    return { ...view, total: 30 };
-  });
-  render(<MemoryPanel projectId={null} title="记忆" />);
-  await waitFor(() => assert.ok(screen.getByLabelText("搜索记忆")));
-  vi.useFakeTimers();
-  fireEvent.change(screen.getByLabelText("搜索记忆"), { target: { value: "乐" } });
-  fireEvent.change(screen.getByLabelText("搜索记忆"), { target: { value: "乐信" } });
-  await act(async () => { await vi.advanceTimersByTimeAsync(300); });
-  assert.ok(screen.getByText("关注乐信季度业绩"));
-  assert.equal(screen.queryByText("每次对话都记着"), null);
-  assert.equal(vi.mocked(api).mock.calls.filter(([path]) => String(path).includes("q=")).length, 1); // the first keystroke never left
-  fireEvent.change(screen.getByLabelText("搜索记忆"), { target: { value: "无关" } });
-  await act(async () => { await vi.advanceTimersByTimeAsync(300); });
-  assert.ok(screen.getByText("没有找到相关的记忆"));
 });

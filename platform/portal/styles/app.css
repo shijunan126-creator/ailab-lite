@@ -514,7 +514,7 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .account-foot .hint { margin-right: auto; }
 .account-note { margin-top: 16px; }
 
-/* Memory: one scope laid out the way the AI uses it (components/memory/memory-view.tsx) */
+/* Memory: one scope's whole memory document, by kind (components/memory/memory-view.tsx) */
 .memory-alert { margin-bottom: 12px; }
 .modal.memory-dialog { max-width: 680px; height: min(760px, calc(100dvh - 48px)); max-height: none; }
 .memory-dialog .modal-body { gap: 16px; }
@@ -534,12 +534,6 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .memory-review { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 14px; border-radius: var(--radius); background: var(--subtle); font-size: var(--text-sm); line-height: 1.6; }
 .memory-review-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .memory-review + .memory-review { margin-top: -20px; }
-.memory-core { padding: 14px 16px 6px; border: 1px solid var(--border); border-radius: var(--radius-lg, 12px); background: var(--popover); }
-.memory-core h3, .memory-tier { font-size: var(--text-md, 15px); font-weight: 650; }
-.memory-core h3 { margin-bottom: 4px; }
-.memory-core-empty { padding: 6px 0 10px; font-size: var(--text-sm); color: var(--muted-foreground); }
-.memory-archive { display: flex; flex-direction: column; gap: 22px; }
-.memory-tier { margin-bottom: -10px; }
 .memory-section h3 { margin-bottom: 2px; font-size: var(--text-ui); font-weight: 600; color: var(--muted-foreground); }
 .memory-items { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .memory-item { display: flex; align-items: baseline; gap: 10px; min-height: 42px; padding: 9px 0; border-bottom: 1px solid var(--border); }
@@ -551,23 +545,7 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .memory-meta > * + *::before { content: "·"; margin-right: 6px; }
 .memory-meta a { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-foreground); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
 .memory-meta a:hover { color: var(--foreground); }
-.memory-more { align-self: flex-start; margin-top: 4px; padding: 0; font-size: var(--text-sm); }
-.memory-topics { display: flex; flex-direction: column; }
-.memory-topic { border-bottom: 1px solid var(--border); }
-.memory-topic:last-child { border-bottom: 0; }
-button.memory-topic-head { width: 100%; display: flex; align-items: baseline; justify-content: flex-start; gap: 10px; min-height: 42px; padding: 10px 0; border: 0; border-radius: 0; background: none; color: var(--foreground); font-size: var(--text-ui); font-weight: 400; text-align: left; cursor: pointer; }
-button.memory-topic-head:is(:hover, :focus-visible) { background: none; color: var(--foreground); }
-.memory-topic-mark { flex: none; align-self: center; color: var(--faint-foreground); transition: transform var(--t); }
-.memory-topic.open .memory-topic-mark { transform: rotate(90deg); }
-.memory-topic-name { flex: none; min-width: 72px; font-weight: 550; }
-.memory-topic-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: var(--text-sm); }
-.memory-topic-body { display: flex; flex-direction: column; padding: 0 0 8px 24px; }
 .memory-settings { margin-top: 40px; }
-.memory-search { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--popover); color: var(--faint-foreground); }
-.memory-search:focus-within { border-color: color-mix(in srgb, var(--ring) 55%, var(--border-strong)); }
-.memory-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: none; box-shadow: none; font-size: var(--text-ui); color: var(--foreground); }
-.memory-search input:focus { box-shadow: none; }
-.memory-results { margin-top: -12px; }
 .memory-item.editing { display: block; }
 .memory-edit { display: flex; flex-direction: column; gap: 8px; }
 .memory-edit textarea { width: 100%; min-height: 64px; max-height: 200px; field-sizing: content; resize: none; font-size: var(--text-ui); line-height: 1.6; }
@@ -576,7 +554,6 @@ button.memory-topic-head:is(:hover, :focus-visible) { background: none; color: v
   .memory-item { flex-wrap: wrap; row-gap: 2px; }
   .memory-item-text { flex-basis: calc(100% - 40px); }
   .memory-meta { order: 3; max-width: calc(100% - 40px); }
-  .memory-topic-preview { display: none; }
 }
 .memory-thread { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
 .memory-turn { max-width: 85%; font-size: var(--text-sm); line-height: 1.6; overflow-wrap: anywhere; }

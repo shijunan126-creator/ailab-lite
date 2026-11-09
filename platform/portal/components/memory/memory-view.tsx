@@ -2,20 +2,19 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, errorMessage, MemoryItem, MemoryItems, MemorySection, MemoryView } from "../../lib/api";
+import { api, errorMessage, MemoryItem, MemoryView } from "../../lib/api";
 import { confirmDialog } from "../../lib/dialog";
-import { IconArrowUp, IconChevronRight, IconPencil, IconRetry, IconSearch, IconTrash } from "../icons";
+import { IconArrowUp, IconPencil, IconRetry, IconTrash } from "../icons";
 import RowMenu from "../row-menu";
 
 const POLL_MS = 1500;
 const FOLLOW_MS = 10 * 60_000; // a consolidation of several batches fits well inside this
 const INSTRUCTION_CHARS = 500; // the API's limit
-const PAGE_ITEMS = 50;
-const SEARCH_DELAY_MS = 250;
-const SEARCH_FROM = 8; // a short memory reads at a glance; a search box only earns its place once there is more
+const CONTENT_CHARS = 200; // the API's limit for one line
+const NEARLY_FULL = 0.85; // where the next consolidation starts condensing
 
 /** What each kind of remembered thing is called on the page, in the order the API sends sections. */
-export const KIND_TITLE: Record<MemorySection["kind"], string> = {
+export const KIND_TITLE: Record<MemoryItem["kind"], string> = {
   fact: "关于你",
   preference: "偏好",
   project: "在做的事",
@@ -105,19 +104,18 @@ export function organizeNote(run: Run): string {
   return added > 0 ? `看了 ${seen} 段对话，新增 ${added} 条` : `看了 ${seen} 段对话，没有需要长期记住的内容`;
 }
 
-type Change = { content?: string; tier?: "core" | "archive"; origin?: "explicit"; status?: "active" };
+type Change = { content?: string; origin?: "explicit"; status?: "active" };
 type Act = { change: (item: MemoryItem, c: Change) => Promise<boolean>; remove: (item: MemoryItem) => void; busy: boolean };
-const CONTENT_CHARS = 300; // the API's limit for one item
 
-/** Where an item came from: the conversation it was learned in (a link), how many more, and when. */
+/** Where a line came from: the conversation it was learned in (a link), how many more, and when. */
 function Provenance({ item }: { item: MemoryItem }) {
   const first = item.sources.find((s) => s.conversation_id);
-  const others = Math.max(item.support_conversations || item.sources.length, item.sources.length) - (first ? 1 : 0);
+  const others = item.sources.length - (first ? 1 : 0);
   return (
     <span className="memory-meta">
       {first ? (
         <Link href={`/c/${first.conversation_id}`} title="打开来源对话">{first.conversation_title || "对话"}</Link>
-      ) : item.origin === "manual" ? (
+      ) : item.origin === "explicit" || item.origin === "edited" ? (
         <span>你添加的</span>
       ) : null}
       {others > 0 ? <span>{first ? `等 ${others + 1} 段对话` : `${others} 段对话`}</span> : null}
@@ -131,7 +129,6 @@ function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable
   const actions = [
     { label: "编辑", icon: <IconPencil size={15} />, onSelect: () => setDraft(item.content) },
     ...(item.origin === "inferred" ? [{ label: "确认无误", onSelect: () => act.change(item, { origin: "explicit" }) }] : []),
-    { label: "每次对话都用", checked: item.tier === "core", onSelect: () => act.change(item, { tier: item.tier === "core" ? "archive" : "core" }) },
     "sep" as const,
     { label: "删除", icon: <IconTrash size={15} />, danger: true, onSelect: () => act.remove(item) },
   ];
@@ -178,7 +175,7 @@ function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable
     <li className="memory-item">
       <div className="memory-item-text">
         {item.content}
-        {item.origin === "inferred" ? <span className="memory-tag" title="AI 从多段对话中归纳的">推断</span> : null}
+        {item.origin === "inferred" ? <span className="memory-tag" title="AI 从对话中归纳的">推断</span> : null}
       </div>
       <Provenance item={item} />
       {editable ? <RowMenu label={item.content} actions={actions} disabled={act.busy} /> : null}
@@ -186,135 +183,11 @@ function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable
   );
 }
 
-/** Items in this scope that match what the user typed, best first; stale answers to an older query are dropped. */
-function useSearch(projectId: string | null, query: string, version: number) {
-  const [result, setResult] = useState<{ q: string; items: MemoryItem[] } | null>(null);
-  const [error, setError] = useState("");
-  const q = query.trim();
-  useEffect(() => {
-    if (!q) return setResult(null);
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      const params = new URLSearchParams({ q, limit: "50" });
-      if (projectId) params.set("project_id", projectId);
-      try {
-        const value = await api<MemoryItems>(`/v1/memory/items?${params}`, { signal: controller.signal });
-        if (!controller.signal.aborted) (setResult({ q, items: value.items }), setError(""));
-      } catch (e) {
-        if (!controller.signal.aborted) setError(errorMessage(e));
-      }
-    }, SEARCH_DELAY_MS);
-    return () => (clearTimeout(timer), controller.abort());
-  }, [q, projectId, version]);
-  return { result: result && result.q === q ? result : null, error };
-}
-
-/** A list read from /v1/memory/items, a page at a time; read again whenever the scope changes. */
-function useItems(projectId: string | null, filter: Record<string, string>, open: boolean, version: number) {
-  const [items, setItems] = useState<MemoryItem[] | null>(null);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const loads = useRef<AbortController | null>(null);
-  const key = JSON.stringify(filter);
-
-  const fetchPage = useCallback(
-    async (after: string | null) => {
-      loads.current?.abort();
-      const controller = new AbortController();
-      loads.current = controller;
-      const q = new URLSearchParams({ ...JSON.parse(key), limit: String(PAGE_ITEMS) });
-      if (projectId) q.set("project_id", projectId);
-      if (after) q.set("cursor", after);
-      try {
-        const value = await api<MemoryItems>(`/v1/memory/items?${q}`, { signal: controller.signal });
-        if (controller.signal.aborted) return;
-        setItems((list) => (after ? [...(list || []), ...value.items] : value.items));
-        setCursor(value.next_cursor);
-        setError("");
-      } catch (e) {
-        if (!controller.signal.aborted) setError(errorMessage(e));
-      }
-    },
-    [key, projectId]
-  );
-
-  useEffect(() => {
-    if (open) fetchPage(null);
-    return () => loads.current?.abort();
-  }, [open, version, fetchPage]);
-
-  return { items, cursor, error, more: () => fetchPage(cursor) };
-}
-
-function ItemList({ items, act, editable }: { items: MemoryItem[]; act: Act; editable: boolean }) {
-  return (
-    <ul className="memory-items">
-      {items.map((item) => (
-        <ItemRow key={item.id} item={item} act={act} editable={editable} />
-      ))}
-    </ul>
-  );
-}
-
-/** A topic inside "关注的话题": its name and a few examples, opened to the items themselves. */
-function TopicRow({ projectId, group, version, act, editable }: { projectId: string | null; group: MemorySection["groups"][number]; version: number; act: Act; editable: boolean }) {
-  const [open, setOpen] = useState(false);
-  const { items, cursor, error, more } = useItems(projectId, { kind: "interest", group: group.name, tier: "archive" }, open, version);
-  return (
-    <div className={`memory-topic ${open ? "open" : ""}`}>
-      <button className="memory-topic-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <IconChevronRight size={14} className="memory-topic-mark" />
-        <span className="memory-topic-name">{group.name}</span>
-        <span className="memory-topic-preview">{group.preview.join("、")}</span>
-        <span className="memory-count">{group.count}</span>
-      </button>
-      {open ? (
-        <div className="memory-topic-body">
-          {error ? <div className="alert error">{error}</div> : null}
-          {items ? <ItemList items={items} act={act} editable={editable} /> : null}
-          {cursor ? <button className="link sm memory-more" onClick={more}>更多</button> : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function Section({ projectId, section, version, act, editable }: { projectId: string | null; section: MemorySection; version: number; act: Act; editable: boolean }) {
-  const [all, setAll] = useState(false);
-  const { items, cursor, error, more } = useItems(projectId, { kind: section.kind, tier: "archive" }, all, version);
-  const topics = section.kind === "interest" && section.groups.length > 0;
-  const shown = all && items ? items : section.items;
-  return (
-    <section className="memory-section">
-      <h3>
-        {KIND_TITLE[section.kind]} <span className="memory-count">{section.count}</span>
-      </h3>
-      {topics ? (
-        <div className="memory-topics">
-          {section.groups.map((g) => (
-            <TopicRow key={g.name} projectId={projectId} group={g} version={version} act={act} editable={editable} />
-          ))}
-        </div>
-      ) : (
-        <>
-          {error ? <div className="alert error">{error}</div> : null}
-          <ItemList items={shown} act={act} editable={editable} />
-          {!all && section.count > section.items.length ? (
-            <button className="link sm memory-more" onClick={() => setAll(true)}>查看全部 {section.count} 条</button>
-          ) : all && cursor ? (
-            <button className="link sm memory-more" onClick={more}>更多</button>
-          ) : null}
-        </>
-      )}
-    </section>
-  );
-}
-
 type Turn = { key: number; role: "user" | "ai"; text: string; run?: string; state?: "working" | "applied" | "done" | "failed" | "reverted" };
 
 /**
- * Everything one scope remembers, laid out the way the AI uses it: what it sees in every conversation, what it looks
- * up when a conversation touches it, and what waits for the user's confirmation. The API is the only writer.
+ * Everything one scope remembers. It is one bounded document the AI reads at the start of every conversation, so the
+ * page shows all of it, by kind, with what waits for the user's confirmation first. The API is the only writer.
  */
 export function MemoryPanel({
   projectId,
@@ -324,7 +197,7 @@ export function MemoryPanel({
 }: {
   projectId: string | null;
   title: string;
-  editable?: boolean; // a shared project's items are changed from the account page
+  editable?: boolean; // a shared project's lines are changed from the account page
   heading?: "h1" | "none"; // inside a dialog the dialog's own title names the scope
 }) {
   const { view, error: loadError, load } = useMemoryView(projectId);
@@ -335,9 +208,6 @@ export function MemoryPanel({
   const [note, setNote] = useState(""); // what the last "立即整理" did
   const [organizing, setOrganizing] = useState(false);
   const [latest, setLatest] = useState(false); // "立即整理" found nothing to do
-  const [version, setVersion] = useState(0); // bumped after every change, so opened lists read again
-  const [query, setQuery] = useState("");
-  const search = useSearch(projectId, query, version);
   const alive = useRef(true);
   const follows = useRef(new Set<AbortController>());
   const thread = useRef<HTMLDivElement | null>(null);
@@ -365,12 +235,6 @@ export function MemoryPanel({
 
   const working = !!view?.active;
   const editing = turns.some((t) => t.state === "working");
-
-  const refresh = useCallback(async () => {
-    const next = await load();
-    setVersion((v) => v + 1);
-    return next;
-  }, [load]);
 
   /** Poll a run (and the runs it hands over to) until it and the scope's lease have ended. */
   const settle = useCallback(
@@ -429,7 +293,7 @@ export function MemoryPanel({
       if (!alive.current) return;
       if (run?.status === "failed") setError(run.error || "整理未完成，请稍后重试");
       else if (run) setNote(organizeNote(run));
-      await refresh();
+      await load();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -468,7 +332,7 @@ export function MemoryPanel({
         // forgetting is final (every copy is cleared), so only a change without removals offers an undo
         const undoable = value.status === "applied" && !value.report?.changes?.removed;
         patch(key, { text: reply, state: undoable ? "applied" : value.status === "failed" ? "failed" : "done" });
-        await refresh();
+        await load();
       });
     } catch (e) {
       setError(errorMessage(e));
@@ -486,7 +350,7 @@ export function MemoryPanel({
     try {
       await api(`/v1/memory/dreams/${turn.run}/revert`, { method: "POST" });
       patch(turn.key, { state: "reverted" });
-      await refresh();
+      await load();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -505,7 +369,7 @@ export function MemoryPanel({
       setError(errorMessage(e)); // a stale revision says so; the reload below shows what changed
       return false;
     } finally {
-      await refresh();
+      await load();
       if (alive.current) setBusy(false);
     }
   }
@@ -535,47 +399,9 @@ export function MemoryPanel({
   const blocked = busy || editing || working;
   const shownError = error || loadError;
   const act: Act = { change, remove, busy: blocked };
-  const archived = view ? view.sections.reduce((n, s) => n + s.count, 0) : 0;
-  // What the scope holds when nobody is searching: what waits for the user, what is always used, what is looked up.
-  const overview = view ? (
-    <>
-      {view.review.map((item) => (
-        <div key={item.id} className="memory-review">
-          <span className="memory-review-text">“{item.content}” 涉及敏感信息，确认后 AI 才会使用</span>
-          {editable ? (
-            <>
-              <button className="secondary sm" disabled={blocked} onClick={() => change(item, { status: "active" })}>确认</button>
-              <button className="secondary sm" disabled={blocked} onClick={() => remove(item)}>删除</button>
-            </>
-          ) : null}
-        </div>
-      ))}
-
-      <section className="memory-core">
-        <h3>
-          每次对话都记着 <span className="memory-count">{view.core.length ? `${view.core.length} 条` : ""}</span>
-        </h3>
-        {view.core.length ? (
-          <ItemList items={view.core} act={act} editable={editable} />
-        ) : (
-          <p className="memory-core-empty">还没有。说一句“记住……”，或在下面的条目上选“每次对话都用”。</p>
-        )}
-      </section>
-
-      {view.sections.length ? (
-        <div className="memory-archive">
-          <h3 className="memory-tier">
-            需要时会想起 <span className="memory-count">{archived} 条</span>
-          </h3>
-          {view.sections.map((s) => (
-            <Section key={s.kind} projectId={projectId} section={s} version={version} act={act} editable={editable} />
-          ))}
-        </div>
-      ) : !view.core.length && !view.review.length ? (
-        <div className="memory-empty">{working ? "正在整理…" : "还没有记忆。AI 会在对话中和每晚整理时记下关于你的事。"}</div>
-      ) : null}
-    </>
-  ) : null;
+  const sections = view?.sections.filter((s) => s.items.length) || [];
+  const empty = !!view && !sections.length && !view.review.length;
+  const full = !!view && view.max_chars > 0 && view.used_chars >= view.max_chars * NEARLY_FULL;
   return (
     <div className={`memory-panel ${view && !view.enabled ? "off" : ""}`}>
       <div className="memory-head">
@@ -587,43 +413,44 @@ export function MemoryPanel({
         {editable ? (
           <RowMenu
             label={title}
-            disabled={blocked || !view?.total}
+            disabled={blocked || empty}
             actions={[{ label: "清空", icon: <IconTrash size={15} />, danger: true, onSelect: clear }]}
           />
         ) : null}
       </div>
-      {note ? <div className="memory-note" role="status">{note}</div> : null}
+      {note ? <div className="memory-note" role="status">{note}</div> : full ? <div className="memory-note">快满了，下次整理会合并精简</div> : null}
       {shownError ? <div className="alert error">{shownError}</div> : null}
 
       {view === null ? (
         shownError ? null : <div className="memory-empty">加载中…</div>
       ) : (
         <div className={`memory-body ${working ? "working" : ""}`} aria-busy={working}>
-          {view.total >= SEARCH_FROM || query ? (
-            <label className="memory-search">
-              <IconSearch size={15} />
-              <input
-                type="search"
-                value={query}
-                placeholder="搜索记忆"
-                aria-label="搜索记忆"
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-              />
-            </label>
-          ) : null}
-          {query.trim() ? (
-            <section className="memory-results" aria-live="polite">
-              {search.error ? <div className="alert error">{search.error}</div> : null}
-              {search.result === null ? null : search.result.items.length ? (
-                <ItemList items={search.result.items} act={act} editable={editable} />
-              ) : (
-                <div className="memory-empty">没有找到相关的记忆</div>
-              )}
+          {view.review.map((item) => (
+            <div key={item.id} className="memory-review">
+              <span className="memory-review-text">“{item.content}” 涉及敏感信息，确认后 AI 才会使用</span>
+              {editable ? (
+                <>
+                  <button className="secondary sm" disabled={blocked} onClick={() => change(item, { status: "active" })}>确认</button>
+                  <button className="secondary sm" disabled={blocked} onClick={() => remove(item)}>删除</button>
+                </>
+              ) : null}
+            </div>
+          ))}
+          {sections.map((s) => (
+            <section key={s.kind} className="memory-section">
+              <h3>
+                {KIND_TITLE[s.kind]} <span className="memory-count">{s.items.length}</span>
+              </h3>
+              <ul className="memory-items">
+                {s.items.map((item) => (
+                  <ItemRow key={item.id} item={item} act={act} editable={editable} />
+                ))}
+              </ul>
             </section>
-          ) : (
-            overview
-          )}
+          ))}
+          {empty ? (
+            <div className="memory-empty">{working ? "正在整理…" : "还没有记忆。说一句“记住……”，或让 AI 在对话中和每晚整理时记下。"}</div>
+          ) : null}
         </div>
       )}
 

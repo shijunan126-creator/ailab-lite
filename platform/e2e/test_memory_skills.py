@@ -66,7 +66,7 @@ def test_memory_page_is_changed_by_asking_and_undone(page, stack):
     login(page, stack, path="/memory")
     panel = memory_panel(page)
     # The page shows stored items directly: no summary model call, no dialog to open.
-    expect(panel.locator(".memory-core")).to_contain_text("回答先给结论", timeout=30000)
+    expect(panel.locator(".memory-body")).to_contain_text("回答先给结论", timeout=30000)
     # Menus opened inside the panel must float above everything: a click on the item proves nothing covers it.
     panel.get_by_role("button", name="更多操作 记忆", exact=True).click()
     page.get_by_role("menuitem", name="清空", exact=True).click()
