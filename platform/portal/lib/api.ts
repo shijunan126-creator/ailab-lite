@@ -456,7 +456,7 @@ export type MemoryItem = {
   id: string;
   project_id: string | null;
   kind: "preference" | "fact" | "interest" | "project" | "reference";
-  origin: "explicit" | "chat" | "inferred" | "edited"; // inferred: the AI concluded it; the rest the user said or wrote
+  origin: "explicit" | "chat" | "inferred" | "edited" | "manual"; // inferred: the AI concluded it; the rest the user said or wrote
   content: string;
   status: "active" | "review";
   observed_at: string | null;
