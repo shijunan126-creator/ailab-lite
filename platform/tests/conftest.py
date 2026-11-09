@@ -117,11 +117,12 @@ def release_test_memory_jobs():
     from sqlalchemy import inspect, select, update
 
     from ailab_platform.db import SessionLocal
-    from ailab_platform.models import MemoryDreamRun
+    from ailab_platform.models import MemoryDreamRun, Run
 
     with SessionLocal() as db:
         ready = inspect(db.get_bind()).has_table("memory_dream_runs")
         before = set(db.scalars(select(MemoryDreamRun.id))) if ready else set()
+        before_runs = set(db.scalars(select(Run.id))) if ready else set()
     yield
     with SessionLocal() as db:
         if inspect(db.get_bind()).has_table("memory_dream_runs"):
@@ -134,4 +135,5 @@ def release_test_memory_jobs():
             for row in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.id.not_in(before))):
                 if (row.report or {}).get("chain_running"):
                     row.report = {**row.report, "chain_running": False}
+            db.execute(update(Run).where(Run.id.not_in(before_runs), Run.status == "running").values(status="canceled"))
             db.commit()

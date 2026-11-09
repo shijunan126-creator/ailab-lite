@@ -471,7 +471,9 @@ def test_recall_names_the_next_hops_delivered_files_and_adjacent_turns() -> None
             live_id = live.id
         run = _running(c, me)
         url = f"/internal/runs/{run}/recall"
-        hit = c.post(url, headers=SERVICE, json={"query": "Q3 销售汇报"}).json()["results"][0]
+        hit = c.post(
+            f"/internal/runs/{run}/memory", headers=attempt_headers(c, run), json={"action": "search", "query": "Q3 销售汇报"}
+        ).json()["results"][0]
         assert hit["run_id"] == first and hit["conversation_id"] == conv
         assert hit["files"] == [{"file_id": live_id, "filename": "Q3汇报.pptx"}]
         opened = c.post(url, headers=SERVICE, json={"run_id": first}).json()

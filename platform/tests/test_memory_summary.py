@@ -235,7 +235,8 @@ def test_merge_outcomes_and_failure_atomicity(api, monkeypatch, failure):
         ],
         auto_save=False,
     )
-    ids = [e["id"] for e in doc["entries"]]
+    by_content = {e["content"]: e["id"] for e in doc["entries"]}
+    ids = [by_content[c] for c in ("账号旧", "账号重复", "项目新", "项目重复", "通用偏好", "项目约定")]
     decisions = [
         {"id": ids[2], "action": "contradicts", "account_id": ids[0]},
         {"id": ids[3], "action": "duplicate_of", "account_id": ids[1]},

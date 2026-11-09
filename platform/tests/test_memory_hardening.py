@@ -435,7 +435,9 @@ def test_projects_are_isolated_in_fact_context_history_and_raw_detail():
         rid = created["id"]
         bootstrap = c.get(f"/internal/runs/{rid}/model-input", headers=SERVICE).json()
         assert [e["content"] for e in bootstrap["memory"]["entries"]] == ["回答用中文"]
-        out = c.post(f"/internal/runs/{rid}/recall", headers=SERVICE, json={"query": "BLUEPRINT"}).json()
+        headers = attempt_headers(c, rid)
+        c.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"})
+        out = c.post(f"/internal/runs/{rid}/memory", headers=headers, json={"action": "search", "query": "BLUEPRINT"}).json()
         assert out["results"] == []
         assert c.post(f"/internal/runs/{rid}/recall", headers=SERVICE, json={"run_id": secret}).status_code == 404
         assert c.patch(f"/v1/projects/{projects[0]}", headers=me, json={"memory_mode": "isolated"}).status_code == 200
