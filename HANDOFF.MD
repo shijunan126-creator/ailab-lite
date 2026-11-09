@@ -1,9 +1,13 @@
-## 2026-11-09 有界记忆文档（尚未完成）
+## 2026-11-09 有界记忆文档
 
-- 会话快照不等于Run快照。新turn必须重用previous_model_context前两条系统消息，只追加外部变化；当前Run自己的成功memory工具结果只折入比较基线一次，不能每次refresh重新折入旧结果导致重复增量。ABI/压缩/撤权/模型变化才重建，禁止TTL。
-- add去重必须统一legacy user/memory与preference/fact，否则第二次相同添加会在Pydantic/DB唯一键处422。kind+content+scope去重要求唯一索引也包含kind。
-- 删除item检索缓存时同步删lineage里的item_doc导入，否则删对话/硬清理会ImportError。整份文档预算不足应暂停，不得借旧bounded_memory任意丢行。
-- 当前OpenCode端点Work探针：完全相同正文/工具同session重放4992/5106，跨user同session也4992/5106；同user换session为0/5106。短Chat完全重放仍0/4474。不能将0命中自动当作系统一混入用户数据，也不能删必需session header。具体证据和残留缺口见[记录](docs/progress/updates/2026-11-09-memory-document.md)。
+- 会话快照不是 Run 快照：复用 previous_model_context 系统消息，只在批准边界刷新。新增不推，删除/纠正只在新用户 turn 开头写一个 memory_update，用户文字最后；工具自己写入只折入 observed 一次。每次模型迭代重放 observed 会回声旧改动，已发首请求后插入 block 会破坏前缀。
+- 用户另行批准条件空闲刷新：最终 assistant 完成超过24h **且文档变化**才 memory_refreshed；无变化禁止时间驱动重绘。旧“绝不TTL”仅适用无条件刷新，不应盖过此新合同。
+- tag 防伪同时覆盖存储、用户、网页和工具内容；保留旧 ailab_memory checkpoint 检测。完整文档是必需上下文，不能用旧 memory 子预算静默丢行。
+- 前序 episode context 只帮助理解，quote 只能来自当前 user_said。复制来源建立 context_run_id 索引；删/脱敏 run 要同时清理后续 episode 中的 context，不能只删其本身 episode。hash 必须包括精确 digest；模型等待后复核来源。
+- closed 版本不能进入每写扫描；按 scope/status 与 supersession 索引访问，撤销仅加载明确id。90天回收保护 revision fence 仍有效的 undo；删除当前行还须清理祖先/副本并保留 tombstone，防旧行复活。
+- add 去重统一 legacy user/memory→preference/fact，活动唯一键包含kind。删 item retrieval 时同步清理lineage导入，项目融合须程序事务/精确去重/来源union/undo，不能遗留旧模型merge。
+- PG EXPLAIN fixture 必须有跨账号选择性：单账号所有closed时全局status索引可能更优，不能强制planner；fixture失败也须清理，避免污染后续GC。
+- 当前OpenCode端点相同正文/工具Work同session重放4992/5106，跨user同session仍4992/5106，同user换session0/5106；短Chat重放0/4474。后续稳定追加仍观察一次Work全冷。不能自动归因系统一混入用户数据，也不能删必需session header凑命中。证据和测量边界见[记录](docs/progress/updates/2026-11-09-memory-document.md)。
 
 ## 2026-11-09 Memory v2 迁移陷阱（实施中）
 

@@ -1,4 +1,4 @@
-"""Drop unused entity projections; retain item columns to avoid SQLite FK table rebuilds."""
+"""Drop unused projections and item columns with direct DDL; index active scope and episode context."""
 
 import sqlalchemy as sa
 from alembic import op

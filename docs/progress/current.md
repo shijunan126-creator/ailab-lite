@@ -1,8 +1,8 @@
-# 有界记忆文档：实施中（2026-11-09）
+# 有界记忆文档：最终 CI 验收中（2026-11-09）
 
-- 分支 `feat/memory-doc`，base `origin/main@c4e88613`。本轮授权后端实现、真模型、只读部署库副本、推送PR/CI；不合并、不部署，Portal由主代理负责。
-- [Draft PR #174](https://github.com/shijunan126-creator/ailab-lite/pull/174) 已推送；主体与0065/0066已写入，但**未完成交付**。新文档回归通过，旧模块定向检查76项失败，项目融合/来源排除/旧DTO与测试迁移仍需处理。
-- 实测数据、命令、跳过边界和剩余项只见[本轮记录](updates/2026-11-09-memory-document.md)。下一步先处理其中四项，核对最终定向检查，再等待并修复CI；不得把历史Memory v2通过记录当成本轮验收。
+- 分支 `feat/memory-doc`，base `origin/main@c4e88613`，产品/测试基线 `74215bf1`；[PR #174](https://github.com/shijunan126-creator/ailab-lite/pull/174)。授权实现、真模型、只读部署库副本、前端 merge、推送与 CI；不合并、不部署。
+- 已完成有界文档/ABI4/单调用 Dreaming、程序融合/保留撤销、历史行索引回收、会话失效/条件空闲刷新、前序 turn context 与脱敏；76项旧失败已按新路径迁移。前端 `4bf62947` 经 merge commit 合入并保留菜单修复。
+- 测量、检查、最小 Portal 修正与边界统一见[本轮记录](updates/2026-11-09-memory-document.md)，设计见[ADR0035](../architecture/adr/0035-memory-v2.md)。下一步：更新 PR 为 ready，核对最终 head 全套 CI，修复实际失败并清理临时库/模型输出；不得把历史通过当作最终验收。
 
 # Memory v2 后端质量与评测（2026-11-09）
 
