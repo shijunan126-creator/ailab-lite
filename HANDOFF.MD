@@ -5,6 +5,12 @@
 - 工具 schema 升级须一起更新上下文 ABI 和录制请求的版本断言；缺省字段的历史快照也要能渲染。手动批次报告必须等待 chain 完成或提供 next_id，不能将单批新增当整次结果。
 - 本轮状态与未完成合同见[记录](docs/progress/updates/2026-11-09-memory-v2.md)。
 
+
+## 2026-11-09 全套测试只在 CI 跑；autouse fixture 拖垮 PG 时限
+
+- 用户确认：本地不再在推送前重复跑双库全套/E2E/Portal build，CI 是全套与验收记录；本地只跑 lint、改动模块测试和 CI 跑不了的（真模型、浏览器、真实数据副本迁移）。规则见 AGENTS.md §9。
+- PR172 首轮 CI 的 PG job 在 96% 处被 20 分钟上限取消：新加的 autouse 清理 fixture 每个测试都 `select` 全部 Run id 再 `NOT IN`，Run 表随全套增长，测试越跑越慢。本地 Mac 快、无时限，发现不了。autouse fixture 只比较少量“活”行（运行中 Run、有租约/pending 的整理任务），不要快照整表；不要靠调高 CI 时限掩盖。
+
 ## 2026-11-09 新会话首条消息不能先建空壳
 
 - 新会话的首条消息必须在同一用户锁和事务里完成 Run 准入、Conversation 和首条 Run 创建，失败整体回滚。先建 Conversation 再提交消息时，429/422 会留下 `runs=0` 的幽灵会话；前端进入详情页后消息被过滤，看起来像整段历史消失。见[记录](docs/progress/updates/2026-11-09-first-message-admission.md)。
