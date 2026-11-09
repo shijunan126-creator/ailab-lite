@@ -951,7 +951,7 @@ def test_carried_skill_must_match_version_and_mode():
     assert not _carried_skills(failed, {"platform.pptx": "v1"}, "work")
 
 
-def test_memory_editor_receives_page_snapshot_without_adding_it_to_chat(monkeypatch):
+def test_memory_editor_receives_document_snapshot_without_adding_it_to_chat(monkeypatch):
     from fastapi.testclient import TestClient
 
     from ailab_platform.api.main import app
@@ -969,7 +969,7 @@ def test_memory_editor_receives_page_snapshot_without_adding_it_to_chat(monkeypa
     monkeypatch.setattr(service, "_chat", chat)
     with TestClient(app) as client:
         headers = _user(client)
-        doc = put(client, headers, [{"content": "喜欢中文回答", "page": "偏好"}])
+        doc = put(client, headers, [{"content": "喜欢中文回答"}])
         wrong = client.post("/v1/memory/edit", headers=headers, json={"instruction": "修改第一条", "expected_revision": 0})
         assert wrong.status_code == 409 and requests == []
         response = client.post("/v1/memory/edit", headers=headers, json={"instruction": "修改第一条", "expected_revision": doc["revision"]})
