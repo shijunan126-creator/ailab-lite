@@ -23,7 +23,7 @@ def visible(entry: dict, project_id: str | None = None, mode: str = "shared", *,
             and (not entry.get("expires_at") or datetime.fromisoformat(entry["expires_at"]).replace(tzinfo=UTC) > datetime.now(UTC))
         )
     instant = as_of.replace(tzinfo=UTC) if as_of.tzinfo is None else as_of.astimezone(UTC)
-    for key, before in (("valid_from", True), ("invalid_at", False)):
+    for key, before in (("valid_from", True), ("invalid_at", False), ("expires_at", False)):
         if entry.get(key):
             at = datetime.fromisoformat(entry[key])
             at = at.replace(tzinfo=UTC) if at.tzinfo is None else at.astimezone(UTC)
@@ -54,7 +54,15 @@ def model_view(
             chosen.append(entry)
             used += cost
         entries = chosen
-    return {**document, "entries": entries}
+    return {
+        **document,
+        "entries": entries,
+        "entity_catalog": [
+            e
+            for e in document.get("entity_catalog", [])
+            if e.get("project_id") == project_id or (e.get("project_id") is None and mode != "isolated")
+        ],
+    }
 
 
 def run_project(db, run) -> str | None:
@@ -145,12 +153,30 @@ def priority(kind, origin):
 
 
 def core_catalog(memory):
+    import math
+    import re
     from collections import defaultdict
+    from html import unescape
 
-    entries = memory.get("entries", [])
+    from .guard import reject_reason
+    from .store import stamp
+
+    entries = [
+        e
+        for e in memory.get("entries", [])
+        if not e.get("suppressed")
+        and not e.get("invalid_at")
+        and not e.get("superseded_by")
+        and e.get("status", "active") == "active"
+        and (not e.get("expires_at") or stamp(e["expires_at"]) > datetime.now(UTC))
+    ]
     core = sorted(
         (e for e in entries if e.get("tier", "core") == "core"),
-        key=lambda e: (e.get("page", ""), priority(e.get("kind", "memory"), e.get("origin")), e["id"]),
+        key=lambda e: (
+            priority(e.get("kind", "memory"), e.get("origin")),
+            -stamp(e.get("reinforced_at"), datetime.min.replace(tzinfo=UTC)).timestamp(),
+            e["id"],
+        ),
     )
     chosen, used = [], 0
     for entry in core:
@@ -158,10 +184,36 @@ def core_catalog(memory):
         if used + cost <= 1500:
             chosen.append(entry)
             used += cost
+    chosen.sort(key=lambda e: (e.get("page", ""), priority(e.get("kind"), e.get("origin")), e["id"]))
     pages = defaultdict(int)
-    names = set()
+    attributed = set()
+    active_names = set()
     for e in entries:
         pages[e.get("page", "工作与身份")] += 1
-        names.update(str(n)[:20] for n in e.get("entities", []) if len(str(n)) <= 20)
-    catalog = "、".join([*sorted(pages, key=lambda p: (-pages[p], p)), *sorted(names)])[:300]
-    return chosen, catalog
+        active_names.update(e.get("entities", []))
+        if e.get("source_quote") or e.get("origin") in {"explicit", "manual", "chat"}:
+            attributed.update(e.get("entities", []))
+    # A fixed reference day makes repeated rendering within the day byte-stable.
+    today = datetime.now(UTC).date()
+    entities = memory.get("entity_catalog", [])
+    scores = {}
+    for e in entities:
+        name = e["canonical"]
+        if name in active_names and (name in attributed or e["conversations"] >= 2):
+            age = max(0, (today - stamp(e["last_seen_at"]).date()).days)
+            scores[name] = max(scores.get(name, 0), max(1, e["conversations"]) * math.exp(-math.log(2) * age / 30))
+    if not entities:
+        scores = {name: 1 for name in attributed}
+    names = [*sorted(pages, key=lambda p: (-pages[p], p)), *sorted(scores, key=lambda n: (-scores[n], n))]
+    clean = []
+    used = 0
+    for name in names:
+        name = re.sub(r"[\x00-\x1f`*_#\[\]]", "", re.sub(r"<[^>]*>", "", unescape(str(name)))).strip()
+        if not name or len(name) > 20 or reject_reason(name) or name in clean:
+            continue
+        cost = len(name) + bool(clean)
+        if used + cost > 300:
+            break
+        clean.append(name)
+        used += cost
+    return chosen, "、".join(clean)

@@ -107,9 +107,22 @@ def replace_entries(db, user, entries):
         if key not in names:
             db.delete(row)
     all_ids = {rid for items in names.values() for item in items for rid in item.source_run_ids}
-    conversations = (
-        dict(db.execute(select(Run.id, Run.conversation_id).where(Run.user_id == user.id, Run.id.in_(all_ids))).all()) if all_ids else {}
+    run_meta = (
+        {
+            rid: (cid, stamp(at))
+            for rid, cid, at in db.execute(
+                select(Run.id, Run.conversation_id, Run.created_at).where(Run.user_id == user.id, Run.id.in_(all_ids))
+            ).all()
+        }
+        if all_ids
+        else {}
     )
+    conversations = {rid: meta[0] for rid, meta in run_meta.items()}
+    for row in rows.values():
+        if row.id not in keep:
+            continue
+        row.support_conversations = len({run_meta[rid][0] for rid in row.source_run_ids if rid in run_meta and run_meta[rid][0]})
+        row.support_dates = len({run_meta[rid][1].date() for rid in row.source_run_ids if rid in run_meta})
     for (pid, name), items in names.items():
         row = existing.get((pid, name))
         if row is None:
@@ -117,4 +130,17 @@ def replace_entries(db, user, entries):
             db.add(row)
         ids = {rid for item in items for rid in item.source_run_ids}
         row.conversations = len({conversations[rid] for rid in ids if conversations.get(rid)})
-        row.last_seen_at = max(stamp(item.observed_at) for item in items)
+        row.last_seen_at = max(stamp(item.reinforced_at) for item in items)
+    sync_aliases(db, user.id)
+
+
+def sync_aliases(db, user_id):
+    from sqlalchemy import delete
+
+    from ..models import MemoryEntity, MemoryEntityAlias
+
+    db.flush()
+    db.execute(delete(MemoryEntityAlias).where(MemoryEntityAlias.user_id == user_id))
+    for entity in db.scalars(select(MemoryEntity).where(MemoryEntity.user_id == user_id)):
+        for name in sorted({n.casefold().strip() for n in [entity.canonical, *entity.aliases] if isinstance(n, str) and n.strip()}):
+            db.add(MemoryEntityAlias(entity_id=entity.id, user_id=user_id, name=name))

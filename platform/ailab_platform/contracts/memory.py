@@ -34,6 +34,7 @@ class MemoryEntryInput(BaseModel):
     origin: Literal["explicit", "inferred", "chat", "manual"] | None = None
     tier: Literal["core", "archive"] | None = None
     page: str | None = Field(default=None, max_length=120)
+    reinforced_at: datetime | None = None
     observed_at: datetime | None = None
     expires_at: datetime | None = None
     content: str = Field(min_length=1, max_length=300)
@@ -105,6 +106,7 @@ class MemoryOperation(BaseModel):
     after: datetime | None = None
     query: str = Field(default="", max_length=300)
     as_of: datetime | None = None
+    order: Literal["asc", "desc"] = "desc"
     expected_revision: int | None = Field(default=None, ge=0)
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory", "preference", "fact", "interest", "project", "artifact", "reference"] = "memory"
@@ -185,11 +187,12 @@ class DreamChange(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
-    op: Literal["add", "invalidate"]
+    op: Literal["add", "invalidate", "reinforce"]
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory", "preference", "fact", "interest", "project", "artifact", "reference"] = "memory"
     content: str = Field(default="", max_length=1000)
     page: str | None = Field(default=None, max_length=120)
+    tier: Literal["core", "archive"] = "archive"
     expires_at: datetime | None = None
     confidence: float = Field(default=0.0, ge=0, le=1)
     evidence_run_ids: list[str] = Field(default_factory=list, max_length=20)

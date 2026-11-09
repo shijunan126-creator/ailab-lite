@@ -1,3 +1,11 @@
+# Memory v2 后端质量与评测续修（进行中）
+
+- 分支 `feat/memory-v2-b`，实施基线 `feat/memory-v2-a@c6fe1d46`，base `origin/main@df83d8e`。本轮授权修复质量、完成规范与真实评测；不部署、不推送、不开 PR。
+- 已修改模型边界编码、提示词/tier、核心目录、检索、别名索引、0064 持久调度字段与数据库准入。回归、剩余调度/评估和最终批量验证仍在进行，尚未形成验收结果。
+- 下一步：完善检索/调度故障测试及真实评估，然后按用户清单集中验证。结果只维护在[实施记录](updates/2026-11-09-memory-v2.md)。
+
+---
+
 # Memory v2 契约续修（2026-11-09，进行中）
 
 - 分支 `feat/memory-v2-a`，从 `feat/memory-v2@8d44f4e9` 建立；base `origin/main@df83d8e`。已合并 `feat/memory-v2-portal`（`fdbef296`）。本轮仅授权契约、摘要退役、change set、链报告、性能与 E2E 迁移；不开始后续调度/评测，不部署、推送或开 PR。

@@ -14,6 +14,15 @@ depends_on = None
 
 
 def upgrade():
+    op.add_column("memory_dream_runs", sa.Column("priority", sa.Integer(), nullable=False, server_default="10"))
+    op.add_column(
+        "memory_dream_runs", sa.Column("due_at", sa.DateTime(timezone=True), nullable=False, server_default="1970-01-01 00:00:00")
+    )
+    op.add_column("memory_dream_runs", sa.Column("kind", sa.String(20), nullable=False, server_default="extract"))
+    op.execute(
+        "UPDATE memory_dream_runs SET due_at = created_at, priority = CASE WHEN trigger = 'cron' THEN 10 ELSE 0 END, kind = CASE WHEN trigger = 'edit' THEN 'edit' ELSE 'extract' END"
+    )
+    op.create_index("ix_memory_dream_queue", "memory_dream_runs", ["status", "priority", "due_at", "id"])
     op.add_column("memory_dream_runs", sa.Column("change_set", sa.JSON(), nullable=False, server_default="{}"))
     db = op.get_bind()
     jobs = sa.Table("memory_dream_runs", sa.MetaData(), autoload_with=db)
@@ -95,6 +104,13 @@ def upgrade():
     op.create_index(
         "uq_memory_entities_scope", "memory_entities", ["user_id", sa.text("coalesce(project_id, '')"), "canonical"], unique=True
     )
+    op.create_table(
+        "memory_entity_aliases",
+        sa.Column("entity_id", sa.String(40), sa.ForeignKey("memory_entities.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column("name", sa.String(120), primary_key=True),
+        sa.Column("user_id", sa.String(40), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    )
+    op.create_index("ix_memory_alias_lookup", "memory_entity_aliases", ["user_id", "name"])
     db = op.get_bind()
     users = sa.table("users", sa.column("id", sa.String()), sa.column("settings", sa.JSON()))
     items = sa.Table("memory_items", sa.MetaData(), autoload_with=db)
@@ -162,6 +178,9 @@ def upgrade():
 
 
 def downgrade():
+    op.drop_index("ix_memory_dream_queue", table_name="memory_dream_runs")
+    for column in ("priority", "due_at", "kind"):
+        op.drop_column("memory_dream_runs", column)
     op.drop_index("ix_memory_dream_active_user", table_name="memory_dream_runs")
     # v1 requires the schema, but deleted derived summaries must not be recreated from private data.
     op.create_table(
@@ -219,5 +238,6 @@ def downgrade():
             )
         settings["memory"] = {**(settings.get("memory") or {}), "entries": entries}
         db.execute(users.update().where(users.c.id == user["id"]).values(settings=settings))
+    op.drop_table("memory_entity_aliases")
     op.drop_table("memory_entities")
     op.drop_table("memory_items")

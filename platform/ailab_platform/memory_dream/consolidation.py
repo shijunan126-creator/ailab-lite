@@ -3,6 +3,7 @@
 import asyncio
 import copy
 from collections import defaultdict
+from zoneinfo import ZoneInfo
 
 from rapidfuzz import fuzz
 from sqlalchemy import select
@@ -48,7 +49,7 @@ async def consolidate(job_id, token):
                 runs = list(db.scalars(select(Run).where(Run.id.in_(ids), Run.user_id == user.id).limit(200)))
                 if (
                     len({r.conversation_id for r in runs if r.conversation_id}) >= 3
-                    and len({stamp(r.created_at).astimezone(__import__("zoneinfo").ZoneInfo(job.timezone)).date() for r in runs}) >= 2
+                    and len({stamp(r.created_at).astimezone(ZoneInfo(job.timezone)).date() for r in runs}) >= 2
                 ):
                     eligible.append({"group": page, "project_id": pid, "items": items[:20]})
             pairs = []
@@ -178,6 +179,9 @@ async def consolidate(job_id, token):
                     if row.canonical == canonical and alias not in row.aliases:
                         row.aliases = [*row.aliases, alias][:10]
                         counts["aliases"] += 1
+            from ..memory_recall.store import sync_aliases
+
+            sync_aliases(db, owner.id)
             job.report = {**(job.report or {}), "dreaming": counts}
             from .changes import record
 

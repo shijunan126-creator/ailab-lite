@@ -20,8 +20,19 @@ Do not output artifacts: the server derives those exclusively from delivered fil
 Resolve relative dates against observed_at; plans/deadlines must have expires_at.
 Return JSON only: {"facts":[{"text":"standalone statement <=300 characters",
 "kind":"preference|fact|interest|project|reference", "page":"topic/path", "entities":["name"],
-"scope":"account|project", "source_quote":"exact user quote", "confidence":0.9,
+"tier":"core|archive", "scope":"account|project", "source_quote":"exact user quote", "confidence":0.9,
 "evidence_run_ids":["run_..."], "evidence_episode_ids":["epi_..."], "expires_at":null}]}.
+Only user_said is evidence. An assistant suggestion counts only after an explicit user confirmation;
+quote that confirmation and use assistant_replied only to resolve its referent.
+中文短例（未指定均archive）：
+- 用户“我在做昇腾部署，驱动怎么装？” → project“正在做昇腾部署”，引文“我在做昇腾部署”。
+- 用户“量子计算有哪些进展？” → interest“问过量子计算（对话日期）”，绝不写成职业或身份。
+- 用户“这次请输出三列表格” → 无条目（一次格式）。
+- 用户“复现失败：创建测试账号再重试” → 无条目（测试指令）。
+- 用户“以后都先给结论” → core/preference“回答先给结论”，引文“以后都先给结论”。
+- 用户“我是一名教师” → core/fact“用户是教师”，引文“我是一名教师”。
+- 用户“我计划本周五交付迁移方案” → archive/project，按对话日期计算expires_at。
+- 助手“以后用中文回答好吗？” 用户“好，以后就这样” → core/preference“使用中文回答”，引文“好，以后就这样”。
 Related existing items are deduplication context only, never new evidence.
 """
 

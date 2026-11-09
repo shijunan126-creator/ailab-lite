@@ -1473,3 +1473,9 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - Ruff 从 `platform/` 运行。仓库根包含 vendor、历史复现与生成 Office 技能，不能对根运行 `ruff --fix/format .`。
 
 - PG `LIMIT 1` 的活动查询加入 JSON chain 条件后，即使有 user_id 索引也可能选顺扫；在双库创建覆盖 pending/running、claimed_until 非空、chain_running 的部分索引，不关闭顺扫/不放宽 EXPLAIN 断言。
+
+## 2026-11-09 Memory v2 后端质量续修（进行中）
+
+- 核心预算必须先按语义优先级与 reinforced_at 选条，再按 page 展示；先分页面会挤掉明确偏好。手工记忆同样属于模型不可信数据，最终模型边界必须编码标签，不能只依赖写入过滤。
+- SQLite 的 SELECT FOR UPDATE 无效；调度准入用 singleton UPSERT 的数据库写锁，整个 claim 在工作线程内，不能持进程锁等待数据库锁。SQLite 已有表 ADD COLUMN 不能用 CURRENT_TIMESTAMP 默认值；0064 用常量默认再回填 created_at。
+- 本轮 feat/memory-v2-b 从 c6fe1d46 续做，尚未执行最终验证，不可把上一轮的测试数字当本轮结果。

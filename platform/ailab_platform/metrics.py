@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Gauge, Histogram, generate_latest
 from prometheus_client.core import GaugeMetricFamily
 from prometheus_client.registry import Collector
 from starlette.responses import Response
@@ -308,3 +308,10 @@ CONTEXT_DELTA_ERROR = Histogram(
     ["source"],
     buckets=(-1, -0.5, -0.25, -0.1, -0.05, 0, 0.05, 0.1, 0.25, 0.5, 1, 2, 4),
 )
+
+
+MEMORY_DREAM_QUEUE = Gauge("ailab_memory_dream_queue", "Pending memory jobs")
+MEMORY_DREAM_WAIT = Histogram("ailab_memory_dream_wait_seconds", "Memory queue wait", ["kind"], buckets=_SLOW)
+MEMORY_DREAM_JOBS = Counter("ailab_memory_dream_jobs_total", "Finished memory jobs", ["kind", "result"])
+MEMORY_DREAM_TOKENS = Counter("ailab_memory_dream_tokens_total", "Reported dream tokens", ["kind"])
+MEMORY_DREAM_SECONDS = Histogram("ailab_memory_dream_seconds", "Memory job duration", ["kind"], buckets=_SLOW)

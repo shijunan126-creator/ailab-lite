@@ -383,6 +383,7 @@ MEMORY = {
                 "explicit": {"type": "boolean"},
                 "query": {"type": "string", "maxLength": 300},
                 "as_of": {"type": "string", "format": "date-time"},
+                "order": {"type": "string", "enum": ["asc", "desc"]},
             },
             "required": ["action"],
         },

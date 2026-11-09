@@ -836,6 +836,7 @@ class MemoryDreamRun(Base):
         Index("ix_memory_dream_user_finished", "user_id", "finished_at"),
         Index("ix_memory_dream_user_date_trigger", "user_id", "local_date", "trigger"),
         Index("ix_memory_dream_status_created", "status", "created_at"),
+        Index("ix_memory_dream_queue", "status", "priority", "due_at", "id"),
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dream"))
@@ -844,6 +845,15 @@ class MemoryDreamRun(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     trigger: Mapped[str] = mapped_column(String(20), default="cron")
+    priority: Mapped[int] = mapped_column(
+        Integer, default=lambda ctx: 10 if ctx.get_current_parameters().get("trigger", "cron") == "cron" else 0, server_default="10"
+    )
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default="1970-01-01 00:00:00")
+    kind: Mapped[str] = mapped_column(
+        String(20),
+        default=lambda ctx: "edit" if ctx.get_current_parameters().get("trigger") == "edit" else "extract",
+        server_default="extract",
+    )
     project_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     instruction: Mapped[str] = mapped_column(Text, default="", server_default="")
     batch_index: Mapped[int] = mapped_column(Integer, default=1)
@@ -1474,3 +1484,13 @@ class MemoryEntity(Base):
     aliases: Mapped[list] = mapped_column(JSON, default=list)
     conversations: Mapped[int] = mapped_column(Integer, default=1)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MemoryEntityAlias(Base):
+    """Indexed, disposable projection of canonical names and aliases."""
+
+    __tablename__ = "memory_entity_aliases"
+    __table_args__ = (Index("ix_memory_alias_lookup", "user_id", "name"),)
+    entity_id: Mapped[str] = mapped_column(ForeignKey("memory_entities.id", ondelete="CASCADE"), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))

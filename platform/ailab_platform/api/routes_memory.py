@@ -72,6 +72,24 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
     from ..memory_recall.store import entries_for
 
     result["entries"] = [_entry(e) for e in entries_for(user)]
+    from sqlalchemy.orm import object_session
+
+    from ..models import MemoryEntity
+
+    session = object_session(user)
+    result["entity_catalog"] = (
+        [
+            {
+                "canonical": e.canonical,
+                "project_id": e.project_id,
+                "conversations": e.conversations,
+                "last_seen_at": e.last_seen_at.isoformat(),
+            }
+            for e in session.scalars(select(MemoryEntity).where(MemoryEntity.user_id == user.id))
+        ]
+        if session
+        else []
+    )
     if user.context_source_epoch:
         from sqlalchemy.orm import object_session
 
@@ -179,6 +197,7 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
                 "tier",
                 "page",
                 "observed_at",
+                "reinforced_at",
                 "expires_at",
                 "confidence",
                 "evidence_run_ids",
@@ -196,7 +215,9 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
                 value = getattr(entry, field)
                 if value is not None or (field == "project_id" and field in entry.model_fields_set):
                     merged[field] = (
-                        value.isoformat() if field in {"valid_from", "invalid_at", "last_used_at", "observed_at", "expires_at"} else value
+                        value.isoformat()
+                        if field in {"valid_from", "invalid_at", "last_used_at", "observed_at", "reinforced_at", "expires_at"}
+                        else value
                     )
             for field in ("evidence_run_ids", "evidence_episode_ids", "entities"):
                 if merged.get(field):
@@ -526,7 +547,7 @@ def run_memory(
             return {
                 "revision": current["revision"],
                 "page": body.page,
-                "content": "\n".join(e["content"] for e in entries if e.get("page") == body.page)[:3000],
+                "content": guard.model_text("\n".join(e["content"] for e in entries if e.get("page") == body.page)[:3000]),
             }
         if body.action == "list":
             return model_view(
@@ -797,6 +818,7 @@ def _item_out(db, user, row, sources=None):
                 "content",
                 "status",
                 "observed_at",
+                "reinforced_at",
                 "valid_from",
                 "valid_to",
                 "expires_at",
