@@ -53,39 +53,41 @@ def ask(dialog, text):
     box.press("Enter")
 
 
-def test_memory_pages_are_changed_by_asking_and_undone(page, stack):
+def memory_panel(page):
+    panel = page.locator(".memory-panel")
+    expect(panel).to_be_visible()
+    return panel
+
+
+def test_memory_page_is_changed_by_asking_and_undone(page, stack):
     headers = auth(stack)
     reset_memory(stack, headers)
     put_facts(stack, headers, [{"kind": "user", "content": "回答先给结论"}, {"kind": "user", "content": "正在准备年度预算汇报"}])
     login(page, stack, path="/memory")
-    page.get_by_role("button", name="你的记忆", exact=True).click()
-    dialog = memory_dialog(page)
-    # Pages render stored items without a summary model call.
-    expect(dialog.locator(".memory-view")).to_contain_text("回答先给结论", timeout=30000)
-    # Menus opened inside the dialog must float above it: a click on the item proves nothing covers it.
-    dialog.get_by_role("button", name="更多操作 你的记忆", exact=True).click()
+    panel = memory_panel(page)
+    # The page shows stored items directly: no summary model call, no dialog to open.
+    expect(panel.locator(".memory-core")).to_contain_text("回答先给结论", timeout=30000)
+    # Menus opened inside the panel must float above everything: a click on the item proves nothing covers it.
+    panel.get_by_role("button", name="更多操作 记忆", exact=True).click()
     page.get_by_role("menuitem", name="清空", exact=True).click()
     expect(page.get_by_role("alertdialog", name="清空你的记忆？")).to_be_visible()
     page.get_by_role("button", name="取消", exact=True).click()
-    expect(dialog.locator(".memory-view")).to_contain_text("回答先给结论")
-    ask(dialog, "记住我常驻上海")
-    expect(dialog.locator(".memory-turn.ai").last).to_contain_text("已记住", timeout=30000)
-    dialog.locator(".memory-page-head").filter(has_text="工作与身份").click()
-    expect(dialog.locator(".memory-view")).to_contain_text("我常驻上海")
-    dialog.get_by_role("button", name="撤销", exact=True).click()
-    expect(dialog.locator(".memory-turn-note")).to_have_text("已撤销")
-    expect(dialog.locator(".memory-view")).not_to_contain_text("我常驻上海")
-    ask(dialog, "忘记预算汇报")
-    expect(dialog.locator(".memory-turn.ai").last).to_contain_text("已忘记 1 条", timeout=30000)
-    expect(dialog.locator(".memory-view")).not_to_contain_text("预算汇报")
-    expect(dialog.get_by_role("button", name="撤销", exact=True)).to_have_count(0)  # forgetting is final
+    expect(panel.locator(".memory-body")).to_contain_text("回答先给结论")
+    ask(panel, "记住我常驻上海")
+    expect(panel.locator(".memory-turn.ai").last).to_contain_text("已记住", timeout=30000)
+    expect(panel.locator(".memory-body")).to_contain_text("我常驻上海")
+    panel.get_by_role("button", name="撤销", exact=True).click()
+    expect(panel.locator(".memory-turn-note")).to_have_text("已撤销")
+    expect(panel.locator(".memory-body")).not_to_contain_text("我常驻上海")
+    ask(panel, "忘记预算汇报")
+    expect(panel.locator(".memory-turn.ai").last).to_contain_text("已忘记 1 条", timeout=30000)
+    expect(panel.locator(".memory-body")).not_to_contain_text("预算汇报")
+    expect(panel.get_by_role("button", name="撤销", exact=True)).to_have_count(0)  # forgetting is final
     assert [e["content"] for e in httpx.get(stack.api + "/v1/memory", headers=headers).json()["entries"]] == ["回答先给结论"]
-    dialog.get_by_role("button", name="立即整理").click()
+    panel.get_by_role("button", name="立即整理").click()
     # other E2E tests leave conversations behind, so this may start a real consolidation instead of "已是最新"
-    expect(dialog.get_by_role("button", name=re.compile("^(立即整理|已是最新)$"))).to_be_enabled(timeout=30000)
-    expect(dialog.locator(".memory-view")).to_contain_text("回答先给结论")
-    dialog.get_by_role("button", name="关闭", exact=True).click()
-    expect(page.locator(".memory-preview")).to_contain_text("回答先给结论")
+    expect(panel.get_by_role("button", name=re.compile("^(立即整理|已是最新)$"))).to_be_enabled(timeout=30000)
+    expect(panel.locator(".memory-body")).to_contain_text("回答先给结论")
     page.get_by_role("switch", name="自动记忆", exact=True).click()
     expect(page.get_by_role("switch", name="自动记忆", exact=True)).to_have_attribute("aria-checked", "false")
     page.reload()
@@ -115,8 +117,7 @@ def test_agent_memory_is_visible_in_account_page(page, stack, mode):
     assert run["status"] == "succeeded", run
     assert httpx.get(stack.api + "/v1/memory", headers=headers).json()["entries"][0]["content"] == "验收偏好：回答保持简洁"
     page.reload()
-    page.get_by_role("button", name="你的记忆", exact=True).click()
-    expect(memory_dialog(page).locator(".memory-view")).to_contain_text("验收偏好：回答保持简洁", timeout=30000)
+    expect(memory_panel(page).locator(".memory-body")).to_contain_text("验收偏好：回答保持简洁", timeout=30000)
     run = httpx.get(stack.api + "/v1/runs/" + created["id"], headers=headers).json()
     assert not run.get("sandbox_id")
     reset_memory(stack, headers)
@@ -177,15 +178,15 @@ def test_project_memory_mode_moves_and_merges_facts(page, stack, width):
     page.get_by_role("button", name="项目操作", exact=True).click()
     page.get_by_role("menuitem", name="记忆", exact=True).click()
     dialog = memory_dialog(page, "项目记忆")
-    expect(dialog.locator(".memory-view")).to_contain_text("季报口径以财务部为准")
+    expect(dialog.locator(".memory-body")).to_contain_text("季报口径以财务部为准")
     expect(dialog.get_by_role("textbox", name="修改记忆", exact=True)).to_have_count(0)
     expect(dialog.get_by_role("button", name="立即整理", exact=True)).to_be_visible()
     switch = dialog.get_by_role("switch", name="仅使用本项目记忆", exact=True)
     switch.click()
     page.get_by_role("alertdialog").get_by_role("button", name="仅用本项目", exact=True).click()
     expect(switch).to_have_attribute("aria-checked", "true")
-    expect(dialog.locator(".memory-view")).to_contain_text("季报口径以财务部为准", timeout=30000)
-    expect(dialog.locator(".memory-view")).not_to_contain_text("回答先给结论")
+    expect(dialog.locator(".memory-body")).to_contain_text("季报口径以财务部为准", timeout=30000)
+    expect(dialog.locator(".memory-body")).not_to_contain_text("回答先给结论")
     expect(dialog.get_by_role("textbox", name="修改记忆", exact=True)).to_be_visible()
     assert httpx.get(stack.api + f"/v1/projects/{project['id']}", headers=headers).json()["memory_mode"] == "isolated"
     switch.click()
