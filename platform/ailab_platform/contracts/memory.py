@@ -80,6 +80,15 @@ class MemoryUpdate(BaseModel):
 
     @model_validator(mode="after")
     def bounded(self):
+        import re
+
+        active = [
+            (e.project_id, re.sub(r"[\W_]+", " ", e.content.casefold()).strip())
+            for e in self.entries
+            if not e.invalid_at and not e.suppressed and e.status != "review"
+        ]
+        if len(active) != len(set(active)):
+            raise ValueError("duplicate active memory content")
         ids = [e.id for e in self.entries if e.id]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate memory entry id")
@@ -104,6 +113,8 @@ class MemoryOperation(BaseModel):
 
     @model_validator(mode="after")
     def valid_write(self):
+        if self.action == "search" and (not self.query.strip() or "\x00" in self.query):
+            raise ValueError("search query is required without NUL")
         if self.action in {"add", "replace"} and (not self.content.strip() or "\x00" in self.content):
             raise ValueError("memory content is required without NUL")
         return self
@@ -113,7 +124,6 @@ class RecallRequest(BaseModel):
     """Search the user's own past conversations."""
 
     model_config = ConfigDict(extra="forbid")
-    query: str = Field(default="", max_length=300)
     run_id: str | None = Field(default=None, max_length=40)
     cursor: str | None = Field(default=None, max_length=40)
     limit: int = Field(default=5, ge=1, le=10)
@@ -126,16 +136,9 @@ class RecallRequest(BaseModel):
     def utc_range(cls, value):
         return value.replace(tzinfo=UTC) if value and value.tzinfo is None else value
 
-    @field_validator("query")
-    @classmethod
-    def nonblank(cls, value):
-        if not value.strip() or "\x00" in value:
-            raise ValueError("query must contain text without NUL")
-        return value.strip()
-
     @model_validator(mode="after")
     def valid_request(self):
-        if not self.query and not self.run_id and not (self.before or self.after):
+        if not self.run_id and not (self.before or self.after):
             raise ValueError("run_id or before/after is required")
         if self.before and self.after and self.before <= self.after:
             raise ValueError("before must follow after")
@@ -265,7 +268,7 @@ class MemoryItemPatch(BaseModel):
 class MemoryEdit(BaseModel):
     model_config = ConfigDict(extra="forbid")
     instruction: str = Field(min_length=1, max_length=500)
-    project_id: str | None = Field(default=None, max_length=40)
+    project_id: str | None = Field(default=None, min_length=1, max_length=40)
     page: str | None = Field(default=None, max_length=120)
     expected_revision: int = Field(ge=0)
 

@@ -12,7 +12,9 @@ from .tombstones import fact_hash
 def stamp(value, fallback=None):
     if isinstance(value, str):
         value = datetime.fromisoformat(value)
-    return value.replace(tzinfo=UTC) if value and value.tzinfo is None else value or fallback
+    if value is None:
+        return fallback
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def legacy(row):
@@ -28,16 +30,16 @@ def legacy(row):
         "entities": row.entities,
         "evidence_run_ids": row.source_run_ids,
         "source_quote": row.source_quote,
-        "observed_at": row.observed_at.isoformat(),
-        "valid_from": row.valid_from.isoformat(),
+        "observed_at": stamp(row.observed_at).isoformat(),
+        "valid_from": stamp(row.valid_from).isoformat(),
         "invalid_at": row.valid_to.isoformat() if row.valid_to else None,
         "expires_at": row.expires_at.isoformat() if row.expires_at else None,
         "superseded_by": row.superseded_by,
         "status": "active" if row.status in {"closed", "suppressed"} else row.status,
         "suppressed": row.status == "suppressed",
         "confidence": row.confidence,
-        "updated_at": row.updated_at.isoformat(),
-        "reinforced_at": row.reinforced_at.isoformat(),
+        "updated_at": stamp(row.updated_at).isoformat(),
+        "reinforced_at": stamp(row.reinforced_at).isoformat(),
     }
 
 
@@ -45,7 +47,10 @@ def entries_for(user):
     db = object_session(user)
     if db is None:
         return []
-    return [legacy(row) for row in db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id).order_by(MemoryItem.id))]
+    return [
+        legacy(row)
+        for row in db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id).order_by(MemoryItem.created_at, MemoryItem.id))
+    ]
 
 
 def replace_entries(db, user, entries):
@@ -101,12 +106,15 @@ def replace_entries(db, user, entries):
     for key, row in existing.items():
         if key not in names:
             db.delete(row)
+    all_ids = {rid for items in names.values() for item in items for rid in item.source_run_ids}
+    conversations = (
+        dict(db.execute(select(Run.id, Run.conversation_id).where(Run.user_id == user.id, Run.id.in_(all_ids))).all()) if all_ids else {}
+    )
     for (pid, name), items in names.items():
         row = existing.get((pid, name))
         if row is None:
             row = MemoryEntity(user_id=user.id, project_id=pid, canonical=name, aliases=[])
             db.add(row)
         ids = {rid for item in items for rid in item.source_run_ids}
-        runs = list(db.scalars(select(Run).where(Run.user_id == user.id, Run.id.in_(ids)))) if ids else []
-        row.conversations = len({r.conversation_id for r in runs if r.conversation_id})
+        row.conversations = len({conversations[rid] for rid in ids if conversations.get(rid)})
         row.last_seen_at = max(stamp(item.observed_at) for item in items)

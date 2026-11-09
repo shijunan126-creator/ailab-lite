@@ -14,6 +14,25 @@ depends_on = None
 
 
 def upgrade():
+    op.add_column("memory_dream_runs", sa.Column("change_set", sa.JSON(), nullable=False, server_default="{}"))
+    db = op.get_bind()
+    jobs = sa.Table("memory_dream_runs", sa.MetaData(), autoload_with=db)
+    for row in db.execute(sa.select(jobs)).mappings():
+        left = {e["id"]: e for e in (row["before_memory"] or {}).get("entries", [])}
+        right = {e["id"]: e for e in (row["after_memory"] or {}).get("entries", [])}
+        changes = [
+            {"id": k, "before": left.get(k), "after": right.get(k)}
+            for k in sorted(left.keys() | right.keys())
+            if left.get(k) != right.get(k)
+        ]
+        db.execute(
+            jobs.update()
+            .where(jobs.c.id == row["id"])
+            .values(change_set={"revision": (row["after_memory"] or {}).get("revision"), "items": changes})
+        )
+    op.drop_column("memory_dream_runs", "before_memory")
+    op.drop_column("memory_dream_runs", "after_memory")
+    op.drop_table("memory_summaries")
     op.create_table(
         "memory_items",
         sa.Column("id", sa.String(40), primary_key=True),
@@ -131,6 +150,34 @@ def upgrade():
 
 
 def downgrade():
+    # v1 requires the schema, but deleted derived summaries must not be recreated from private data.
+    op.create_table(
+        "memory_summaries",
+        sa.Column("id", sa.String(40), primary_key=True),
+        sa.Column("user_id", sa.String(40), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("project_id", sa.String(40), sa.ForeignKey("projects.id", ondelete="CASCADE")),
+        sa.Column("text", sa.Text(), nullable=False, server_default=""),
+        sa.Column("source_digest", sa.String(64), nullable=False, server_default=""),
+        sa.Column("generated_at", sa.DateTime(timezone=True)),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    )
+    op.create_index("ix_memory_summaries_user", "memory_summaries", ["user_id"])
+    op.create_index("ix_memory_summaries_project_id", "memory_summaries", ["project_id"])
+    for name, columns, condition in (
+        ("account", ["user_id"], "project_id IS NULL"),
+        ("project", ["user_id", "project_id"], "project_id IS NOT NULL"),
+    ):
+        op.create_index(
+            "uq_memory_summary_" + name,
+            "memory_summaries",
+            columns,
+            unique=True,
+            sqlite_where=sa.text(condition),
+            postgresql_where=sa.text(condition),
+        )
+    for column in ("before_memory", "after_memory"):
+        op.add_column("memory_dream_runs", sa.Column(column, sa.JSON(), nullable=False, server_default="{}"))
+    op.drop_column("memory_dream_runs", "change_set")
     db = op.get_bind()
     users = sa.table("users", sa.column("id", sa.String()), sa.column("settings", sa.JSON()))
     items = sa.Table("memory_items", sa.MetaData(), autoload_with=db)

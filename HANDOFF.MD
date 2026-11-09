@@ -1463,3 +1463,11 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 模型写出的图片网址如果被页面自动加载，就能把对话内容拼进 URL 外泄。GenUI 只加载工具结果里平台签名的 `/v1/web-images/<编码网址>.<签名>`，由 API 代取并缓存；其他 src 一律显示占位、不发请求。不要为了“能显示”放宽 CSP `img-src` 或允许任意 https 图片。
 - 全局输入框样式只匹配 `input[type="text"]` 等带 type 的选择器。新写的 `<input>` 不写 `type="text"` 就没有边框和内边距，看起来像普通文字。
 - 悬停才显示的行内操作只用 `opacity` 隐藏，不要再加 `pointer-events: none`：指针直接移到按钮位置时，命中的是下面的单元格，Playwright 点击也会被“intercepts pointer events”挡住。指针在按钮上本身就会让整行处于 hover。
+
+
+## Memory v2 契约与测试隔离（2026-11-09）
+
+- `memory_items` 是事实来源；不能在测试或产品中直接写 `User.settings.memory.entries` 后期待 API 读取它。旧数据只由迁移 0064 转换；合成测试使用关系条目写路径。SQLite ORM 时间可能无时区，输出 DTO 必须归一为 UTC。
+- 全局容量会看到共用测试数据库中别的测试留下的活动作业。测试 teardown 清理本例新建的 pending/running 作业，不提高生产容量；故障测试另证实未过期租约阻塞、过期租约释放容量。
+- 多批报告必须按持久 `next_id` 续链；终态提交不等于链末发布。后继创建与前驱链接同事务，持用户锁后重读前驱，避免重复投递再次创建后继和累计。
+- Ruff 从 `platform/` 运行。仓库根包含 vendor、历史复现与生成 Office 技能，不能对根运行 `ruff --fix/format .`。

@@ -41,7 +41,7 @@ def put_facts(stack, headers, entries):
     return saved.json()
 
 
-def summary_dialog(page, name="你的记忆"):
+def memory_dialog(page, name="你的记忆"):
     dialog = page.get_by_role("dialog", name=name)
     expect(dialog).to_be_visible()
     return dialog
@@ -53,30 +53,31 @@ def ask(dialog, text):
     box.press("Enter")
 
 
-def test_memory_summary_is_written_changed_by_asking_and_undone(page, stack):
+def test_memory_pages_are_changed_by_asking_and_undone(page, stack):
     headers = auth(stack)
     reset_memory(stack, headers)
-    put_facts(stack, headers, [{"kind": "user", "content": "回答先给结论"}, {"content": "正在准备年度预算汇报"}])
+    put_facts(stack, headers, [{"kind": "user", "content": "回答先给结论"}, {"kind": "user", "content": "正在准备年度预算汇报"}])
     login(page, stack, path="/memory")
     page.get_by_role("button", name="你的记忆", exact=True).click()
-    dialog = summary_dialog(page)
-    # no summary yet: opening it writes one
-    expect(dialog.locator(".memory-summary")).to_contain_text("回答先给结论", timeout=30000)
+    dialog = memory_dialog(page)
+    # Pages render stored items without a summary model call.
+    expect(dialog.locator(".memory-view")).to_contain_text("回答先给结论", timeout=30000)
     ask(dialog, "记住我常驻上海")
     expect(dialog.locator(".memory-turn.ai").last).to_contain_text("已记住", timeout=30000)
-    expect(dialog.locator(".memory-summary")).to_contain_text("我常驻上海")
+    dialog.locator(".memory-page-head").filter(has_text="工作与身份").click()
+    expect(dialog.locator(".memory-view")).to_contain_text("我常驻上海")
     dialog.get_by_role("button", name="撤销", exact=True).click()
     expect(dialog.locator(".memory-turn-note")).to_have_text("已撤销")
-    expect(dialog.locator(".memory-summary")).not_to_contain_text("我常驻上海")
+    expect(dialog.locator(".memory-view")).not_to_contain_text("我常驻上海")
     ask(dialog, "忘记预算汇报")
     expect(dialog.locator(".memory-turn.ai").last).to_contain_text("已忘记 1 条", timeout=30000)
-    expect(dialog.locator(".memory-summary")).not_to_contain_text("预算汇报")
+    expect(dialog.locator(".memory-view")).not_to_contain_text("预算汇报")
     expect(dialog.get_by_role("button", name="撤销", exact=True)).to_have_count(0)  # forgetting is final
     assert [e["content"] for e in httpx.get(stack.api + "/v1/memory", headers=headers).json()["entries"]] == ["回答先给结论"]
     dialog.get_by_role("button", name="立即整理").click()
     # other E2E tests leave conversations behind, so this may start a real consolidation instead of "已是最新"
     expect(dialog.get_by_role("button", name=re.compile("^(立即整理|已是最新)$"))).to_be_enabled(timeout=30000)
-    expect(dialog.locator(".memory-summary")).to_contain_text("回答先给结论")
+    expect(dialog.locator(".memory-view")).to_contain_text("回答先给结论")
     dialog.get_by_role("button", name="关闭", exact=True).click()
     expect(page.locator(".memory-preview")).to_contain_text("回答先给结论")
     page.get_by_role("switch", name="自动记忆", exact=True).click()
@@ -109,7 +110,7 @@ def test_agent_memory_is_visible_in_account_page(page, stack, mode):
     assert httpx.get(stack.api + "/v1/memory", headers=headers).json()["entries"][0]["content"] == "验收偏好：回答保持简洁"
     page.reload()
     page.get_by_role("button", name="你的记忆", exact=True).click()
-    expect(summary_dialog(page).locator(".memory-summary")).to_contain_text("验收偏好：回答保持简洁", timeout=30000)
+    expect(memory_dialog(page).locator(".memory-view")).to_contain_text("验收偏好：回答保持简洁", timeout=30000)
     run = httpx.get(stack.api + "/v1/runs/" + created["id"], headers=headers).json()
     assert not run.get("sandbox_id")
     reset_memory(stack, headers)
@@ -161,7 +162,7 @@ def test_project_memory_mode_moves_and_merges_facts(page, stack, width):
     headers = auth(stack)
     reset_memory(stack, headers)
     project = httpx.post(stack.api + "/v1/projects", headers=headers, json={"name": "记忆验收" + uuid.uuid4().hex[:6]}).json()
-    facts = [{"kind": "user", "content": "回答先给结论"}, {"content": "季报口径以财务部为准", "project_id": project["id"]}]
+    facts = [{"kind": "user", "content": "回答先给结论"}, {"kind": "user", "content": "季报口径以财务部为准", "project_id": project["id"]}]
     put_facts(stack, headers, facts)
     page.set_viewport_size({"width": width, "height": 900})
     login(page, stack, path=f"/p/{project['id']}")
@@ -169,23 +170,23 @@ def test_project_memory_mode_moves_and_merges_facts(page, stack, width):
         page.get_by_role("button", name="收起侧栏", exact=True).click()
     page.get_by_role("button", name="项目操作", exact=True).click()
     page.get_by_role("menuitem", name="记忆", exact=True).click()
-    dialog = summary_dialog(page, "项目记忆")
-    expect(dialog.locator(".memory-summary")).to_have_count(0)
+    dialog = memory_dialog(page, "项目记忆")
+    expect(dialog.locator(".memory-view")).to_contain_text("季报口径以财务部为准")
     expect(dialog.get_by_role("textbox", name="修改记忆", exact=True)).to_have_count(0)
-    expect(dialog.get_by_role("button", name="立即整理", exact=True)).to_have_count(0)
+    expect(dialog.get_by_role("button", name="立即整理", exact=True)).to_be_visible()
     switch = dialog.get_by_role("switch", name="仅使用本项目记忆", exact=True)
     switch.click()
     page.get_by_role("alertdialog").get_by_role("button", name="仅用本项目", exact=True).click()
     expect(switch).to_have_attribute("aria-checked", "true")
-    expect(dialog.locator(".memory-summary")).to_contain_text("季报口径以财务部为准", timeout=30000)
-    expect(dialog.locator(".memory-summary")).not_to_contain_text("回答先给结论")
+    expect(dialog.locator(".memory-view")).to_contain_text("季报口径以财务部为准", timeout=30000)
+    expect(dialog.locator(".memory-view")).not_to_contain_text("回答先给结论")
     expect(dialog.get_by_role("textbox", name="修改记忆", exact=True)).to_be_visible()
     assert httpx.get(stack.api + f"/v1/projects/{project['id']}", headers=headers).json()["memory_mode"] == "isolated"
     switch.click()
     page.get_by_role("alertdialog").get_by_role("button", name="互通", exact=True).click()
     expect(switch).to_have_attribute("aria-checked", "false")
     # the merge runs in the background; the mock judges every project fact general, so it moves to the account
-    expect(dialog.locator(".memory-summary")).to_have_count(0)
+    expect(dialog.locator(".memory-items")).to_have_count(0)
     expect(dialog.get_by_role("textbox", name="修改记忆", exact=True)).to_have_count(0)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:

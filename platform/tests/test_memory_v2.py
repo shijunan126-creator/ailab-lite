@@ -83,3 +83,38 @@ def test_stagger_is_stable_and_spreads_hundreds_of_users():
     assert all(0 <= n < 180 for n in offsets)
     assert len(set(offsets)) > 150
     assert offsets == [offset(f"synthetic_user_{i}", 180) for i in range(500)]
+
+
+def test_management_sources_are_batched_for_both_views():
+    from fastapi.testclient import TestClient
+    from sqlalchemy import event
+
+    from ailab_platform.api.main import app
+    from ailab_platform.api.routes_memory import memory_items, memory_view
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import User
+    from tests.test_memory_hardening import put
+    from tests.test_memory_recall import _seed, _uid
+    from tests.test_skill_settings import _user
+
+    with TestClient(app) as client:
+        headers = _user(client)
+        uid = _uid(client, headers)
+        rid = _seed(uid, "提供记忆来源")
+        put(client, headers, [{"kind": "user", "content": f"偏好{i}", "evidence_run_ids": [rid]} for i in range(10)])
+        with SessionLocal() as db:
+            user = db.get(User, uid)
+            queries = []
+            connection = db.connection()
+
+            def capture(conn, cursor, sql, params, context, many):
+                if "conversations.title" in sql and "FROM runs" in sql:
+                    queries.append(sql)
+
+            event.listen(connection, "before_cursor_execute", capture)
+            try:
+                assert len(memory_view(None, user, db)["core"]) == 10
+                assert len(memory_items(None, None, None, 50, user, db)["items"]) == 10
+            finally:
+                event.remove(connection, "before_cursor_execute", capture)
+            assert len(queries) == 2

@@ -179,7 +179,9 @@ async def consolidate(job_id, token):
                         row.aliases = [*row.aliases, alias][:10]
                         counts["aliases"] += 1
             job.report = {**(job.report or {}), "dreaming": counts}
-            job.after_memory = memory_for(owner)
+            from .changes import record
+
+            record(job, current, memory_for(owner))
             db.commit()
 
     await asyncio.to_thread(apply)

@@ -117,8 +117,8 @@ def test_memory_controls_and_next_run_snapshot():
         assert _tool(c, run, revision=1).status_code == 422
         assert _tool(c, run, revision=1, explicit=True).status_code == 200
         snapshot = c.get(f"/internal/runs/{run}/model-input", headers=SERVICE).json()["memory"]
-        assert [e["content"] for e in snapshot["entries"]] == ["喜欢简洁中文"] and snapshot["auto_save"] is False
-        # Unrelated facts remain available on demand rather than consuming every prompt.
+        assert [e["content"] for e in snapshot["entries"]] == ["喜欢简洁中文", "长期项目使用 Python"] and snapshot["auto_save"] is False
+        # Explicitly requested memories join core; the list tool exposes both items.
         assert len(_tool(c, run, action="list").json()["entries"]) == 2
         _put(c, me, 2, enabled=False)
         assert _tool(c, run, revision=3, delivery="disabled", explicit=True).status_code == 422

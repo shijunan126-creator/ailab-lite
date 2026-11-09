@@ -124,10 +124,9 @@ def _rewrite_copies(db: Session, user_id: str, rewrite) -> None:
         return {**value, "entries": [next_ for entry in value.get("entries", []) if (next_ := rewrite(entry)) is not None]}
 
     for dream in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id).execution_options(yield_per=100)):
-        for field in ("before_memory", "after_memory"):
-            value = getattr(dream, field)
-            if value and (updated := document(value)) != value:
-                setattr(dream, field, updated)
+        from ..memory_dream.changes import redact
+
+        dream.change_set = redact(dream.change_set, rewrite)
         candidates = []
         for entry in (dream.report or {}).get("candidates", []):
             next_ = rewrite(entry)
@@ -167,13 +166,6 @@ def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None
     _rewrite_copies(db, user_id, rewrite)
     # Derived human summaries and undo text may contain a removed fact verbatim. Do not
     # retain them as an alternate read/restore route around the deletion fence.
-    from ..models import MemorySummary
-
-    scopes = {e.get("project_id") for e in removed}
-    for row in db.scalars(select(MemorySummary).where(MemorySummary.user_id == user_id)):
-        if row.project_id in scopes:
-            row.text = ""
-            row.source_digest = ""
     for dream in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id).execution_options(yield_per=100)):
         report = dict(dream.report or {})
         report.pop("summary_before", None)

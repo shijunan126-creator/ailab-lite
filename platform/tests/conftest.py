@@ -110,3 +110,28 @@ def release_test_document_jobs():
         db.execute(delete(DocumentOperation).where(DocumentOperation.id.not_in(before)))
         db.execute(delete(DocumentPreparation).where(DocumentPreparation.id.not_in(preparations)))
         db.commit()
+
+
+@pytest.fixture(autouse=True)
+def release_test_memory_jobs():
+    from sqlalchemy import inspect, select, update
+
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import MemoryDreamRun
+
+    with SessionLocal() as db:
+        ready = inspect(db.get_bind()).has_table("memory_dream_runs")
+        before = set(db.scalars(select(MemoryDreamRun.id))) if ready else set()
+    yield
+    with SessionLocal() as db:
+        if inspect(db.get_bind()).has_table("memory_dream_runs"):
+            db.execute(update(MemoryDreamRun).where(MemoryDreamRun.id.not_in(before)).values(claimed_until=None, claim_token=None))
+            db.execute(
+                update(MemoryDreamRun)
+                .where(MemoryDreamRun.id.not_in(before), MemoryDreamRun.status.in_(("pending", "running")))
+                .values(status="failed")
+            )
+            for row in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.id.not_in(before))):
+                if (row.report or {}).get("chain_running"):
+                    row.report = {**row.report, "chain_running": False}
+            db.commit()

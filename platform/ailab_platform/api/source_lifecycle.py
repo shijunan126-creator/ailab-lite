@@ -280,8 +280,9 @@ def _drain_memory_copies(db, item, path, limit):
             .limit(limit)
         ).all()
         for row in rows:
-            row.before_memory = document(row.before_memory or {})
-            row.after_memory = document(row.after_memory or {})
+            from ..memory_dream.changes import redact as redact_changes
+
+            row.change_set = redact_changes(row.change_set, redact)
             if row.input_run_ids and db.scalar(select(Run.id).where(Run.id.in_(row.input_run_ids), Run.id.in_(select(path.c.id))).limit(1)):
                 row.report = {**(row.report or {}), "candidates": []}
             row.plan = {

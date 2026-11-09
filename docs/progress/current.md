@@ -1,3 +1,11 @@
+# Memory v2 契约续修（2026-11-09，进行中）
+
+- 分支 `feat/memory-v2-a`，从 `feat/memory-v2@8d44f4e9` 建立；base `origin/main@df83d8e`。已合并 `feat/memory-v2-portal`（`fdbef296`）。本轮仅授权契约、摘要退役、change set、链报告、性能与 E2E 迁移；不开始后续调度/评测，不部署、推送或开 PR。
+- 已改：关系条目来源批量读取、实体来源批量聚合、SQLite 时间 UTC 适配；摘要 ORM/辅助模块退役及 0064 升降级；后台任务条目变更集、revision 撤销和删除清理；链末发布标记与已提交后继复用；旧契约测试迁移。
+- 验证进行中，尚未称完成。当前结果与剩余问题只维护在[本轮记录](updates/2026-11-09-memory-v2.md)。下一步：完成双库/E2E 批量验证，修失败后冻结代码再复跑全套。
+
+---
+
 # Memory v2 后端：实施中，未达到验收（2026-11-09）
 
 - 分支 `feat/memory-v2`，base `origin/main@df83d8e`；仅后端，不修改 Portal，不部署、不推送、不提 PR。

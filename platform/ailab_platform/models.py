@@ -222,35 +222,6 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class MemorySummary(Base):
-    __tablename__ = "memory_summaries"
-    __table_args__ = (
-        Index("ix_memory_summaries_user", "user_id"),
-        Index(
-            "uq_memory_summary_account",
-            "user_id",
-            unique=True,
-            sqlite_where=text("project_id IS NULL"),
-            postgresql_where=text("project_id IS NULL"),
-        ),
-        Index(
-            "uq_memory_summary_project",
-            "user_id",
-            "project_id",
-            unique=True,
-            sqlite_where=text("project_id IS NOT NULL"),
-            postgresql_where=text("project_id IS NOT NULL"),
-        ),
-    )
-    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("msum"))
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
-    text: Mapped[str] = mapped_column(Text, default="", server_default="")
-    source_digest: Mapped[str] = mapped_column(String(64), default="", server_default="")
-    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
 class Conversation(Base):
     """A chat thread. Each user message starts one Run (a turn); turns share history and a sandbox workspace."""
 
@@ -871,8 +842,7 @@ class MemoryDreamRun(Base):
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
     journal: Mapped[str] = mapped_column(Text, default="")
     report: Mapped[dict] = mapped_column(JSON, default=dict)
-    before_memory: Mapped[dict] = mapped_column(JSON, default=dict)
-    after_memory: Mapped[dict] = mapped_column(JSON, default=dict)
+    change_set: Mapped[dict] = mapped_column(JSON, default=dict)
     token_usage: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

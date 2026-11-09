@@ -249,7 +249,7 @@ def _user_prompt(messages: list[dict]) -> str:
 def _memory_answer(system: str, prompt: str) -> str | None:
     """Deterministic answers to the memory summary/edit/merge prompts, so the mock stack shows a real summary and
     "忘记…/记住…" works in the browser. Anything else is not a memory maintenance call."""
-    from .memory_dream.prompts import EDIT_SYSTEM, EXTRACT_SYSTEM, JUDGE_SYSTEM, MERGE_SYSTEM, SUMMARY_SYSTEM
+    from .memory_dream.prompts import EDIT_SYSTEM, EXTRACT_SYSTEM, JUDGE_SYSTEM, MERGE_SYSTEM
 
     # Extraction and judging append per-call rules to their system prompt. The mock extracts nothing, so a
     # nightly or manual consolidation on the mock stack takes the normal path rather than failing on prose.
@@ -257,14 +257,12 @@ def _memory_answer(system: str, prompt: str) -> str | None:
         return json.dumps({"facts": []})
     if system.startswith(JUDGE_SYSTEM):
         return json.dumps({"results": []})
-    if system not in (SUMMARY_SYSTEM, EDIT_SYSTEM, MERGE_SYSTEM):
+    if system not in (EDIT_SYSTEM, MERGE_SYSTEM):
         return None
     try:
         data = json.loads(prompt)
     except ValueError:
         data = {}
-    if system == SUMMARY_SYSTEM:
-        return "### 记得的内容\n" + "\n".join(f"- {fact}" for fact in data.get("facts", []))
     if system == MERGE_SYSTEM:
         return json.dumps({"decisions": [{"id": e["id"], "action": "to_account"} for e in data.get("project", [])]}, ensure_ascii=False)
     instruction = str(data.get("instruction", "")).strip()

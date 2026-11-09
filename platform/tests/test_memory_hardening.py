@@ -18,6 +18,7 @@ from ailab_platform.db import SessionLocal
 from ailab_platform.memory_dream import service
 from ailab_platform.memory_recall import embeddings
 from ailab_platform.models import Conversation, MemoryDreamRun, MemoryEpisode, MemoryWorkItem, Run, User
+from tests.memory_fixtures import make_dream
 from tests.run_claims import attempt_headers
 from tests.test_memory_recall import _conversation, _running, _seed, _uid
 from tests.test_skill_settings import _user
@@ -40,7 +41,7 @@ def put(c, me, entries, *, auto_save=True):
 
 
 def dream_row(uid, **kw):
-    return MemoryDreamRun(
+    return make_dream(
         user_id=uid,
         local_date="2026-10-28",
         timezone="Asia/Shanghai",
@@ -373,7 +374,15 @@ def test_model_bootstrap_filters_paused_and_invalid_facts():
             }
         }
     )
-    assert [e["id"] for e in memory_for(user, for_model=True)["entries"]] == ["mem_c"]
+    from ailab_platform.memory_recall.store import replace_entries
+
+    with SessionLocal() as db:
+        user.email = "bootstrap-" + str(datetime.now(UTC).timestamp()) + "@test.invalid"
+        db.add(user)
+        db.flush()
+        replace_entries(db, user, [{"kind": "memory", **e} for e in user.settings["memory"]["entries"]])
+        assert [e["id"] for e in memory_for(user, for_model=True)["entries"]] == ["mem_c"]
+        db.rollback()
 
 
 def test_dream_does_not_hold_sqlite_writer_during_model_wait(monkeypatch):
@@ -460,7 +469,7 @@ def test_sensitive_inferences_need_user_confirmation_and_history_is_temporal():
             service._apply(db, db.get(User, uid), DreamPlan(changes=[DreamChange(op="add", content="用户患有慢性病")]), {})
             db.commit()
         doc = c.get("/v1/memory", headers=me).json()
-        assert doc["entries"] == []
+        assert len(doc["entries"]) == 1 and doc["entries"][0]["status"] == "review"
         assert model_view(doc)["entries"] == []
         put(c, me, [{"content": "用户患有慢性病", "status": "active"}])
         assert model_view(c.get("/v1/memory", headers=me).json())["entries"]
@@ -591,8 +600,8 @@ def test_real_dream_calls_are_reserved_settled_and_retries_are_distinct(monkeypa
         with SessionLocal() as db:
             assert db.get(MemoryDreamRun, did).status == "applied"
             calls = list(db.scalars(select(ModelUsage).where(ModelUsage.job_id == did)))
-            assert len(calls) == 3
-            assert len({r.call_id for r in calls}) == 3
+            assert len(calls) == 2
+            assert len({r.call_id for r in calls}) == 2
             assert all(r.subject == "memory_job" and r.status == "settled" and r.weighted_amount > 0 for r in calls)
             assert all(db.get(UsageReservation, r.call_id).status == "settled" for r in calls)
 

@@ -11,6 +11,8 @@ from ailab_platform.internal_skills import load
 from ailab_platform.models import DocumentBlock, FileDerivation, MessageFileRef, Run
 from ailab_platform.worker.pipeline import process_file
 from tests.document_fixtures import legacy_run
+from tests.memory_fixtures import make_dream
+from tests.memory_fixtures import snapshot as delta_snapshot
 from tests.test_file_previews import AUTH, SERVICE, ApiClient
 from tests.test_ocr import text_pdf
 
@@ -331,7 +333,10 @@ def test_file_deletion_fences_dream_raw_recall_and_snapshot_replay(monkeypatch):
                     ]
                 },
             }
-            dream = MemoryDreamRun(
+            from ailab_platform.memory_recall.store import replace_entries
+
+            replace_entries(db, owner, [{"kind": "memory", **e} for e in owner.settings["memory"]["entries"]])
+            dream = make_dream(
                 user_id=owner.id,
                 local_date="2026-10-29",
                 status="applied",
@@ -369,8 +374,8 @@ def test_file_deletion_fences_dream_raw_recall_and_snapshot_replay(monkeypatch):
                     break
             assert db.get(FileSourceInvalidation, fid).state == "done"
             snapshot = db.get(MemoryDreamRun, dream_id)
-            assert [e["id"] for e in snapshot.before_memory["entries"]] == ["explicit"]
-            assert snapshot.before_memory["entries"][0]["source_quote"] == ""
+            assert [e["id"] for e in delta_snapshot(snapshot, "before")["entries"]] == ["explicit"]
+            assert delta_snapshot(snapshot, "before")["entries"][0]["source_quote"] == ""
             assert snapshot.plan["changes"] == []
             from ailab_platform.models import RunEvent
 

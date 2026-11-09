@@ -166,15 +166,16 @@ def test_recall_route_is_scoped_to_the_run_owner_and_refuses_when_memory_is_off(
         uid = _uid(c, me)
         _seed(uid, "部署 ERR_9001 的处理办法", "重启 broker", days_ago=3)
         run = _running(c, me)
-        url = f"/internal/runs/{run}/recall"
-        ok = c.post(url, headers=SERVICE, json={"query": "ERR_9001"})
+        url = f"/internal/runs/{run}/memory"
+        service_headers = attempt_headers(c, run)
+        ok = c.post(url, headers=service_headers, json={"action": "search", "query": "ERR_9001"})
         assert ok.status_code == 200 and ok.json()["results"][0]["assistant_replied"] == "重启 broker"
-        assert c.post(url, headers=me, json={"query": "ERR_9001"}).status_code == 403
-        assert c.post(url, headers=SERVICE, json={"query": " "}).status_code == 422
-        miss = c.post(url, headers=SERVICE, json={"query": "不存在的东西 zzzqqq"}).json()
-        assert miss["note"] == NO_RELEVANT_MEMORY
+        assert c.post(url, headers=me, json={"action": "search", "query": "ERR_9001"}).status_code == 403
+        assert c.post(url, headers=service_headers, json={"action": "search", "query": " "}).status_code == 422
+        miss = c.post(url, headers=service_headers, json={"action": "search", "query": "不存在的东西 zzzqqq"}).json()
+        assert miss["status"] == NO_RELEVANT_MEMORY
         c.put("/v1/memory", headers=me, json={"expected_revision": 0, "enabled": False, "auto_save": True, "entries": []})
-        assert c.post(url, headers=SERVICE, json={"query": "ERR_9001"}).status_code == 422
+        assert c.post(url, headers=service_headers, json={"action": "search", "query": "ERR_9001"}).status_code == 422
 
 
 # --------------------------------------------------------------------------- write guard
@@ -418,10 +419,10 @@ def test_recall_tool_works_in_both_modes_without_a_sandbox(mode) -> None:
             return {"results": [{"user_said": "选 Kubernetes"}], "notice": "数据"}
 
     platform, broker = Platform(), FakeBroker()
-    call = ToolCall(id="r", name="recall_history", arguments={"query": "为什么选 Kubernetes", "days": 30, "limit": True})
+    call = ToolCall(id="r", name="recall_history", arguments={"after": "2026-10-01T00:00:00+00:00", "limit": True})
     llm = ScriptedLLM([LLMResponse(tool_calls=[call]), LLMResponse(content="因为要销毁闲置沙箱")])
     asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id="att_1"))
-    assert platform.asked == {"query": "为什么选 Kubernetes", "days": 30}  # a bool is not a limit
+    assert platform.asked == {"after": "2026-10-01T00:00:00+00:00"}  # a bool is not a limit
     assert next(p for t, p in platform.events if t == "agent.tool_result")["ok"]
     assert broker.leases == 0
 
@@ -437,9 +438,9 @@ def test_memory_prompt_is_compact_and_tells_the_model_how_to_use_history() -> No
         "evidence_run_ids": ["run_secret"],
     }
     prompt = memory_prompt({"enabled": True, "revision": 3, "entries": [entry]})
-    assert "喜欢简洁中文" in prompt and '"since": "2026-10-20"' in prompt and '"confidence": 0.7' in prompt
+    assert "喜欢简洁中文" in prompt and "[2026-10-20]" in prompt and "confidence" not in prompt
     assert "不要出现在提示词里的原话" not in prompt and "run_secret" not in prompt
-    assert "recall_history" in prompt and "NO_RELEVANT_MEMORY" in prompt
+    assert "recall_history" in prompt and "memory.search" in prompt
 
 
 def test_a_long_prompt_cannot_turn_assistant_text_into_user_evidence() -> None:
