@@ -2,25 +2,27 @@
 import assert from "node:assert/strict";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, test, vi } from "vitest";
-import { MemoryCard, MemoryDialog, organizeNote, shortDate } from "../components/memory/memory-view";
-import { api, type MemoryItem } from "../lib/api";
+import { MemoryPanel, organizeNote, shortDate } from "../components/memory/memory-view";
+import { api, type MemoryItem, type MemoryView } from "../lib/api";
 import { confirmDialog } from "../lib/dialog";
 
 vi.mock("../lib/api", () => ({ api: vi.fn(), errorMessage: String }));
 vi.mock("../lib/dialog", () => ({ confirmDialog: vi.fn(async () => true) }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a> }));
-vi.mock("../components/library/modal", () => ({
-  default: ({ children, footer, actions }: { children: React.ReactNode; footer?: React.ReactNode; actions?: React.ReactNode }) => <div>{actions}{children}{footer}</div>,
-}));
 
 const item = (id: string, content: string, extra: Partial<MemoryItem> = {}): MemoryItem => ({
-  id, project_id: null, kind: "preference", origin: "explicit", tier: "core", page: "偏好", content, status: "active",
-  observed_at: "2026-11-03T08:00:00Z", valid_from: null, valid_to: null, expires_at: null, updated_at: "2026-11-03T08:00:00Z",
+  id, project_id: null, kind: "preference", origin: "explicit", content, status: "active",
+  observed_at: "2026-11-03T08:00:00Z", updated_at: "2026-11-03T08:00:00Z",
   sources: [{ run_id: "run_1", conversation_id: "conv_1", conversation_title: "周报", date: "2026-11-03" }], ...extra,
 });
-const view = {
-  project_id: null, enabled: true, memory_mode: null, merge_pending: false, revision: 7, active: null,
-  core: [item("mem_core", "回答用中文")], pages: [{ page: "兴趣/金融科技", count: 1, updated_at: null }],
+const view: MemoryView = {
+  project_id: null, enabled: true, memory_mode: null, merge_pending: false, revision: 7, active: null, used_chars: 40, max_chars: 6000,
+  review: [],
+  sections: [
+    { kind: "preference", items: [item("mem_core", "回答先给结论")] },
+    { kind: "project", items: [item("mem_proj", "在做 AILab 记忆模块", { kind: "project" })] },
+    { kind: "interest", items: [item("mem_fin", "关注乐信季度业绩", { kind: "interest", origin: "inferred" })] },
+  ],
 };
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); });
 
@@ -32,15 +34,50 @@ test("dates and organize notes", () => {
   assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 12, added: 0 } }), "看了 12 段对话，没有需要长期记住的内容");
 });
 
-test("dialog and card do not poll the same scope twice", async () => {
-  vi.mocked(api).mockResolvedValue({ ...view, active: { id: "dream", status: "running", trigger: "cron" } });
-  render(<MemoryCard projectId={null} title="你的记忆" />);
-  await waitFor(() => assert.ok(screen.getByText("回答用中文")));
-  vi.useFakeTimers();
-  await act(async () => screen.getByLabelText("你的记忆").click());
-  vi.mocked(api).mockClear();
-  await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
-  assert.equal(vi.mocked(api).mock.calls.filter(([path]) => path === "/v1/memory/view").length, 1);
+test("shows the whole document by kind, each line with its source conversation, from one read", async () => {
+  vi.mocked(api).mockResolvedValue(view);
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
+  for (const title of ["偏好", "在做的事", "关注的话题"]) assert.ok(screen.getByText(title));
+  assert.ok(screen.getByText("关注乐信季度业绩"));
+  assert.equal(screen.queryByText("关于你"), null); // an empty kind is not shown
+  assert.equal(screen.getAllByText("周报")[0].closest("a")?.getAttribute("href"), "/c/conv_1");
+  assert.deepEqual(vi.mocked(api).mock.calls.map(([path]) => path), ["/v1/memory/view"]);
+  assert.equal(screen.queryByText(/快满了/), null);
+});
+
+test("nothing at all says where memory comes from; a nearly full document says it will be condensed", async () => {
+  vi.mocked(api).mockResolvedValue({ ...view, sections: [] });
+  const first = render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText(/每晚整理时记下/)));
+  first.unmount();
+  vi.mocked(api).mockResolvedValue({ ...view, used_chars: 5200 });
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText("快满了，下次整理会合并精简")));
+});
+
+test("an inferred line is marked and can be confirmed; deleting one sends the revision it was read at", async () => {
+  vi.mocked(api).mockResolvedValue(view);
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText("关注乐信季度业绩")));
+  assert.equal(screen.getAllByText("推断").length, 1);
+  fireEvent.click(screen.getByLabelText("更多操作 关注乐信季度业绩"));
+  await act(async () => { fireEvent.click(screen.getByText("确认无误")); });
+  const confirm = vi.mocked(api).mock.calls.find(([path, o]) => path === "/v1/memory/items/mem_fin" && o?.method === "PATCH");
+  assert.deepEqual(JSON.parse(confirm![1]!.body as string), { expected_revision: 7, origin: "explicit" });
+  fireEvent.click(screen.getByLabelText("更多操作 关注乐信季度业绩"));
+  await act(async () => { fireEvent.click(screen.getByText("删除")); });
+  assert.equal(vi.mocked(confirmDialog).mock.calls.length, 1);
+  await waitFor(() => assert.ok(vi.mocked(api).mock.calls.some(([path, o]) => path === "/v1/memory/items/mem_fin?expected_revision=7" && o?.method === "DELETE")));
+});
+
+test("a sensitive item waits for confirmation and is confirmed in place", async () => {
+  vi.mocked(api).mockResolvedValue({ ...view, review: [item("mem_rev", "做过一次手术", { status: "review" })] });
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText(/做过一次手术/)));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "确认" })); });
+  const patch = vi.mocked(api).mock.calls.find(([path, o]) => path === "/v1/memory/items/mem_rev" && o?.method === "PATCH");
+  assert.deepEqual(JSON.parse(patch![1]!.body as string), { expected_revision: 7, status: "active" });
 });
 
 test("立即整理 follows its own run in the requested scope and says what it did", async () => {
@@ -49,31 +86,13 @@ test("立即整理 follows its own run in the requested scope and says what it d
     if (path === "/v1/memory/dreams/dream_1") return { id: "dream_1", status: "applied", report: { runs_seen: 20, added: 0 } };
     return { ...view, project_id: "p1" };
   });
-  render(<MemoryDialog projectId="p1" title="项目记忆" onClose={() => {}} />);
-  await waitFor(() => assert.ok(screen.getByText("回答用中文")));
+  render(<MemoryPanel projectId="p1" title="项目记忆" heading="none" />);
+  await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
   vi.useFakeTimers();
   await act(async () => { fireEvent.click(screen.getByText("立即整理")); });
   assert.ok(vi.mocked(api).mock.calls.some(([path, o]) => path === "/v1/memory/dream/run?project_id=p1" && o?.method === "POST"));
   await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
   assert.ok(screen.getByText("看了 20 段对话，没有需要长期记住的内容"));
-});
-
-test("a topic page loads on demand; deleting an item sends the revision it was read at", async () => {
-  vi.mocked(api).mockImplementation(async (path) =>
-    String(path).startsWith("/v1/memory/items?") ? { items: [item("mem_fin", "关注乐信业绩（11-03）", { tier: "archive", kind: "interest", origin: "inferred" })], next_cursor: null } : view
-  );
-  render(<MemoryDialog projectId={null} title="你的记忆" onClose={() => {}} />);
-  await waitFor(() => assert.ok(screen.getByText("兴趣/金融科技")));
-  assert.equal(vi.mocked(api).mock.calls.filter(([path]) => String(path).startsWith("/v1/memory/items")).length, 0);
-  fireEvent.click(screen.getByText("兴趣/金融科技"));
-  await waitFor(() => assert.ok(screen.getByText("关注乐信业绩（11-03）")));
-  assert.ok(screen.getByText("推断"));
-  fireEvent.click(screen.getByText("关注乐信业绩（11-03）"));
-  assert.equal(screen.getByText("周报").closest("a")?.getAttribute("href"), "/c/conv_1");
-  fireEvent.click(screen.getByLabelText("更多操作 关注乐信业绩（11-03）"));
-  await act(async () => { fireEvent.click(screen.getByText("删除")); });
-  assert.equal(vi.mocked(confirmDialog).mock.calls.length, 1);
-  await waitFor(() => assert.ok(vi.mocked(api).mock.calls.some(([path, o]) => path === "/v1/memory/items/mem_fin?expected_revision=7" && o?.method === "DELETE")));
 });
 
 test("edit sends the revision, then replies and offers undo only after the lease is released", async () => {
@@ -85,8 +104,8 @@ test("edit sends the revision, then replies and offers undo only after the lease
     if (path === "/v1/memory/dreams/edited") return { id: "edited", status: "applied", report: { reply: "修改完成" } };
     return { ...view, active: editing && refreshing ? { id: "edited", status: "applied", trigger: "edit" } : null };
   });
-  render(<MemoryDialog projectId={null} title="你的记忆" onClose={() => {}} />);
-  await waitFor(() => assert.ok(screen.getByText("回答用中文")));
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
   vi.useFakeTimers();
   fireEvent.change(screen.getByLabelText("修改记忆"), { target: { value: "记住偏好" } });
   await act(async () => { fireEvent.submit(screen.getByLabelText("修改记忆").closest("form")!); });
@@ -103,8 +122,21 @@ test("edit sends the revision, then replies and offers undo only after the lease
 
 test("a shared project's memory is read-only", async () => {
   vi.mocked(api).mockResolvedValue({ ...view, project_id: "p1", memory_mode: "shared" });
-  render(<MemoryDialog projectId="p1" title="项目记忆" onClose={() => {}} editable={false} />);
-  await waitFor(() => assert.ok(screen.getByText("回答用中文")));
+  render(<MemoryPanel projectId="p1" title="项目记忆" heading="none" editable={false} />);
+  await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
   assert.equal(screen.queryByLabelText("修改记忆"), null);
-  assert.ok((screen.getByLabelText("更多操作 回答用中文") as HTMLButtonElement).disabled);
+  assert.equal(screen.queryByLabelText("更多操作 回答先给结论"), null);
+});
+
+test("an item is edited in place and saved with the revision it was read at", async () => {
+  vi.mocked(api).mockResolvedValue(view);
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
+  fireEvent.click(screen.getByLabelText("更多操作 回答先给结论"));
+  fireEvent.click(screen.getByText("编辑"));
+  fireEvent.change(screen.getByLabelText("编辑记忆"), { target: { value: "回答先给结论，再给依据" } });
+  await act(async () => { fireEvent.keyDown(screen.getByLabelText("编辑记忆"), { key: "Enter" }); });
+  const patch = vi.mocked(api).mock.calls.find(([path, o]) => path === "/v1/memory/items/mem_core" && o?.method === "PATCH");
+  assert.deepEqual(JSON.parse(patch![1]!.body as string), { expected_revision: 7, content: "回答先给结论，再给依据" });
+  await waitFor(() => assert.equal(screen.queryByLabelText("编辑记忆"), null));
 });
