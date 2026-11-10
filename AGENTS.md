@@ -140,6 +140,17 @@ Tests build their own isolated settings (`tests/conftest.py`). Never point a tes
 - Maintain the continuity records in section 0 with every meaningful change. Add reusable traps to `HANDOFF.MD`, update `docs/architecture/status-matrix.md` when a capability changes state, and record decisions that diverge from the target architecture as ADRs in `docs/architecture/adr/`. A handoff is incomplete if only the chat response contains its outcome or next step.
 - Before saying "done": lint and the changed modules' tests locally, green CI on the final commit (full suites, Portal build), and for UI changes a real browser check (see HANDOFF for the Playwright route).
 
+### Repository hygiene
+
+Session debris is deleted in the session that creates it, never accumulated for a later cleanup. Before handing off:
+
+- **A branch ref is not an archive.** Delete a local branch once its PR is merged or closed, once it is merged into the default branch, or once its tip is reachable from another ref. A branch with unique commits is either pushed with an open PR or deleted after its SHA is recorded (recoverable from the reflog for 90 days); a stale branch left "in case" is how 200 refs happen. Remote branches follow the same rule: only the default branch and branches with an open PR stay. `git fetch --prune` afterwards.
+- **No stale worktrees.** `git worktree prune`, and before handing off `git worktree list` shows only the worktree in use; no `.worktrees/` directory is left behind, and no worktree is left pointing at a deleted branch.
+- **No build or scratch output in the tree.** `build/`, `.next/`, `__pycache__/`, `*.egg-info/`, `.pytest_cache/`, virtualenvs, unpacked upstream copies and `.local/` scratch dirs are removed when the work they served is done. Keep only evidence a dated update or review links to (screenshots under `platform/e2e-logs/` count only while their doc links them); everything else goes to `/tmp` or a CI artifact.
+- **A scratch directory that held a credential** (token file, `.env`, kubeconfig) is deleted at the end of that investigation, not kept "for reproducibility".
+- **Local Docker space** is reclaimed by age or image when the daemon's disk is tight; never `prune` volumes that hold the test environment's database or workspace data.
+- A clean handoff shows only the work in progress in `git status`, `git branch -vv` and `git worktree list`.
+
 ## 11. Pull requests
 
 A PR description is read by a reviewer who did not follow the work. Write it so they can decide in five minutes what changed, why, how it was proven and what to watch. Detailed evidence lives in the dated update; the PR links it and does not replace it.

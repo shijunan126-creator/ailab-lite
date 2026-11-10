@@ -1,4 +1,13 @@
-# 有界记忆文档：最终 CI 验收中（2026-11-09）
+# 分支与工作区清理、仓库卫生规则（2026-11-10）
+
+- 用户要求工作区切到最新 main 并清掉过期分支。已 fetch：`main = origin/main @ e9d0056d`（含 #172/#174 记忆 v2）。上一轮工作区停在 `fix/source-pill-alignment`（落后 30 个提交），据此得出的记忆页结论已在对话中按最新 main 更正。
+- 已删除全部 226 个本地分支（只留 `main`）、origin 上 134 个 PR 已合并/已关闭的分支（保留 `main` 和唯一 open PR 的 dependabot 分支）、`review-fork` 的 7 个工作分支。删除前唯一未推送到别处的提交是切 main 前的文档快照 `12de4a0d`，仅存于 reflog。
+- 清理 296MB 的 `.local/file-context-ocr` 调查暂存（含 `ocr-token` 凭据文件）、2.4MB `platform/build`、散落的 `.DS_Store` 与 `vendor/zcode-office-runtime/runner.mjs` 残留；`platform/e2e-logs/` 保留，2026-10-24 审查仍引用其中的截图。
+- AGENTS.md §10 新增 `Repository hygiene`：分支不留档、远端只留默认分支与 open PR、worktree 与 prune、构建/暂存输出不入仓库、凭据目录及时删除、Docker 只回收构建缓存不动业务卷。未改产品代码，未跑测试，未部署。
+
+---
+
+
 
 - 分支 `feat/memory-doc`，base `origin/main@c4e88613`，本轮全系统审查基线 `02f0e066`（保留 `a79c712a` Portal提交）（已拉取 Portal 移动布局/新到旧排序）；[PR #174](https://github.com/shijunan126-creator/ailab-lite/pull/174)。授权实现、真模型、只读部署库副本、前端 merge、推送与 CI；不合并、不部署。
 - 已完成有界文档/ABI5/单调用 Dreaming、程序融合/保留撤销、历史行索引回收、会话失效/条件空闲刷新、前序 turn context 与脱敏；76项旧失败已按新路径迁移。前端 `4bf62947` 经 merge commit 合入并保留菜单修复。
