@@ -52,11 +52,11 @@ PostgreSQL 最初直接用表达式 `to_tsvector('simple', terms)`，规划器�
 ## 验证
 
 - `ruff check .`、`ruff format --check .` 通过（689 files）。
-- 完整 SQLite 套件：2995 项收集，`pytest tests -q -n auto` exit 0。
+- 完整 SQLite 套件：3013 项收集，`pytest tests -q -n auto` exit 0。
 - 完整 PostgreSQL + Redis 套件：`AILAB_TEST_DATABASE_URL`/`AILAB_TEST_POSTGRES_URL`/`AILAB_TEST_REDIS_URL` 指向本机 throwaway 实例，`pytest tests -q -n auto` exit 0。
 - 迁移：`tests/test_migrations.py`、`test_integration_migrations.py`、`test_shares_migration.py`、`test_templates_migration.py`、`test_conversation_tree_migration.py` 在 SQLite 与 PostgreSQL 均通过；`test_migrations_and_models_do_not_drift` 过滤 FTS5 虚表和 GIN 表达式索引（索引实现，不是 ORM 表）。
 - 查询计划：SQLite `EXPLAIN QUERY PLAN` 使用 `conversation_search_fts` 的 `MATERIALIZED` CTE；PostgreSQL 使用 `ix_conversation_search_terms`（GIN）和 `ix_runs_conversation_created_id`。
-- Portal：`npm test` 279 项通过；`npm run build` 通过。
+- Portal：`npm test` 282 项通过；`npm run build` 通过。
 - 浏览器：`AILAB_E2E=1 pytest e2e/test_single_node_review.py -k search` 3 项通过（桌面/手机标题高亮、单次请求、输入新查询清空旧结果）。手机截图确认打开搜索后侧栏已收起，无横向溢出。
 
 ## 没覆盖到 / 风险
