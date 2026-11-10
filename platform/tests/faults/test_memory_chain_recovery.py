@@ -170,7 +170,7 @@ asyncio.run(service.process_dream(os.environ['MEMORY_FAULT_JOB']))
         assert db.get(MemoryDreamRun, job_id).status == "applied"
 
 
-def test_soft_deadline_persists_oldest_due_for_next_dispatch(monkeypatch):
+def test_successor_batch_keeps_due_priority_and_counters(monkeypatch):
     from ailab_platform.memory_recall.store import stamp
 
     now = utcnow()
@@ -197,7 +197,6 @@ def test_soft_deadline_persists_oldest_due_for_next_dispatch(monkeypatch):
 
     monkeypatch.setattr(service, "process_dream", process)
     monkeypatch.setattr(service, "_new_runs", lambda *a, **kw: [object()])
-    monkeypatch.setattr(service, "local_window", lambda ds: (0, 1))
     asyncio.run(service.process_dream_chain(identity))
     with SessionLocal() as db:
         first = db.get(MemoryDreamRun, identity)

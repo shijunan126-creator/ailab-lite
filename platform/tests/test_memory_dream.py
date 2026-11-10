@@ -140,7 +140,7 @@ def test_process_dream_applies_without_a_visible_run(monkeypatch) -> None:
                     local_date="2026-10-25",
                     timezone="Asia/Shanghai",
                     status="pending",
-                    trigger="cron",
+                    trigger="manual",
                     input_run_ids=[],
                     before_memory={},
                     after_memory=__import__("ailab_platform.api.routes_memory", fromlist=["memory_for"]).memory_for(user),
@@ -238,7 +238,7 @@ def test_reverting_a_dream_makes_the_invalidated_fact_visible_again(monkeypatch)
         assert c.get("/v1/memory", headers=me).json()["entries"][0]["content"] == "旧状态"
 
 
-def test_a_failed_dream_is_retried_the_same_day(monkeypatch) -> None:
+def test_a_failed_dream_is_retried_the_next_night(monkeypatch) -> None:
     monkeypatch.setattr("ailab_platform.memory_dream.scheduling.offset", lambda *args: 0)
     with TestClient(app) as c:
         me = _user(c)
@@ -255,14 +255,14 @@ def test_a_failed_dream_is_retried_the_same_day(monkeypatch) -> None:
                         prompt="p",
                         status="succeeded",
                         summary="s",
-                        created_at=datetime.now(UTC) - timedelta(minutes=30 - index),
+                        created_at=datetime(2026, 10, 25, 18, 0, tzinfo=UTC) - timedelta(minutes=30 - index),
                     )
                 )
             db.add(
                 make_dream(
                     id="dream_failed",
                     user_id=user.id,
-                    local_date="2026-10-26",
+                    local_date="2026-10-25",
                     timezone="Asia/Shanghai",
                     status="failed",
                     trigger="cron",

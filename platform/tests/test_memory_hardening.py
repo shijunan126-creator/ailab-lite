@@ -40,6 +40,8 @@ def put(c, me, entries, *, auto_save=True):
 
 
 def dream_row(uid, **kw):
+    # An already admitted nightly chain: these tests exercise one batch, not the window check.
+    kw.setdefault("report", {"chain_started_at": "2026-10-27T18:00:00+00:00"})
     return make_dream(
         user_id=uid,
         local_date="2026-10-28",

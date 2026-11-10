@@ -11,7 +11,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, true, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -51,6 +51,25 @@ def active_job(now: datetime | None = None):
         MemoryDreamRun.claimed_until > _aware(now),
         MemoryDreamRun.report["chain_running"].as_boolean().is_(True),
     )
+
+
+# Nightly chain clock, copied to every batch of a cron chain so a restart resumes against the same cutoff and deadline.
+CHAIN_KEYS = ("cutoff_at", "chain_started_at", "deadline")
+
+
+def _chain_clock(report: dict | None) -> dict:
+    return {k: v for k, v in (report or {}).items() if k in CHAIN_KEYS and v}
+
+
+def _in_window(owner: User, now: datetime, local_date: str | None = None) -> bool:
+    ds = dream_settings(owner)
+    try:
+        zone = ZoneInfo(ds.timezone or settings.memory_dream_default_timezone)
+    except Exception:
+        zone = ZoneInfo(settings.memory_dream_default_timezone)
+    local = now.astimezone(zone)
+    start, end = local_window(ds)
+    return start <= local.hour * 60 + local.minute < end and (local_date is None or local.date().isoformat() == local_date)
 
 
 def _normalize(text: str) -> str:
@@ -125,6 +144,7 @@ def _new_runs(
     *,
     project_id: str | None = None,
     scoped: bool = False,
+    cutoff: datetime | None = None,
 ) -> list[Run]:
     from ..api.source_lifecycle import invalid_sources_query
 
@@ -152,6 +172,8 @@ def _new_runs(
                 Run.options["memory_policy"]["write"].as_boolean().is_not(False),
                 Run.superseded_by_run_id.is_(None),  # the user rewrote this turn; what they replaced is not what they meant
                 or_(Run.conversation_id.is_(None), Conversation.deleted_at.is_(None)),  # a deleted conversation is not evidence
+                # a nightly chain only reads what had ended when it was created; later turns wait for the next night
+                func.coalesce(Run.finished_at, Run.created_at) <= cutoff if cutoff else true(),
             )
             .order_by(Run.created_at, Run.id)
             .limit(limit)
@@ -198,9 +220,17 @@ def claim_due(now: datetime | None = None) -> list[str]:
             start, end = local_window(ds)
             from .scheduling import offset
 
-            if local.hour * 60 + local.minute < start + offset(user.id, end - start):
+            minute = local.hour * 60 + local.minute
+            if not start + offset(user.id, end - start) <= minute < end:
                 continue
-            runs = _new_runs(db, user.id, _last_success(db, user.id), now) if document["auto_save"] else []
+            local_date = local.date().isoformat()
+            if db.scalar(
+                select(MemoryDreamRun.id)
+                .where(MemoryDreamRun.user_id == user.id, MemoryDreamRun.local_date == local_date, MemoryDreamRun.trigger == "cron")
+                .limit(1)
+            ):
+                continue  # one nightly chain per local date, whatever became of it
+            runs = _new_runs(db, user.id, _last_success(db, user.id), now, cutoff=now) if document["auto_save"] else []
             from ..memory_recall.document import maintenance_needed
 
             scopes = {e.get("project_id") for e in document["entries"]}
@@ -208,18 +238,7 @@ def claim_due(now: datetime | None = None) -> list[str]:
             if not runs and not maintenance:
                 db.commit()
                 continue
-            local_date = local.date().isoformat()
-            active = db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == user.id, active_job(now)).limit(1))
-            count = len(
-                list(
-                    db.scalars(
-                        select(MemoryDreamRun.id)
-                        .where(MemoryDreamRun.user_id == user.id, MemoryDreamRun.local_date == local_date, MemoryDreamRun.trigger == "cron")
-                        .limit(settings.memory_dream_auto_batches)
-                    )
-                )
-            )
-            if active or count >= settings.memory_dream_auto_batches:
+            if db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == user.id, active_job(now)).limit(1)):
                 continue
             row = MemoryDreamRun(
                 id=new_id("dream"),
@@ -230,6 +249,7 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 trigger="cron",
                 input_run_ids=[r.id for r in runs],
                 token_usage={},
+                report={"cutoff_at": now.isoformat()},
             )
             backfill = bool(runs) and any((item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "backfill" for r in runs)
             row.kind = "dream"
@@ -513,7 +533,7 @@ def _json(text: str) -> dict:
 
 def _finish(db: Session, run: MemoryDreamRun, status: str, **fields) -> None:
     """Commit the batch outcome and cursor together, independently of derived summary work."""
-    report = dict(fields.get("report") or run.report or {})
+    report = {**_chain_clock(run.report), **dict(fields.get("report") or run.report or {})}
     report.pop("_final_status", None)
     report["chain_running"] = run.trigger != "edit"
     report["stage_committed"] = True
@@ -548,12 +568,33 @@ async def process_dream(run_id: str) -> None:
                 return
             if job.claimed_until and _aware(job.claimed_until) > now:
                 return
+            owner = db.get(User, job.user_id)
+            clock = _chain_clock(job.report)
+            if job.trigger == "cron" and owner and not owner.disabled_at:
+                from ..memory_recall.store import stamp
+
+                if clock.get("deadline") and stamp(clock["deadline"]) <= now:
+                    job.status, job.claim_token = "running", token
+                    _finish(db, job, "failed", error="timeout", report={"reason": "timeout", "runs_seen": 0, "added": 0})
+                    job.claimed_until = None
+                    db.commit()
+                    return
+                if not clock.get("chain_started_at") and not _in_window(owner, now, job.local_date):
+                    # created in time but admitted after the window: still tonight's chain, never a model call
+                    job.status, job.claim_token = "running", token
+                    _finish(db, job, "skipped", report={"reason": "late", "runs_seen": 0, "added": 0})
+                    job.claimed_until = None
+                    db.commit()
+                    return
             if not can_start(db, scheduler, job, now):
                 return
             job.status, job.claim_token = "running", token
             job.claimed_until = now + timedelta(minutes=10)
             job.started_at = now
-            owner = db.get(User, job.user_id)
+            if job.trigger == "cron" and not clock.get("chain_started_at"):
+                deadline = now + timedelta(seconds=settings.memory_dream_chain_timeout_seconds)
+                clock = {**clock, "chain_started_at": now.isoformat(), "deadline": deadline.isoformat()}
+                job.report = {**(job.report or {}), **clock}
             if not owner or owner.disabled_at:
                 _finish(db, job, "skipped")
                 return
@@ -566,7 +607,7 @@ async def process_dream(run_id: str) -> None:
                     db.commit()
                     return ("edit",)
                 runs = (
-                    _new_runs(db, owner.id, None, now, project_id=job.project_id, scoped=job.trigger == "manual")
+                    _new_runs(db, owner.id, None, now, project_id=job.project_id, scoped=job.trigger == "manual", cutoff=_cutoff(job))
                     if document["auto_save"]
                     else []
                 )
@@ -769,7 +810,7 @@ async def _process_dream_chain(run_id: str) -> None:
                         previous.report = {**(previous.report or {}), "chain_running": False, "chain_complete": True}
                         db.commit()
 
-                    if previous.status != "applied" or (previous.trigger != "cron" and previous.batch_index >= limit):
+                    if previous.status != "applied" or previous.batch_index >= limit:
                         publish()
                         return
                     if (
@@ -783,6 +824,7 @@ async def _process_dream_chain(run_id: str) -> None:
                             limit=1,
                             project_id=previous.project_id,
                             scoped=previous.trigger == "manual",
+                            cutoff=_cutoff(previous),
                         )
                     ):
                         publish()
@@ -793,33 +835,18 @@ async def _process_dream_chain(run_id: str) -> None:
                         .limit(1)
                     ):
                         return
-                    carry = False
                     if previous.trigger == "cron":
-                        ds = dream_settings(owner)
-                        local = utcnow().astimezone(ZoneInfo(ds.timezone or settings.memory_dream_default_timezone))
-                        start, end = local_window(ds)
-                        if not ds.enabled:
+                        from ..memory_recall.store import stamp
+
+                        # A chain stops; it never parks a successor. Unprocessed turns stay ready for the next night.
+                        if not dream_settings(owner).enabled:
                             publish()
                             return
-                        carry = (
-                            not start <= local.hour * 60 + local.minute < end
-                            or local.date().isoformat() != previous.local_date
-                            or previous.batch_index >= limit
-                        )
-                        used = len(
-                            list(
-                                db.scalars(
-                                    select(MemoryDreamRun.id)
-                                    .where(
-                                        MemoryDreamRun.user_id == previous.user_id,
-                                        MemoryDreamRun.local_date == previous.local_date,
-                                        MemoryDreamRun.trigger == "cron",
-                                    )
-                                    .limit(limit)
-                                )
-                            )
-                        )
-                        carry = carry or used >= limit
+                        deadline = _chain_clock(previous.report).get("deadline")
+                        if deadline and stamp(deadline) <= utcnow():
+                            previous.report = {**(previous.report or {}), "reason": "timeout"}
+                            publish()
+                            return
                     row = MemoryDreamRun(
                         id=new_id("dream"),
                         user_id=previous.user_id,
@@ -828,11 +855,12 @@ async def _process_dream_chain(run_id: str) -> None:
                         status="pending",
                         trigger=previous.trigger,
                         project_id=previous.project_id,
-                        batch_index=1 if carry else previous.batch_index + 1,
+                        batch_index=previous.batch_index + 1,
                         priority=previous.priority,
                         due_at=previous.due_at,
                         kind=previous.kind,
                         report={
+                            **_chain_clock(previous.report),
                             "runs_seen_before": (previous.report or {}).get("runs_seen_before", 0)
                             + (previous.report or {}).get("runs_seen", 0),
                             "added_before": (previous.report or {}).get("added_before", 0) + (previous.report or {}).get("added", 0),
@@ -848,11 +876,18 @@ async def _process_dream_chain(run_id: str) -> None:
                     except IntegrityError:
                         db.rollback()
                         return
-                    return None if carry else row.id
+                    return row.id
 
         run_id = await asyncio.to_thread(next_batch)
         if run_id is None:
             return
+
+
+def _cutoff(job: MemoryDreamRun) -> datetime | None:
+    from ..memory_recall.store import stamp
+
+    value = _chain_clock(job.report).get("cutoff_at") if job.trigger == "cron" else None
+    return stamp(value) if value else None
 
 
 def _validate_sources(

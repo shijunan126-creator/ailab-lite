@@ -392,7 +392,8 @@ class Settings(ContextBandSettings, BaseSettings):
     memory_dream_model: str = ""  # empty -> catalog default
     memory_dream_max_users: int = Field(default=100, ge=1, le=200)
     memory_dream_manual_batches: int = Field(default=3, ge=1, le=100)
-    memory_dream_auto_batches: int = Field(default=6, ge=1, le=100)
+    memory_dream_auto_batches: int = Field(default=6, ge=1, le=100)  # batches per nightly chain
+    memory_dream_chain_timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     memory_dream_concurrency: int = Field(default=3, ge=1, le=10)
     memory_dream_busy_runs: int = Field(default=4, ge=1, le=100)
     memory_dream_tokens_per_minute: int = Field(default=30000, ge=1000, le=1000000)
