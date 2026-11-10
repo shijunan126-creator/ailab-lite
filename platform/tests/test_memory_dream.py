@@ -388,3 +388,60 @@ def test_manual_chain_respects_limit_after_recovery(monkeypatch):
         assert len(calls) == 2
         with SessionLocal() as db:
             assert len(service._new_runs(db, uid, None, datetime.now(UTC))) == 2
+
+
+def test_run_now_resorts_a_stale_document_and_records_the_standard_only_when_every_scope_is_done(monkeypatch) -> None:
+    """立即整理 with no new conversations still re-sorts under a new standard, as the nightly chain would."""
+    import json
+
+    from ailab_platform.memory_dream.prompts import CLEANUP, PROMPT_VERSION
+    from ailab_platform.memory_recall.store import replace_entries
+    from ailab_platform.models import Project
+
+    calls = []
+
+    async def chat(messages, model, user):
+        calls.append(messages[1]["content"])
+        return json.dumps({"ops": []}), {}
+
+    monkeypatch.setattr(service, "_chat", chat)
+    monkeypatch.setattr(service.settings, "memory_dream_manual_batches", 1)
+    with TestClient(app) as c:
+        me = _user(c)
+        with SessionLocal() as db:
+            user = db.get(User, c.get("/v1/me", headers=me).json()["id"])
+            project = Project(user_id=user.id, name="独立", memory_mode="isolated")
+            db.add(project)
+            db.flush()
+            replace_entries(
+                db,
+                user,
+                [
+                    {"id": "mem_acct" + user.id[4:16], "kind": "interest", "content": "关注英伟达财报（11-02 询问）", "origin": "inferred"},
+                    {
+                        "id": "mem_proj" + user.id[4:16],
+                        "kind": "project",
+                        "content": "做了一份 PPT",
+                        "origin": "inferred",
+                        "project_id": project.id,
+                    },
+                ],
+            )
+            db.commit()
+            uid, pid = user.id, project.id
+        first = c.post("/v1/memory/dream/run", headers=me)
+        assert first.status_code == 202, first.text
+        with SessionLocal() as db:
+            row = db.get(MemoryDreamRun, first.json()["id"])
+            assert row.status == "applied" and row.report["cleanup"] == [pid]
+            assert "prompt_version" not in row.report  # the project scope is still under the old standard
+        assert calls == [CLEANUP]
+        second = c.post("/v1/memory/dream/run", headers=me)
+        assert second.status_code == 202, second.text
+        with SessionLocal() as db:
+            assert db.get(MemoryDreamRun, second.json()["id"]).report["prompt_version"] == PROMPT_VERSION
+            from ailab_platform.api.routes_memory import memory_for
+            from ailab_platform.memory_dream.service import _cleanup_scopes
+
+            assert _cleanup_scopes(db, uid, memory_for(db.get(User, uid))["entries"]) == []
+        assert c.post("/v1/memory/dream/run", headers=me).json()["status"] == "nothing"

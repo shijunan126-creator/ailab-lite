@@ -142,13 +142,30 @@ def _cleanup_scopes(db: Session, user_id: str, entries: list[dict]) -> list:
 
     version = db.scalar(
         select(MemoryDreamRun.report["prompt_version"].as_string())
-        .where(MemoryDreamRun.user_id == user_id, MemoryDreamRun.status == "applied", MemoryDreamRun.trigger.in_(("cron", "manual")))
+        .where(
+            MemoryDreamRun.user_id == user_id,
+            MemoryDreamRun.status == "applied",
+            MemoryDreamRun.trigger.in_(("cron", "manual")),
+            MemoryDreamRun.report["prompt_version"].as_string().is_not(None),
+        )
         .order_by(MemoryDreamRun.finished_at.desc())
         .limit(1)
     )
     if version == PROMPT_VERSION:
         return []
-    scopes = {e.get("project_id") for e in _active(entries) if not protected(e)}
+    # scopes a capped chain already re-sorted under this standard are not redone; the rest wait for the next run
+    done = set(
+        db.scalars(
+            select(MemoryDreamRun.report["resorted"]["scope"].as_string())
+            .where(
+                MemoryDreamRun.user_id == user_id,
+                MemoryDreamRun.status == "applied",
+                MemoryDreamRun.report["resorted"]["version"].as_string() == PROMPT_VERSION,
+            )
+            .limit(100)
+        )
+    )
+    scopes = {e.get("project_id") for e in _active(entries) if not protected(e)} - done
     return sorted(scopes, key=lambda pid: (pid is not None, pid or ""))  # the account first
 
 
@@ -624,7 +641,7 @@ async def process_dream(run_id: str) -> None:
                 if job.trigger == "edit":
                     db.commit()
                     return ("edit",)
-                cleanup = list(clock.get("cleanup") or []) if job.trigger == "cron" else []
+                cleanup = list(clock.get("cleanup") or []) if job.trigger in {"cron", "manual"} else []
                 if cleanup:
                     # Re-sort one scope under the current standard before any new conversation; protected lines stay.
                     pid = cleanup[0]
@@ -771,8 +788,9 @@ async def process_dream(run_id: str) -> None:
                         "ops": audit,
                         "ignored_runs": ignored,
                         "codes": codes,
-                        "prompt_version": PROMPT_VERSION,
-                        **({"cleanup": remaining} if remaining is not None else {}),
+                        # the document meets the current standard only once every scope has been re-sorted
+                        **({"prompt_version": PROMPT_VERSION} if not remaining else {}),
+                        **({"cleanup": remaining, "resorted": {"scope": pid, "version": PROMPT_VERSION}} if remaining is not None else {}),
                     },
                     cursor_run_id=runs[-1].id if runs else None,
                 )

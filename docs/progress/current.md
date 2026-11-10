@@ -3,7 +3,7 @@
 - 用户授权按[计划](../architecture/design/2026-11-10-memory-quality.md)全部实现，含迁移 0067、ADR 0036、真实模型评估、推送、开 PR 并修到 CI 全绿；不授权合并、部署、改动本机运行中的服务或数据库。分支 `feat/memory-quality`，base `main@36b17590`；[PR #177](https://github.com/shijunan126-creator/ailab-lite/pull/177)。
 - 已完成 A–F 六步（每步一个提交）：每晚每用户一条整理链；删除来源保留记忆；中文标准、转变与理由代号（ABI 6）；来源项目标签与独立项目文件隔离；提示词版本与旧文档整理一次；记忆页分类卡片。决定见 [ADR 0036](../architecture/adr/0036-memory-quality.md)，验证、评估数字和偏差见[记录](updates/2026-11-10-memory-quality.md)，坑见 HANDOFF 2026-11-10。
 - 第二轮（用户要求修正并补覆盖）：0068 把旧夜间 explicit 行改回 inferred，一次性整理可删低价值推断行；真实库副本新旧对比、一次性整理、真实服务链路缓存（Chat 97.3% / Work 98.4%）已做；修复调度循环被慢链阻塞。整夜压测按用户要求取消。数字见[记录](updates/2026-11-10-memory-quality.md)。
-- 下一步：最终 head CI 全绿后，自审结果在对话中汇报；合并与部署由用户决定。
+- PR #177 已合并（`80f62af6`）并部署本机。之后修复：「立即整理」不做按新标准的一次性整理（分支 `fix/manual-memory-cleanup`）；下一步 CI 绿后由用户决定合并与部署。
 ---
 
 # CI 与测试提速（2026-11-10）
