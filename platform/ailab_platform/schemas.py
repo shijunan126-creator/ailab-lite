@@ -82,6 +82,7 @@ class RunCreate(PromptRequest):
     title: str | None = Field(default=None, max_length=200)
     file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
     model: str | None = Field(default=None, max_length=120)
+    reasoning: str | None = Field(default=None, min_length=1, max_length=64)  # a level of the model's reasoning.toml profile
     mode: Literal["chat", "work"] = "work"  # chat: answer in words only, no tools, never a sandbox
     skill: str | None = Field(default=None, max_length=64)
     skills: list[SkillSelection] | None = None
@@ -225,6 +226,7 @@ class MessageCreate(PromptRequest):
     template: TemplateSelection | None = None
     file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
     model: str | None = Field(default=None, max_length=120)
+    reasoning: str | None = Field(default=None, min_length=1, max_length=64)  # a level of the model's reasoning.toml profile
     mode: Literal["chat", "work"] = "work"
     skill: str | None = Field(default=None, max_length=64)
     skills: list[SkillSelection] | None = None
@@ -274,6 +276,7 @@ class RunEdit(PromptRequest):
     skills: list[SkillSelection] | None = None
     file_ids: list[str] | None = Field(default=None, max_length=50)
     model: str | None = Field(default=None, max_length=120)
+    reasoning: str | None = Field(default=None, min_length=1, max_length=64)  # a level of the model's reasoning.toml profile
     mode: Literal["chat", "work"] | None = None
 
 
@@ -443,6 +446,7 @@ class ConversationFork(BaseModel):
 class RunRetry(BaseModel):
     expected_branch_revision: int | None = Field(default=None, ge=0)
     model: str | None = Field(default=None, max_length=120)
+    reasoning: str | None = Field(default=None, min_length=1, max_length=64)  # a level of the model's reasoning.toml profile
     mode: Literal["chat", "work"] | None = None
 
 

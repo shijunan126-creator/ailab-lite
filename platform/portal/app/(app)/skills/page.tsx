@@ -4,7 +4,7 @@ import { formatBytes } from "../../../lib/format";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Switch from "../../../components/switch";
-import { IconDownload, IconEye, IconPencil, IconPlus, IconRetry, IconSparkles, IconTrash, IconUpload } from "../../../components/icons";
+import { IconChevronDown, IconDownload, IconEye, IconGrid, IconPencil, IconPlus, IconRetry, IconSparkles, IconTrash, IconUpload } from "../../../components/icons";
 import RowMenu, { RowAction } from "../../../components/row-menu";
 import { skillIcon } from "../../../components/chat/composer";
 import SkillEditor from "../../../components/skills/skill-editor";
@@ -48,6 +48,7 @@ function SkillRow({
   s,
   busy,
   locked,
+  nested,
   onToggle,
   onOpen,
   onCustomize,
@@ -57,6 +58,7 @@ function SkillRow({
   s: Skill;
   busy: boolean;
   locked?: boolean;
+  nested?: boolean;
   onToggle: (on: boolean) => void;
   onOpen: () => void;
   onCustomize?: () => void;
@@ -85,7 +87,7 @@ function SkillRow({
   const scanning = s.error === SCANNING; // a new version on its way, not a broken skill
   const broken = !!s.error && !scanning;
   return (
-    <div className={`mrow ${s.enabled || !toggleable ? "" : "off"}`}>
+    <div className={`mrow ${s.enabled || !toggleable ? "" : "off"} ${nested ? "nested" : ""}`}>
       <span className={`mrow-icon ${broken ? "broken" : ""}`}>
         {scanning ? <span className="draft-spin" /> : <Icon size={17} />}
       </span>
@@ -108,6 +110,24 @@ function SkillRow({
         {actions.length ? <RowMenu label={s.title} actions={actions} /> : null}
       </div>
     </div>
+  );
+}
+
+/** The always-on office skills: one row that opens to show them, since there is nothing to switch and little to read. */
+function BaseSkills({ skills, onOpen }: { skills: Skill[]; onOpen: (s: Skill) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="mrow base-skills">
+        <span className="mrow-icon"><IconGrid size={17} /></span>
+        <button className="mrow-main" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <span className="mrow-title"><span>基础技能</span></span>
+          <span className="mrow-desc">{skills.map((s) => s.title).join("、")}</span>
+        </button>
+        <span className={`mrow-trail base-skills-chevron ${open ? "open" : ""}`} aria-hidden="true"><IconChevronDown size={16} /></span>
+      </div>
+      {open ? skills.map((s) => <SkillRow key={s.name} s={s} busy={false} nested onToggle={() => undefined} onOpen={() => onOpen(s)} />) : null}
+    </>
   );
 }
 
@@ -428,15 +448,20 @@ export default function SkillsPage() {
           {skills === null ? (
             <div className="mlist-empty">加载中…</div>
           ) : (
-            platform.map((s) => (
-              <SkillRow
-                key={s.name}
-                s={s}
-                busy={busy === s.name}
-                onToggle={(on) => toggle(s, on)}
-                onOpen={() => setViewing(s)}
-              />
-            ))
+            <>
+              {platform.filter((s) => skillKind(s) !== "base").map((s) => (
+                <SkillRow
+                  key={s.name}
+                  s={s}
+                  busy={busy === s.name}
+                  onToggle={(on) => toggle(s, on)}
+                  onOpen={() => setViewing(s)}
+                />
+              ))}
+              {platform.some((s) => skillKind(s) === "base") ? (
+                <BaseSkills skills={platform.filter((s) => skillKind(s) === "base")} onOpen={setViewing} />
+              ) : null}
+            </>
           )}
         </div>
       </section>

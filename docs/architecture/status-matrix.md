@@ -1,3 +1,5 @@
+2026-11-11 思考强度（ADR0038，`feat/reasoning-effort`）：模型按 `reasoning.toml` 档位组提供思考强度，DeepSeek 低/高/最高、默认低，按模型记住上次选择；档位写入 `run.options` 并在整次回答内固定（同档位续轮缓存 96–97%，换档那一轮冷）。技能页基础技能收成一行。PR CI 验收中。见[记录](../progress/updates/2026-11-11-reasoning-effort.md)。
+
 2026-11-11 记忆只有一种行（ADR0037，`feat/memory-single-origin`）：去掉受保护/推断/待确认/暂停，敏感内容照常记、证件号/卡号/凭据不记，一次性整理可拆分混合行，迁移0069、ABI7；定向测试与真实模型（整理/记忆页对话框/对话工具，缓存97.4%）通过，PR CI 验收中，未部署。见[记录](../progress/updates/2026-11-11-memory-single-origin.md)。
 
 2026-11-10 记忆质量与整理节奏（ADR0036，`feat/memory-quality`）：每晚每用户一条整理链、删除来源保留记忆、中文标准/转变/理由代号（ABI6）、来源项目标签（0067）与独立项目文件隔离、旧文档按新标准整理一次、记忆页分类卡片已实施，PR CI 验收中，未部署。真实库副本对比未做（VM 停止），合成评估与六场景缓存见[记录](../progress/updates/2026-11-10-memory-quality.md)。

@@ -12,6 +12,7 @@
   --nav-selected: #e4e4e0;
   --background: #ffffff;
   --popover: #ffffff;
+  --popover-hover: #f4f4f2; /* a row under the pointer in a menu */
   --subtle: #f4f4f2;
   --sunken: #efefec;
 
@@ -95,6 +96,7 @@
   --nav-selected: #27272b;
   --background: #19191b;
   --popover: #222225;
+  --popover-hover: #2e2e33; /* --subtle is darker than the popover here, so hover needs its own value */
   --subtle: #212124;
   --sunken: #151517;
 

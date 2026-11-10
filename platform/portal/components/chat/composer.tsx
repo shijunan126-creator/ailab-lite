@@ -61,6 +61,7 @@ export default function Composer({
   onMode: _onMode,
   modeLocked: _modeLocked,
   model,
+  levelOf,
   onModel,
   busy,
   running,
@@ -80,7 +81,8 @@ export default function Composer({
   modeLocked?: boolean;
   models: ModelInfo[];
   model: string;
-  onModel: (id: string) => void;
+  levelOf: (modelId: string) => string | undefined;
+  onModel: (id: string, level?: string) => void;
   busy: boolean;
   running: boolean;
   // while an answer runs the message waits for it (steer: or goes into it at its next step)
@@ -419,7 +421,7 @@ export default function Composer({
             const limit = selectedModel?.input_budget_tokens || selectedModel?.context_tokens;
             return limit ? <ContextMeter used={context?.used ?? null} limit={limit} compactAt={context?.compactAt ?? null} draft={estimateTokens(text)} /> : null;
           })()}
-          <ModelMenu models={models} value={model} onChange={onModel} />
+          <ModelMenu models={models} value={model} levelOf={levelOf} onChange={onModel} />
           {queueing && text.trim() ? (
             <button type="button" className="send-btn queue" onClick={() => send(false)} disabled={!canSend} aria-label="排队发送" title="回答完成后发送（⌥↵ 立即插入）">
               <IconQueue size={16} />

@@ -1,0 +1,25 @@
+# Thinking strength (思考强度) users can pick next to the model, one profile per model family.
+#
+# A model in models.toml opts in with `reasoning = "<profile>"`; a model without it shows no choice and its
+# requests carry none of these fields. Several catalog entries (the same model behind different gateways)
+# can share a profile. This file is read from the same directory as the catalog, else from platform/.
+#
+#   default   the level a user starts with; afterwards the Portal keeps each user's last choice per model
+#   levels    in menu order, weakest first
+#     id      what runs store and the Portal sends (letters, digits . _ -)
+#     name    what users see
+#     body    fields merged into the chat/completions request for this level. Request framing (model,
+#             messages, tools, stream, max_tokens...) cannot be set here.
+#
+# A level is fixed for the whole answer, including its summaries and wrap-ups, so the prefix cache keeps
+# hitting inside a run. Calls that switch thinking off (titles, see disable_reasoning_for_quiet) send no level.
+
+# DeepSeek V4.x: https://api-docs.deepseek.com/guides/thinking_mode
+# The API has three real strengths (low, high, max; medium/xhigh map to high); its own default is high.
+[deepseek-v4]
+default = "low"
+levels = [
+  { id = "low", name = "低", body = { reasoning_effort = "low" } },
+  { id = "high", name = "高", body = { reasoning_effort = "high" } },
+  { id = "max", name = "最高", body = { reasoning_effort = "max" } },
+]

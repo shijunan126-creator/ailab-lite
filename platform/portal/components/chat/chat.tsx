@@ -39,24 +39,55 @@ const WORK_ONLY: ForkMode[] = ["work"];
 // answers started on the new-chat page: the conversation page that takes over follows them from their start, like a send
 const startedHere = new Set<string>();
 
+const LEVELS_KEY = "ailab.reasoning"; // model id -> the thinking strength last picked for it
+
+function savedLevels(): Record<string, string> {
+  try {
+    const value = JSON.parse(localStorage.getItem(LEVELS_KEY) || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
 function useModels() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [model, setModelState] = useState("");
+  const [levels, setLevels] = useState<Record<string, string>>({});
   useEffect(() => {
-    // The platform decides which models exist; the user only picks one (their last choice is remembered).
+    // The platform decides which models exist and their levels; the user picks, and the last choice of each is remembered.
     api<{ default: string | null; models: ModelInfo[] }>("/v1/models")
       .then((res) => {
         setModels(res.models);
+        setLevels(savedLevels());
         const remembered = localStorage.getItem("ailab.model");
         setModelState(res.models.some((m) => m.id === remembered) ? remembered! : res.default || res.models[0]?.id || "");
       })
       .catch(() => setModels([]));
   }, []);
-  const setModel = (id: string) => {
+  /** The level a model runs with: the user's last pick while the platform still offers it, else the platform default. */
+  const levelOf = useCallback(
+    (id: string) => {
+      const offered = models.find((m) => m.id === id)?.reasoning;
+      if (!offered) return undefined;
+      return offered.levels.some((l) => l.id === levels[id]) ? levels[id] : offered.default;
+    },
+    [models, levels],
+  );
+  const setModel = (id: string, level?: string) => {
     setModelState(id);
     localStorage.setItem("ailab.model", id);
+    if (level) {
+      const next = { ...savedLevels(), [id]: level }; // re-read: another tab may have picked for another model
+      setLevels(next);
+      try {
+        localStorage.setItem(LEVELS_KEY, JSON.stringify(next));
+      } catch {
+        // storage full or blocked: the choice still holds for this page
+      }
+    }
   };
-  return { models, model, setModel };
+  return { models, model, setModel, levelOf, reasoning: levelOf(model) };
 }
 
 /** "Talk about these": the library opens a new chat with ?files=a,b already attached. */
@@ -81,7 +112,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const router = useRouter();
   const initialFiles = useInitialFiles(!id);
   const projects = useProjects();
-  const { models, model, setModel } = useModels();
+  const { models, model, setModel, levelOf, reasoning } = useModels();
   // a conversation opened before in this tab shows at once; the fresh copy replaces it when it arrives
   const [detail, setDetail] = useState<ConversationDetail | null>(() => (id ? cachedConversation(id) : null));
   const modeInitialized = useRef(false);
@@ -464,7 +495,12 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     return out;
   }, [detail, libraryPreviews]);
 
-  const modelName = (m: string) => models.find((x) => x.id === m)?.name || m;
+  /** What answered a turn: the model and, when it has levels, the thinking strength that run used. */
+  const modelName = (m: string, level?: string) => {
+    const info = models.find((x) => x.id === m);
+    const used = info?.reasoning?.levels.find((l) => l.id === level)?.name;
+    return used ? `${info!.name} · ${used}` : info?.name || m;
+  };
 
   const openFiles = previews.filter((p) => !closedFiles.includes(previewTabKey(p)));
   function showFile(filename: string, completed?: Run) {
@@ -629,7 +665,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       const convId = id || created!.id;
       const run = await api<Run>(`/v1/conversations/${convId}/messages`, {
         method: "POST", signal,
-        body: JSON.stringify({ prompt, model: model || undefined, file_ids: fileIds, ...options, expected_branch_revision: detail?.branch_revision ?? 0 }),
+        body: JSON.stringify({ prompt, model: model || undefined, reasoning, file_ids: fileIds, ...options, expected_branch_revision: detail?.branch_revision ?? 0 }),
       });
       if (created) {
         // the conversation page starts from what is already known: the question shows at once and its answer streams in
@@ -666,7 +702,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       const item = await api<QueuedMessage>(`/v1/conversations/${id}/queue`, {
         method: "POST",
         signal: actionController.current.signal,
-        body: JSON.stringify({ prompt, file_ids: fileIds, model: model || undefined, steer, ...options, expected_branch_revision: detail?.branch_revision ?? 0 }),
+        body: JSON.stringify({ prompt, file_ids: fileIds, model: model || undefined, reasoning, steer, ...options, expected_branch_revision: detail?.branch_revision ?? 0 }),
       });
       markDetailWrite();
       setDetail((d) => (d ? { ...d, queue: [...(d.queue || []).filter((q) => q.id !== item.id), item] } : d));
@@ -800,7 +836,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     try {
       const fresh = await api<Run>(`/v1/runs/${run.id}/retry`, {
         method: "POST", signal: actionController.current.signal,
-        body: JSON.stringify({ model: model || null, expected_branch_revision: detail?.branch_revision ?? 0 }),
+        body: JSON.stringify({ model: model || null, reasoning, expected_branch_revision: detail?.branch_revision ?? 0 }),
       });
       branchTo(run, fresh);
     } catch (err: any) {
@@ -817,7 +853,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     try {
       const fresh = await api<Run>(`/v1/runs/${run.id}/edit`, {
         method: "POST", signal: actionController.current.signal,
-        body: JSON.stringify({ prompt, skills, file_ids: null, model: model || null, mode: null, expected_branch_revision: detail?.branch_revision ?? 0 }),
+        body: JSON.stringify({ prompt, skills, file_ids: null, model: model || null, reasoning, mode: null, expected_branch_revision: detail?.branch_revision ?? 0 }),
       });
       branchTo(run, fresh);
       return true;
@@ -973,7 +1009,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     enqueue({
       expectedBranchRevision: detail?.branch_revision ?? 0,
       conversationId: id, projectId: projectId, prompt: message.prompt, attachments: message.attachments, options: message.options, docRefs: message.docRefs,
-      model, vision: !!info?.capabilities?.includes("vision"), steer: message.steer, queued: running && !!id && !question,
+      model, reasoning, vision: !!info?.capabilities?.includes("vision"), steer: message.steer, queued: running && !!id && !question,
     });
     stick.current = true;
     return true;
@@ -996,6 +1032,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       modeLocked={!!id}
       models={models}
       model={model}
+      levelOf={levelOf}
       onModel={setModel}
       busy={busy || branchChanging || (!!id && !detail)}
       running={running && !question}
@@ -1097,7 +1134,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     live={streaming === t.id}
                     last={i === turns.length - 1}
                     fresh={!opened.current?.has(t.id)}
-                    modelLabel={modelName(t.model)}
+                    modelLabel={modelName(t.model, t.options?.reasoning)}
                     previewKey={turnPreviewKey}
                     onPreview={turnPreview}
                     onPreviewFile={turnPreviewFile}

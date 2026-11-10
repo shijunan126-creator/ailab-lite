@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import httpx
 
+from .catalog import ReasoningProfile
 from .config import settings
 from .llm import RETRYABLE_STATUS, LLMClient, LLMError, LLMResponse, TextSink, _parse_tool_calls, _StreamState, _usage, model_call
 
@@ -38,6 +39,7 @@ class ModelTransport(LLMClient):
         echo_reasoning: bool = False,
         disable_reasoning_for_quiet: bool = False,
         session_header: str = "",
+        reasoning: ReasoningProfile | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -48,6 +50,7 @@ class ModelTransport(LLMClient):
         self.echo_reasoning = echo_reasoning
         self.disable_reasoning_for_quiet = disable_reasoning_for_quiet
         self.session_header = session_header
+        self.reasoning = reasoning
 
     def _outgoing(self, messages: list[dict]) -> list[dict]:
         if self.echo_reasoning:
@@ -125,6 +128,9 @@ class ModelTransport(LLMClient):
             payload["max_tokens"] = call.max_output_tokens
             if call.quiet and self.disable_reasoning_for_quiet and not call.continues_prefix:
                 payload["thinking"] = {"type": "disabled"}
+            elif self.reasoning is not None:
+                # The Run's level for every call it makes, side calls included, so the prefix cache keeps hitting.
+                payload.update(self.reasoning.resolve(call.reasoning).body)
             if call.run_id:
                 headers["x-run-id"] = call.run_id
             headers["x-call-id"] = call.call_id

@@ -89,6 +89,7 @@ def list_models(_: User = Depends(current_user)) -> dict:
         "models": [
             {
                 **m.public(),
+                **({"reasoning": profile.public()} if (profile := catalog.reasoning_for(m)) else {}),
                 "default": m.id == default,
                 "context_tokens": m.context_tokens,
                 "input_budget_tokens": ModelPolicy.input_budget(m),
@@ -119,6 +120,7 @@ def validate_run_input(
     document_tools_version=None,
     preparation_send_id=None,
     frozen_document_input=None,
+    reasoning=None,
 ):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
@@ -205,6 +207,16 @@ def validate_run_input(
     spec = catalog.get(model_id)
     if spec is None or not spec.available:
         raise HTTPException(status_code=400, detail=f"model not available: {model_id}")
+    profile = catalog.reasoning_for(spec)
+    if profile is None:
+        if reasoning is not None:
+            raise HTTPException(400, "该模型不能选择思考强度")
+    else:
+        # Stored on the run so the whole answer, its summaries and any resume use one level.
+        level = profile.level(reasoning if reasoning is not None else profile.default)
+        if level is None:
+            raise HTTPException(400, f"思考强度无效：{reasoning}")
+        options["reasoning"] = level.id
 
     inputs: list[str] = []
     image_count = 0
@@ -282,6 +294,7 @@ def start_run(
     document_tools_version=None,
     frozen_document_input=None,
     preparation_send_id=None,
+    reasoning=None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
@@ -311,6 +324,7 @@ def start_run(
                         if selections is not None
                         else None,
                         "template": template.model_dump(mode="json") if template is not None else None,
+                        **({"reasoning": reasoning} if reasoning is not None else {}),
                     },
                     sort_keys=True,
                     ensure_ascii=False,
@@ -337,6 +351,7 @@ def start_run(
             document_tools_version=document_tools_version,
             preparation_send_id=client_send_id or preparation_send_id,
             frozen_document_input=frozen_document_input,
+            reasoning=reasoning,
         )
         from .document_view import validate_refs
 
@@ -448,6 +463,7 @@ def create_run(body: RunCreate, user: User = Depends(current_user), db: Session 
         upload_ids=body.upload_ids,
         client_send_id=body.client_send_id,
         client="portal",
+        reasoning=body.reasoning,
     )
     return run_dict(db, run, detail=True)
 
@@ -698,11 +714,13 @@ def _new_version(db, user, run_id, body, editing=False):
         from .document_view import output as document_refs
 
         options = dict(old.options or {})
+        model = body.model or old.model
+        reasoning = body.reasoning if body.reasoning is not None else options.get("reasoning") if model == old.model else None
         new = start_run(
             db,
             user,
             body.prompt if editing else old.prompt,
-            body.model or old.model,
+            model,
             file_ids,
             None if editing else old.title,
             conversation=conv,
@@ -728,8 +746,10 @@ def _new_version(db, user, run_id, body, editing=False):
             doc_refs=body.doc_refs if editing and body.doc_refs is not None else None,
             frozen_doc_refs=None if editing and body.doc_refs is not None else document_refs(db, "run_prompt", old.id, visible=False),
             client="portal",
+            reasoning=reasoning,
         )
-        new.options = {**{k: v for k, v in options.items() if k not in {"skill", "skill_title", "skills"}}, **new.options}
+        # Validation decided skills and the thinking level afresh; a model without levels must not inherit one.
+        new.options = {**{k: v for k, v in options.items() if k not in {"skill", "skill_title", "skills", "reasoning"}}, **new.options}
         conv.queue_paused = True
         conv.branch_revision += 1
         if editing:

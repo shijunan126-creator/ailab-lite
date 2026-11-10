@@ -22,6 +22,7 @@
 #   max_output_tokens per-call output capacity, including reasoning; also used for the usage reservation
 #   AILAB_MODEL_MAX_OUTPUT_TOKENS can optionally impose a smaller operator ceiling.
 #   capabilities    tools, vision and/or genui; omitted preserves the legacy tools flag
+#   reasoning       thinking strengths users can pick: a profile name from reasoning.toml (omitted: no choice)
 #   default         the model preselected for new runs (exactly one, or the first one is used)
 
 [[models]]
@@ -40,6 +41,7 @@ max_output_tokens = 393216
 capabilities = ["tools", "vision", "genui"]
 echo_reasoning = true
 disable_reasoning_for_quiet = true
+reasoning = "deepseek-v4"
 default = true
 
 [[models]]

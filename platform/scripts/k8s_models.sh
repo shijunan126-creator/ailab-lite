@@ -9,6 +9,9 @@ set -euo pipefail
 NS=platform
 # MODELS_FILE: another catalog (deploy.sh passes platform/models.local.toml when there is one)
 FILE=${MODELS_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/models.toml}
+# thinking-strength profiles the catalog names: the one beside it, else platform/reasoning.toml (catalog.reasoning_path)
+REASONING=$(dirname "$FILE")/reasoning.toml
+[ -f "$REASONING" ] || REASONING=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/reasoning.toml
 
 # refuse a broken catalog before it reaches the cluster
 python3 - "$FILE" <<'PY'
@@ -20,7 +23,7 @@ print("catalog ok:", ids)
 PY
 
 $KUBECTL get ns "$NS" >/dev/null 2>&1 || $KUBECTL create ns "$NS"
-$KUBECTL -n "$NS" create configmap platform-models --from-file=models.toml="$FILE" --dry-run=client -o yaml | $KUBECTL apply -f -
+$KUBECTL -n "$NS" create configmap platform-models --from-file=models.toml="$FILE" --from-file=reasoning.toml="$REASONING" --dry-run=client -o yaml | $KUBECTL apply -f -
 if [ -z "${NO_RESTART:-}" ]; then
   for d in api agent; do $KUBECTL -n "$NS" rollout restart "deploy/platform-$d" >/dev/null 2>&1 || true; done
   for d in api agent; do $KUBECTL -n "$NS" rollout status "deploy/platform-$d" --timeout=240s 2>&1 | tail -1 || true; done
