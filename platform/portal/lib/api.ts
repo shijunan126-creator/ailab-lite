@@ -457,6 +457,7 @@ export type MemoryItem = {
   project_id: string | null;
   kind: "preference" | "fact" | "interest" | "project" | "reference";
   origin: "explicit" | "chat" | "inferred" | "edited" | "manual"; // inferred: the AI concluded it; the rest the user said or wrote
+  created_by?: "addition" | "correction" | "condense" | "transition"; // transition: the past tense of a line whose state changed
   content: string;
   status: "active" | "review";
   observed_at: string | null;

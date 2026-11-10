@@ -687,20 +687,22 @@ async def process_dream(run_id: str) -> None:
                     for identity, e in old_targets.items()
                     if identity in current_targets and fact_hash(e["content"]) == fact_hash(current_targets[identity]["content"])
                 ]
-                ignored = {}
-                for item in result.get("ignored_runs", []):
-                    if (
-                        isinstance(item, dict)
-                        and item.get("run") in {e.run_id for e in episodes}
-                        and item.get("reason") in {"test", "repro", "no_signal"}
-                    ):
-                        ignored[item["run"]] = item["reason"]
+                from .document import CODES, code
+
+                ignored, codes = {}, {}
+                for item in result.get("ignored_runs") or []:
+                    if not isinstance(item, dict) or item.get("run") not in {e.run_id for e in episodes}:
+                        continue
+                    letter = code(item.get("r"), CODES["ignored"])
+                    codes[letter] = codes.get(letter, 0) + 1
+                    # T (test/repro) is skipped for good and its text leaves later episodes; any other reason is no_signal
+                    ignored[item["run"]] = "test" if letter == "T" else "no_signal"
                 from ..memory_recall.lineage import redact_episode_context
 
-                stale_context = {e.run_id for e in episodes if ignored.get(e.context_run_id) in {"test", "repro"}}
+                stale_context = {e.run_id for e in episodes if ignored.get(e.context_run_id) == "test"}
                 evidence = [e for e in episodes if e.run_id not in ignored and e.run_id not in stale_context]
-                redact_episode_context(db, [rid for rid, reason in ignored.items() if reason in {"test", "repro"}])
-                changed, audit = apply_ops(current["entries"], unchanged, evidence, result.get("ops", []), user, scope)
+                redact_episode_context(db, [rid for rid, reason in ignored.items() if reason == "test"])
+                changed, audit = apply_ops(current["entries"], unchanged, evidence, result.get("ops", []), user, scope, codes)
                 after = save(db, user, current, changed)
                 record(job, current, after)
                 if not runs:
@@ -721,7 +723,7 @@ async def process_dream(run_id: str) -> None:
                     if episode.run_id in stale_context and episode.run_id not in ignored:
                         item.source_offset = max(0, item.source_offset - len(_user_part(episode.digest)))
                         item.state = "ready"
-                    if ignored.get(episode.run_id) in {"test", "repro"}:
+                    if ignored.get(episode.run_id) == "test":
                         item.state = "skipped"
                     item.candidates = []
                     db.add(item)
@@ -737,6 +739,7 @@ async def process_dream(run_id: str) -> None:
                         "changed": len(audit),
                         "ops": audit,
                         "ignored_runs": ignored,
+                        "codes": codes,
                     },
                     cursor_run_id=runs[-1].id if runs else None,
                 )

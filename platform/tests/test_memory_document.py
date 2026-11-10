@@ -58,10 +58,10 @@ def test_unknown_ids_bad_quotes_protected_lines_and_tombstones():
     user = SimpleNamespace(settings={"memory": {"tombstones": [{"hash": fact_hash("被删除的事实")}]}})
     shown = [entry("mem_a", origin="explicit"), entry("mem_b", origin="edited"), entry("mem_c")]
     ops = [
-        {"op": "delete", "id": "mem_a", "reason": "outdated"},
+        {"op": "delete", "id": "mem_a", "r": "I", "quote": "我住在上海", "run": "run_one"},
         {"op": "merge", "ids": ["mem_a", "mem_c"], "content": "合并"},
         {"op": "update", "id": "mem_b", "content": "新信息", "run": "run_one", "quote": "助手编造"},
-        {"op": "delete", "id": "unknown", "reason": "duplicate"},
+        {"op": "delete", "id": "unknown", "r": "H"},
         {"op": "add", "kind": "fact", "content": "被删除的事实", "run": "run_one", "quote": "我住在上海"},
     ]
     result, audit = apply_ops(shown, shown, [episode()], ops, user, None)
@@ -86,7 +86,8 @@ def test_condense_same_call_and_oldest_inferred_eviction(monkeypatch):
     request = messages([episode()], shown)
     assert len(request) == 3 and request[-1]["content"].endswith('"}')
     assert render(shown) == json.loads(request[-1]["content"])["document"]
-    assert len(json.dumps(request, ensure_ascii=False)) < used_chars(shown) + 2500
+    # the static standard (categories, order, examples) is the only overhead besides the document itself
+    assert len(json.dumps(request, ensure_ascii=False)) < used_chars(shown) + len(request[0]["content"]) + 500
     assert "85%" in request[0]["content"] and "75%" in request[0]["content"]
     result, audit = apply_ops(shown, shown, [episode()], [], SimpleNamespace(settings={}), None)
     assert used_chars(result) <= 1000 and audit[0]["ids"] == ["mem_0"]
@@ -181,7 +182,8 @@ def test_add_without_revision_is_deduplicated_and_enforces_hard_ceiling(monkeypa
             "sections",
         }
         item = view["sections"][0]["items"][0]
-        assert set(item) == {"id", "project_id", "kind", "origin", "content", "status", "observed_at", "updated_at", "sources"}
+        fields = {"id", "project_id", "kind", "origin", "created_by", "content", "status", "observed_at", "updated_at", "sources"}
+        assert set(item) == fields
         assert (
             client.post(
                 url,

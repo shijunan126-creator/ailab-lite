@@ -1694,8 +1694,12 @@ def test_work_twenty_steps_strictly_extend_wire_bytes():
     assert platform.checkpoint["state"]["context_epoch"] == 0
 
 
-@pytest.mark.parametrize("abi", [None, 1, 2, 999])
+@pytest.mark.parametrize("abi", [None, 1, 2, 5, 6, 999])
 def test_parent_abi_match_exact_reuse_mismatch_rebuild(monkeypatch, abi):
+    # ABI 6: the memory standard in the static rules and the memory tool's kind description changed (ADR 0036);
+    # a conversation opened under ABI 5 meets one context_abi_changed boundary, an ABI 6 one is reused byte for byte.
+    assert CONTEXT_ABI_VERSION == 6
+
     class Platform(FakePlatform):
         async def get_run(self, run_id):
             run = {**await super().get_run(run_id), "options": {"mode": "chat"}}

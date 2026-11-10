@@ -948,6 +948,7 @@ def _item_out(db, user, row, sources=None):
                 "project_id",
                 "kind",
                 "origin",
+                "created_by",
                 "content",
                 "status",
                 "observed_at",

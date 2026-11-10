@@ -372,7 +372,14 @@ MEMORY = {
             "properties": {
                 "action": {"type": "string", "enum": ["list", "add", "replace", "remove"]},
                 "id": {"type": "string"},
-                "kind": {"type": "string", "enum": ["fact", "preference", "project", "interest", "reference"]},
+                "kind": {
+                    "type": "string",
+                    "enum": ["fact", "preference", "project", "interest", "reference"],
+                    "description": "fact关于你：稳定身份、背景、常用环境、经历（含已结束的项目）；"
+                    "preference偏好：明确说过或反复体现的做法；"
+                    "project在做的事：跨多次对话、尚未结束的目标，写做什么+进展；interest关注的话题：领域级兴趣，同领域并入一行；"
+                    "reference资料：用户提供、以后会再用的信息。不记一次性情况、单次交付、逐次提问。",
+                },
                 "content": {"type": "string", "maxLength": 200},
                 "explicit": {"type": "boolean"},
             },

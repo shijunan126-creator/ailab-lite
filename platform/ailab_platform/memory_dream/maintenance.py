@@ -13,6 +13,7 @@ from ..contracts.memory import MemoryEntryInput, MemoryUpdate
 from ..db import SessionLocal
 from ..locks import user_critical_section
 from ..memory_recall import guard
+from ..memory_recall.document import kind
 from ..models import Project, User, utcnow
 from .changes import digest, record, scope_entries
 from .prompts import EDIT_SYSTEM
@@ -110,11 +111,9 @@ async def edit(run_id, token):
                     if action != "remove":
                         # the model's text is checked like anything else that becomes memory; a malformed op is skipped, not fatal
                         try:
+                            rekind = op.get("kind") in {"user", "memory", "fact", "preference", "project", "interest", "reference"}
                             item = MemoryEntryInput(
-                                kind=op.get("kind")
-                                if action == "add"
-                                and op.get("kind") in {"user", "memory", "fact", "preference", "project", "interest", "reference"}
-                                else "memory",
+                                kind=op.get("kind") if rekind else "memory",
                                 content=str(op.get("content") or "").strip(),
                                 project_id=pid,
                                 origin="edited",
@@ -137,10 +136,14 @@ async def edit(run_id, token):
                                 counts["removed"] += 1
                         else:
                             for e in modified:
-                                if e["id"] == op["id"] and e["content"] != item.content:
+                                # a replace may move a line to another kind: an ended project becomes past experience
+                                moved = rekind and kind(e) != kind(item.model_dump())
+                                if e["id"] == op["id"] and (e["content"] != item.content or moved):
                                     e.update(
                                         content=item.content, origin="edited", evidence_run_ids=[], evidence_episode_ids=[], source_quote=""
                                     )
+                                    if rekind:
+                                        e["kind"] = item.kind
                                     counts["replaced"] += 1
                 changed = modified != current["entries"]
                 try:
