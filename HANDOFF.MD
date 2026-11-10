@@ -36,6 +36,7 @@
 - 本机 macOS 若开了系统代理，httpx（`trust_env=True`）连 `127.0.0.1` 也走代理，每次请求多 0.2–0.5 秒：`test_prefix_cache` 本机 3 分多钟、CI 只要 87 秒。conftest 已把回环地址加进 `NO_PROXY`。本机测试比 CI 慢很多时先查这个。
 - `ThreadingHTTPServer.shutdown()` 要等 `serve_forever` 下一次轮询（默认 0.5 秒）。测试服务器统一 `serve_forever(poll_interval=0.01)`；`AILAB_LLM_RETRY_BACKOFF_SECONDS` 在测试里默认 1ms，测退避节奏的测试自己设置。
 - 不要在单元测试里断言绝对墙钟延迟（例如 p95 < 150ms）：共享 runner 加上 xdist 并行时，测到的是相邻 worker 的负载。要验证“有界”，就数加载的行数或执行的语句数，延迟只打印；绝对预算在目标机上测。
+- 本地存储的发现过程每次调用受条目数和 0.1 秒两个上限约束，未完成时列表为空、只返回游标。测试里已用 conftest 把时间上限放宽，只保留条目上限；写依赖发现或 backfill 的 helper 时要循环到 ready/complete，不要假设固定调用次数。
 - `scripts/lock_deps.sh --check` 的旧正则 `[...\[\]-]` 在 POSIX 括号表达式里提前闭合，匹配 0 行，检查恒通过。改正则后先确认它能对旧 constraints 报错，再信它的“consistent”。
 
 ## 2026-11-09 全套测试只在 CI 跑；autouse fixture 拖垮 PG 时限

@@ -87,7 +87,15 @@ os.environ["AILAB_MAX_ACTIVE_RUNS_PER_USER"] = "1000"
 os.environ["AILAB_IMAGE_SEARCH_PROVIDER"] = "mock"  # never call Openverse from tests
 # Retries are exercised for their count and accounting, not their pacing; tests of the backoff set it themselves.
 os.environ["AILAB_LLM_RETRY_BACKOFF_SECONDS"] = "0.001"
-os.environ["AILAB_WATCHDOG_MODE"] = "off"  # scripted models answer in order; tests that need the judge turn it on
+os.environ["AILAB_WATCHDOG_MODE"] = "off"
+
+# Local storage discovery stops after DISCOVERY_ENTRIES entries or DISCOVERY_SECONDS (0.1s), whichever comes first,
+# and lists nothing until it is done. Test roots are tiny, so the entry bound alone finishes them in one call; the
+# wall-clock bound only made listings depend on how busy the runner was (an xdist CI run starved it).
+# Incremental discovery is still exercised through discover(limit=...) in test_local_object_index.
+from ailab_platform.adapters import local_object_index as _local_object_index  # noqa: E402
+
+_local_object_index.DISCOVERY_SECONDS = 60.0  # scripted models answer in order; tests that need the judge turn it on
 
 
 def pytest_sessionfinish(session, exitstatus):
