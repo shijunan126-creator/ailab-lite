@@ -1,3 +1,13 @@
+## 2026-11-10 记忆质量与整理节奏
+
+- 续批行会让整理在白天跑：链停止时只要新建一个 `due_at` 已过期的 pending 行，`recover_pending` 每 5 分钟就会捡起执行，`prepare` 也不看窗口。链的结束只能写在现有行上；没处理完的对话留给 `MemoryWorkItem` 状态。
+- 链的时钟（`cutoff_at`/`chain_started_at`/`deadline`）放在 `report` 里，后继批次必须原样继承；旧测试直接造 cron 行时要带 `chain_started_at` 或改用 manual，否则会被“过窗作废”。
+- `memory_items` 新字段必须同时进 `legacy()`、`replace_entries`、`MemoryEntryInput`（extra=forbid）、`write_memory` 合并表、`_stored_entry`、维护输入；只改其中几处，旧客户端或夜间保存会把字段写回 null。需要一条全路径往返测试。
+- 提示词的操作格式必须写出 `"op"` 键：旧 `DOCUMENT_SYSTEM` 写成 `add {kind,...}`，真实模型照此省略 `op`，`apply_ops` 全部丢弃，夜间整理实际不生效。
+- ruff E501 把中文按宽度 2 计；长提示词行用字符串内 `\` 续行，不要关规则。
+- 函数默认参数在定义时求值：`limit=MAX_DOCS` 让 monkeypatch 失效，用 `None` 再在函数内取模块值。
+- 旧流程写成 explicit 的流水账行受保护，按新标准的旧数据整理不会动它们，只能用户在页面清理。
+
 ## 2026-11-10 全系统记忆审查
 
 - shared项目写入scope必须先归一为账号，不能把run_project直接当写scope；遗留project行用0066标记并在用户锁内程序融合。重复行保留condense重定向，review一起迁移；纠正沿链给当前handle。

@@ -1,3 +1,5 @@
+2026-11-10 记忆质量与整理节奏（ADR0036，`feat/memory-quality`）：每晚每用户一条整理链、删除来源保留记忆、中文标准/转变/理由代号（ABI6）、来源项目标签（0067）与独立项目文件隔离、旧文档按新标准整理一次、记忆页分类卡片已实施，PR CI 验收中，未部署。真实库副本对比未做（VM 停止），合成评估与六场景缓存见[记录](../progress/updates/2026-11-10-memory-quality.md)。
+
 2026-11-10 PR174全系统审查：shared写账号、closed无内容重定向、review统一、逐op并发/维护保护、当前handle纠正、轻量设置接口已实施；最终CI待验，详见[记录](../progress/updates/2026-11-09-memory-document.md)。
 
 2026-11-09 PR174 审查修正：暂停行输入、独立创建/替换原因、ABI5行围栏、无变化不写、用户删除追加失效（保持快照前缀）及closed来源索引清理已实施，定向验证/CI见[记录](../progress/updates/2026-11-09-memory-document.md)。
