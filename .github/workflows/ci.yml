@@ -63,9 +63,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
-    # PR158: PostgreSQL took 13m on one runner and reached 93% at the 15m job limit on another.
-    # Include setup/artifact time and runner variance; test coverage and acceptance gates are unchanged.
-    timeout-minutes: 20
+    # The suite runs on every runner core (pytest-xdist; tests/conftest.py gives each worker its own databases).
+    # Serially it had grown to 14-19m and hit the 20m limit; a slow suite is fixed, not given more time.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -114,7 +114,12 @@ jobs:
         run: |
           test -x /usr/lib/postgresql/16/bin/pg_dump
           echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
-          PGPASSWORD=pg /usr/lib/postgresql/16/bin/psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE ailab_mig'
+          export PGPASSWORD=pg
+          psql=(/usr/lib/postgresql/16/bin/psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1)
+          "${psql[@]}" -c 'CREATE DATABASE ailab_mig'
+          # A throwaway test server: durability only costs time here. Query plans and locking are unchanged.
+          "${psql[@]}" -c 'ALTER SYSTEM SET fsync = off' -c 'ALTER SYSTEM SET synchronous_commit = off' \
+            -c 'ALTER SYSTEM SET full_page_writes = off' -c 'SELECT pg_reload_conf()'
       - name: Tests (SQLite coverage / PostgreSQL full suite)
         env:
           DATABASE: ${{ matrix.database }}
@@ -124,7 +129,7 @@ jobs:
           if [ "$DATABASE" = sqlite ]; then
             args+=(--cov=ailab_platform --cov-report=term-missing --cov-report=xml:test-results/coverage.xml)
           fi
-          pytest tests -ra --durations=10 --junitxml=test-results/results.xml "${args[@]}"
+          pytest tests -n auto --dist worksteal -ra --durations=10 --junitxml=test-results/results.xml "${args[@]}"
       - name: Require real database and queue coverage
         env:
           DATABASE: ${{ matrix.database }}
@@ -245,11 +250,16 @@ jobs:
         run: python -m unittest discover -v
 
   e2e:
-    # The fixture owns Portal Node tests + an isolated production build, avoiding a duplicate build job.
+    # Browser tests run serially against one stack, so they are split across runners; each shard builds its own
+    # stack (Portal production build included). The Portal unit tests run once, in shard 1.
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     services:
       redis:
         image: redis:7-alpine
@@ -259,6 +269,7 @@ jobs:
           --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       AILAB_E2E: "1"
+      AILAB_E2E_SHARD: ${{ matrix.shard }}/3
       AILAB_TEST_REDIS_URL: redis://127.0.0.1:6379/15
     steps:
       - uses: actions/checkout@v7
@@ -278,9 +289,29 @@ jobs:
       - name: Portal dependencies
         working-directory: platform/portal
         run: npm ci --no-audit --no-fund
+      - name: Portal unit tests
+        if: matrix.shard == 1
+        working-directory: platform/portal
+        run: npm test
       - name: Office reader for isolated browser fixtures
         working-directory: vendor/office-suite/runtime
         run: npm ci --ignore-scripts --no-audit --no-fund && npm run build
+      # LibreOffice and the browser libraries are ~210 MB of .deb files. The Ubuntu mirrors have delivered them at
+      # 370 kB/s (8.5 minutes, cancelling a shard), so the downloads are kept between runs. The key follows the runner
+      # image; a new image restores the previous set and fetches only the packages that changed.
+      - name: Package download cache
+        id: apt
+        run: |
+          dir="$RUNNER_TEMP/apt-archives"
+          mkdir -p "$dir/partial"
+          printf 'Dir::Cache::Archives "%s";\nAPT::Keep-Downloaded-Packages "true";\n' "$dir" | sudo tee /etc/apt/apt.conf.d/99ci-archives
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.apt.outputs.dir }}/*.deb
+          key: e2e-apt-${{ steps.apt.outputs.image }}
+          restore-keys: e2e-apt-
       - name: Chromium and Office visual fixtures
         working-directory: platform
         run: |
@@ -291,13 +322,13 @@ jobs:
           playwright install --with-deps chromium
           # Real page previews need Writer/Impress; workspace XLSX fallback recalculation also needs Calc.
           sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-impress libreoffice-calc poppler-utils fonts-noto-cjk
-      - name: Browser tests (includes Portal tests/build)
+      - name: Browser tests (includes Portal build)
         working-directory: platform
         run: pytest e2e -ra --durations=10 --junitxml=test-results/e2e.xml
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: e2e
+          name: e2e-${{ matrix.shard }}
           path: |
             platform/test-results/
             platform/e2e-logs/

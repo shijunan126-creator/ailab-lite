@@ -15,7 +15,7 @@ def test_redis_health_ping_has_a_short_deadline():
 
     server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), StalledRedis)
     server.daemon_threads = True
-    serving = threading.Thread(target=server.serve_forever, daemon=True)
+    serving = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     serving.start()
     queue = RedisQueue(f"redis://127.0.0.1:{server.server_address[1]}/0")
     finished = threading.Event()

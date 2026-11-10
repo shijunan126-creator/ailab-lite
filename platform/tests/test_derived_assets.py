@@ -72,10 +72,14 @@ def ledger(request, tmp_path):
 
 
 def initialize(factory, storage):
-    for _ in range(3):
+    # Until complete, like the other backfill helpers: the number of calls is the backfill's business, not the test's.
+    for _ in range(200):
         with factory() as db:
             assets.backfill_batch(db, storage)
             db.commit()
+            if db.get(DerivedBudget, 1, populate_existing=True).backfill_complete:
+                return
+    raise AssertionError("derived accounting did not initialise")
 
 
 def write(factory, storage, key, data=b"data", **options):

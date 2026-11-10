@@ -5,10 +5,10 @@
 | 改动 | 验证 |
 |---|---|
 | 纯文档白名单 | 选择器测试 + 最终 CI |
-| 仅 Portal | quality、shell/部署静态检查、E2E（含 Node tests 与隔离生产 build） |
+| 仅 Portal | quality、shell/部署静态检查、E2E 三片（第 1 片跑 Node tests；每片隔离生产 build） |
 | 后端/契约/依赖/部署/工作流/未知路径 | quality、SQLite + Redis coverage、PG16 + Redis 全套/迁移、真实 MinIO S3 契约、shell、E2E |
 
-只取消同 PR 被新提交替代的运行；main 不取消运行中的验收。双库 fail-fast=false，存储契约独立，便于一次拿到完整诊断。每个 job 有截止时间，JUnit/coverage 与服务日志保留 7 天。
+Python 双库套件用 pytest-xdist 占满 runner 全部核（`-n auto --dist worksteal`）；`tests/conftest.py` 给每个 worker 独立临时目录、`<库名>_gwN` PostgreSQL 库和下移的 Redis db（15、14…），因此测试仍可以清空 schema 或 flush Redis。CI 的 PG 服务关闭 fsync/synchronous_commit/full_page_writes，只影响一次性库的持久性，不影响查询计划与锁。E2E 按用例 id 的稳定哈希分 3 片（`AILAB_E2E_SHARD=k/3`），每片自建 stack。只取消同 PR 被新提交替代的运行；main 不取消运行中的验收。双库 fail-fast=false，存储契约独立，便于一次拿到完整诊断。每个 job 有截止时间，JUnit/coverage 与服务日志保留 7 天。
 
 稳定汇总检查名为 **CI**，应作为分支保护的 required check；分组 job 因范围跳过是正常结果。最终检查仍会拒绝失败、取消、选择器错误和选中任务意外跳过。仓库保护设置由维护者配置，本轮没有修改。
 
@@ -32,6 +32,7 @@ cd platform
 
 ## 门禁与覆盖完整性
 
+- `scripts/lock_deps.sh --check` 比较 pyproject 解析结果与 constraints 的全部固定版本；2026-11-10 前其正则匹配不到任何行，检查恒为通过，`defusedxml` 因此一直未固定。
 - 文档优化只信任明确的 Markdown 白名单；`docs/` 中 Python/Shell/配置等仍跑全套。整个 PR 的增加、删除、重命名两端均参与判断；未知路径保守执行。
 - `ci_gate.py` 独立验证范围输出、完整 job 集合与终态；选中的 job 必须 success。门禁的 unittest 穷举三种有效范围下的 3,072 组任务终态组合。
 - `verify_junit.py` 要求真实 Redis、PostgreSQL 数据库/账本/迁移/备份和 S3 的目标组实际执行并成功。JUnit 缺失、没有匹配用例、skip/xfail 都失败；S3 仅允许明确的 local inode 用例跳过，不能让整组跳过。
@@ -40,11 +41,11 @@ cd platform
 
 ## 浏览器失败诊断
 
-e2e job 上限为 20 分钟：Linux 完整浏览器步骤实测约 12.4 分钟，另需安装 Chromium/Office 视觉页依赖，15 分钟会挤掉失败诊断与产物收集余量。
+e2e 每片上限 20 分钟。LibreOffice 与浏览器依赖约 210MB，Ubuntu 源有时只有几百 kB/s；`.deb` 下载目录按 runner 镜像版本用 actions/cache 保存（换镜像时恢复旧包、只下载有变化的包）。串行时单 job 约 17–20 分钟（约 3 分钟 Portal build + 14 分钟浏览器用例），分片后每片重复安装与 build，但用例时间约为三分之一。
 
 原生 Office 用例的 mock fixture 从当前 checkout 构建生产 viewer adapter，复用工作流安装的固定 runtime 依赖，不依赖宿主 `/opt` reader；索引 failed/unsupported 或界面回退时立即报告原因。正文读取与原生索引是两个入口，须按同一个 file_id 核对 trace/派生元数据。Linux 复现与本轮耗时见[记录](../docs/progress/updates/2026-11-03-office-linux-e2e.md)。
 
-E2E 仍只构建一次 Portal。`portal-tests.log`、`portal-build.log` 和服务日志流式落盘，构建失败或超时也可下载。每个浏览器 context 记录 trace，成功立即丢弃，失败保存 `failure-<node-id-hash>.zip` 和视口截图；用 `playwright show-trace` 查看。仅使用隔离账号、离线模型与一次性数据，产物保留 7 天，不能指向真实用户环境。trace 是测试侧开销，不改变线上包；本机 61 项 E2E（含生产构建）约 158 秒，不代表 GitHub runner 或目标机性能。
+每片只构建一次 Portal；Portal 单测是第 1 片的独立步骤，不再在 stack fixture 内重复执行。`portal-build.log` 和服务日志流式落盘（产物名 `e2e-<片号>`），构建失败或超时也可下载。每个浏览器 context 记录 trace，成功立即丢弃，失败保存 `failure-<node-id-hash>.zip` 和视口截图；用 `playwright show-trace` 查看。仅使用隔离账号、离线模型与一次性数据，产物保留 7 天，不能指向真实用户环境。trace 是测试侧开销，不改变线上包；本机 61 项 E2E（含生产构建）约 158 秒，不代表 GitHub runner 或目标机性能。
 
 ## 重型与外部边界
 

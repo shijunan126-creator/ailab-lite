@@ -115,8 +115,13 @@ def test_hourly_self_check_reaches_model_without_event():
     assert any("对照计划" in str(m.get("content")) for m in model.seen_messages[-1])
 
 
+# Stall thresholds sit ~10x above the work a test does before it hangs: at 20-30ms a busy runner tripped the stall
+# before the hung call had started, or between two progress events that were 10ms apart.
+STALL_SECONDS = 0.5
+
+
 def test_stalled_tool_cancels_and_preserves_uncertain_intent(monkeypatch):
-    monkeypatch.setattr(settings, "run_stall_seconds", 0.03)
+    monkeypatch.setattr(settings, "run_stall_seconds", STALL_SECONDS)
     monkeypatch.setattr("ailab_platform.agent.loop.CANCEL_POLL_SECONDS", 0.01)
     canceled = []
 
@@ -139,15 +144,16 @@ def test_stalled_tool_cancels_and_preserves_uncertain_intent(monkeypatch):
 
 
 def test_streamed_progress_prevents_stall(monkeypatch):
-    monkeypatch.setattr(settings, "run_stall_seconds", 0.025)
+    monkeypatch.setattr(settings, "run_stall_seconds", STALL_SECONDS)
     monkeypatch.setattr("ailab_platform.agent.loop.CANCEL_POLL_SECONDS", 0.005)
     platform = FakePlatform()
     loop = AgentLoop(platform, FakeBroker())
     loop._budgets["r"] = WorkBudget(fresh_state(), "j")
 
     async def ongoing():
-        for _ in range(8):
-            await asyncio.sleep(0.01)
+        # Progress every STALL_SECONDS / 10, for longer than STALL_SECONDS in total.
+        for _ in range(15):
+            await asyncio.sleep(STALL_SECONDS / 10)
             await loop._event("r", "agent.delta", {"text": "进展"})
         return 1
 
@@ -214,7 +220,7 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
 
 
 def test_stalled_model_is_canceled_metered_and_paused(monkeypatch):
-    monkeypatch.setattr(settings, "run_stall_seconds", 0.02)
+    monkeypatch.setattr(settings, "run_stall_seconds", STALL_SECONDS)
     monkeypatch.setattr("ailab_platform.agent.loop.CANCEL_POLL_SECONDS", 0.005)
     canceled = []
 
