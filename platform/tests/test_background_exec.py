@@ -157,13 +157,22 @@ def test_pruning_keeps_running_and_recent_completed_handles(tmp_path, monkeypatc
 
     async def scenario():
         active = await execute_tool("exec", {"cmd": "sleep 30", "background": True}, "lease", broker)
+
+        # A start that finds its job already finished returns the result without a handle (by design), so `true` got a
+        # handle only when it lost the race against the start check. Each job here waits for its own release file.
+        def gated(name):
+            return {"cmd": f"while [ ! -e {tmp_path / name} ]; do sleep 0.01; done", "background": True}
+
         try:
             finished = []
-            for _ in range(2):
-                started = await execute_tool("exec", {"cmd": "true", "background": True}, "lease", broker)
+            for index in range(2):
+                started = await execute_tool("exec", gated(f"go-{index}"), "lease", broker)
                 finished.append(started["handle"])
-                await execute_tool("exec_wait", {"handle": started["handle"], "seconds": 2}, "lease", broker)
-            latest = await execute_tool("exec", {"cmd": "true", "background": True}, "lease", broker)
+                (tmp_path / f"go-{index}").touch()
+                done = await execute_tool("exec_wait", {"handle": started["handle"], "seconds": 60}, "lease", broker)
+                assert not done["running"] and done["exit_code"] == 0, done
+            latest = await execute_tool("exec", gated("go-latest"), "lease", broker)
+            (tmp_path / "go-latest").touch()
             assert (broker.root / active["handle"]).exists()
             assert not (broker.root / finished[0]).exists()
             assert (broker.root / finished[1]).exists()

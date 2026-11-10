@@ -41,7 +41,7 @@ cd platform
 
 ## 浏览器失败诊断
 
-e2e 每片上限 15 分钟。串行时单 job 约 17–20 分钟（约 3 分钟 Portal build + 14 分钟浏览器用例），分片后每片重复安装与 build，但用例时间约为三分之一。
+e2e 每片上限 20 分钟。LibreOffice 与浏览器依赖约 210MB，Ubuntu 源有时只有几百 kB/s；`.deb` 下载目录按 runner 镜像版本用 actions/cache 保存（换镜像时恢复旧包、只下载有变化的包）。串行时单 job 约 17–20 分钟（约 3 分钟 Portal build + 14 分钟浏览器用例），分片后每片重复安装与 build，但用例时间约为三分之一。
 
 原生 Office 用例的 mock fixture 从当前 checkout 构建生产 viewer adapter，复用工作流安装的固定 runtime 依赖，不依赖宿主 `/opt` reader；索引 failed/unsupported 或界面回退时立即报告原因。正文读取与原生索引是两个入口，须按同一个 file_id 核对 trace/派生元数据。Linux 复现与本轮耗时见[记录](../docs/progress/updates/2026-11-03-office-linux-e2e.md)。
 

@@ -255,7 +255,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -296,6 +296,22 @@ jobs:
       - name: Office reader for isolated browser fixtures
         working-directory: vendor/office-suite/runtime
         run: npm ci --ignore-scripts --no-audit --no-fund && npm run build
+      # LibreOffice and the browser libraries are ~210 MB of .deb files. The Ubuntu mirrors have delivered them at
+      # 370 kB/s (8.5 minutes, cancelling a shard), so the downloads are kept between runs. The key follows the runner
+      # image; a new image restores the previous set and fetches only the packages that changed.
+      - name: Package download cache
+        id: apt
+        run: |
+          dir="$RUNNER_TEMP/apt-archives"
+          mkdir -p "$dir/partial"
+          printf 'Dir::Cache::Archives "%s";\nAPT::Keep-Downloaded-Packages "true";\n' "$dir" | sudo tee /etc/apt/apt.conf.d/99ci-archives
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.apt.outputs.dir }}/*.deb
+          key: e2e-apt-${{ steps.apt.outputs.image }}
+          restore-keys: e2e-apt-
       - name: Chromium and Office visual fixtures
         working-directory: platform
         run: |

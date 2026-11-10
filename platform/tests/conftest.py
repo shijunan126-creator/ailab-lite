@@ -85,6 +85,10 @@ os.environ["AILAB_SERVICE_TOKEN"] = "test-service"
 os.environ["AILAB_REDIS_URL"] = _worker_redis("redis://127.0.0.1:6379/15")
 os.environ["AILAB_MAX_ACTIVE_RUNS_PER_USER"] = "1000"
 os.environ["AILAB_IMAGE_SEARCH_PROVIDER"] = "mock"  # never call Openverse from tests
+# A Broker owns its lease store for broker_lock_ttl_seconds (30) and a heartbeat thread renews it, but unit tests drive
+# managers without that thread: a test that rendered with real LibreOffice on a busy runner outlived the lease
+# ("broker ownership lost"). Tests that exercise expiry or a successor set the TTL or claim ownership themselves.
+os.environ["AILAB_BROKER_LOCK_TTL_SECONDS"] = "3600"
 # Retries are exercised for their count and accounting, not their pacing; tests of the backoff set it themselves.
 os.environ["AILAB_LLM_RETRY_BACKOFF_SECONDS"] = "0.001"
 os.environ["AILAB_WATCHDOG_MODE"] = "off"
@@ -96,6 +100,15 @@ os.environ["AILAB_WATCHDOG_MODE"] = "off"
 from ailab_platform.adapters import local_object_index as _local_object_index  # noqa: E402
 
 _local_object_index.DISCOVERY_SECONDS = 60.0  # scripted models answer in order; tests that need the judge turn it on
+
+
+def pytest_make_parametrize_id(config, val, argname):
+    # Byte payloads built at import (zips, Office files) carry the current time in their headers. An id made from
+    # their bytes then differs between xdist workers that collect a couple of seconds apart, and xdist refuses to run
+    # ("Different tests were collected"). Such parameters are named, not spelled out; pytest numbers duplicates.
+    if isinstance(val, bytes) and len(val) > 40:
+        return f"{argname}-bytes"
+    return None
 
 
 def pytest_sessionfinish(session, exitstatus):

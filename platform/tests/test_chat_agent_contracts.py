@@ -295,7 +295,9 @@ def test_title_survives_answer_completion_and_is_owned_until_finished(stop, monk
 
 
 def test_slow_gate_does_not_consume_title_model_budget(monkeypatch):
-    monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 0.05)
+    # The gate is held longer than the title timeout, and the model call is far shorter than it: if waiting at the
+    # gate consumed the budget the title would time out. (At 50ms vs a 20ms call a busy runner timed out anyway.)
+    monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 0.5)
 
     async def scenario():
         class Platform(FakePlatform):
@@ -311,7 +313,7 @@ def test_slow_gate_does_not_consume_title_model_budget(monkeypatch):
         gate = asyncio.Event()
         run = {**await platform.get_run("r"), "needs_conversation_title": True, "_attempt_id": "a", "_main_model_reserved": gate}
         task = asyncio.create_task(AgentLoop(platform=platform, llm=Model())._conversation_title("r", run))
-        await asyncio.sleep(0.08)
+        await asyncio.sleep(0.8)
         assert not task.done() and not platform.reservations
         gate.set()
         assert await task == "模型标题" and platform.title == "模型标题"
