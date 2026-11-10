@@ -11,7 +11,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, true, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -51,6 +51,25 @@ def active_job(now: datetime | None = None):
         MemoryDreamRun.claimed_until > _aware(now),
         MemoryDreamRun.report["chain_running"].as_boolean().is_(True),
     )
+
+
+# Nightly chain clock, copied to every batch of a cron chain so a restart resumes against the same cutoff and deadline.
+CHAIN_KEYS = ("cutoff_at", "chain_started_at", "deadline", "cleanup")
+
+
+def _chain_clock(report: dict | None) -> dict:
+    return {k: v for k, v in (report or {}).items() if k in CHAIN_KEYS and v}
+
+
+def _in_window(owner: User, now: datetime, local_date: str | None = None) -> bool:
+    ds = dream_settings(owner)
+    try:
+        zone = ZoneInfo(ds.timezone or settings.memory_dream_default_timezone)
+    except Exception:
+        zone = ZoneInfo(settings.memory_dream_default_timezone)
+    local = now.astimezone(zone)
+    start, end = local_window(ds)
+    return start <= local.hour * 60 + local.minute < end and (local_date is None or local.date().isoformat() == local_date)
 
 
 def _normalize(text: str) -> str:
@@ -116,6 +135,23 @@ def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
     )
 
 
+def _cleanup_scopes(db: Session, user_id: str, entries: list[dict]) -> list:
+    """Scopes to re-sort once under a new standard. Read-only: the version lives in the last batch report, not in settings."""
+    from .document import protected
+    from .prompts import PROMPT_VERSION
+
+    version = db.scalar(
+        select(MemoryDreamRun.report["prompt_version"].as_string())
+        .where(MemoryDreamRun.user_id == user_id, MemoryDreamRun.status == "applied", MemoryDreamRun.trigger.in_(("cron", "manual")))
+        .order_by(MemoryDreamRun.finished_at.desc())
+        .limit(1)
+    )
+    if version == PROMPT_VERSION:
+        return []
+    scopes = {e.get("project_id") for e in _active(entries) if not protected(e)}
+    return sorted(scopes, key=lambda pid: (pid is not None, pid or ""))  # the account first
+
+
 def _new_runs(
     db: Session,
     user_id: str,
@@ -125,6 +161,7 @@ def _new_runs(
     *,
     project_id: str | None = None,
     scoped: bool = False,
+    cutoff: datetime | None = None,
 ) -> list[Run]:
     from ..api.source_lifecycle import invalid_sources_query
 
@@ -152,6 +189,8 @@ def _new_runs(
                 Run.options["memory_policy"]["write"].as_boolean().is_not(False),
                 Run.superseded_by_run_id.is_(None),  # the user rewrote this turn; what they replaced is not what they meant
                 or_(Run.conversation_id.is_(None), Conversation.deleted_at.is_(None)),  # a deleted conversation is not evidence
+                # a nightly chain only reads what had ended when it was created; later turns wait for the next night
+                func.coalesce(Run.finished_at, Run.created_at) <= cutoff if cutoff else true(),
             )
             .order_by(Run.created_at, Run.id)
             .limit(limit)
@@ -198,28 +237,26 @@ def claim_due(now: datetime | None = None) -> list[str]:
             start, end = local_window(ds)
             from .scheduling import offset
 
-            if local.hour * 60 + local.minute < start + offset(user.id, end - start):
+            minute = local.hour * 60 + local.minute
+            if not start + offset(user.id, end - start) <= minute < end:
                 continue
-            runs = _new_runs(db, user.id, _last_success(db, user.id), now) if document["auto_save"] else []
+            local_date = local.date().isoformat()
+            if db.scalar(
+                select(MemoryDreamRun.id)
+                .where(MemoryDreamRun.user_id == user.id, MemoryDreamRun.local_date == local_date, MemoryDreamRun.trigger == "cron")
+                .limit(1)
+            ):
+                continue  # one nightly chain per local date, whatever became of it
+            runs = _new_runs(db, user.id, _last_success(db, user.id), now, cutoff=now) if document["auto_save"] else []
             from ..memory_recall.document import maintenance_needed
 
             scopes = {e.get("project_id") for e in document["entries"]}
             maintenance = any(maintenance_needed([e for e in document["entries"] if e.get("project_id") == pid], user) for pid in scopes)
-            if not runs and not maintenance:
+            cleanup = _cleanup_scopes(db, user.id, document["entries"])
+            if not runs and not maintenance and not cleanup:
                 db.commit()
                 continue
-            local_date = local.date().isoformat()
-            active = db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == user.id, active_job(now)).limit(1))
-            count = len(
-                list(
-                    db.scalars(
-                        select(MemoryDreamRun.id)
-                        .where(MemoryDreamRun.user_id == user.id, MemoryDreamRun.local_date == local_date, MemoryDreamRun.trigger == "cron")
-                        .limit(settings.memory_dream_auto_batches)
-                    )
-                )
-            )
-            if active or count >= settings.memory_dream_auto_batches:
+            if db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == user.id, active_job(now)).limit(1)):
                 continue
             row = MemoryDreamRun(
                 id=new_id("dream"),
@@ -230,6 +267,7 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 trigger="cron",
                 input_run_ids=[r.id for r in runs],
                 token_usage={},
+                report={"cutoff_at": now.isoformat(), **({"cleanup": cleanup} if cleanup else {})},
             )
             backfill = bool(runs) and any((item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "backfill" for r in runs)
             row.kind = "dream"
@@ -513,7 +551,7 @@ def _json(text: str) -> dict:
 
 def _finish(db: Session, run: MemoryDreamRun, status: str, **fields) -> None:
     """Commit the batch outcome and cursor together, independently of derived summary work."""
-    report = dict(fields.get("report") or run.report or {})
+    report = {**_chain_clock(run.report), **dict(fields.get("report") or run.report or {})}
     report.pop("_final_status", None)
     report["chain_running"] = run.trigger != "edit"
     report["stage_committed"] = True
@@ -548,12 +586,33 @@ async def process_dream(run_id: str) -> None:
                 return
             if job.claimed_until and _aware(job.claimed_until) > now:
                 return
+            owner = db.get(User, job.user_id)
+            clock = _chain_clock(job.report)
+            if job.trigger == "cron" and owner and not owner.disabled_at:
+                from ..memory_recall.store import stamp
+
+                if clock.get("deadline") and stamp(clock["deadline"]) <= now:
+                    job.status, job.claim_token = "running", token
+                    _finish(db, job, "failed", error="timeout", report={"reason": "timeout", "runs_seen": 0, "added": 0})
+                    job.claimed_until = None
+                    db.commit()
+                    return
+                if not clock.get("chain_started_at") and not _in_window(owner, now, job.local_date):
+                    # created in time but admitted after the window: still tonight's chain, never a model call
+                    job.status, job.claim_token = "running", token
+                    _finish(db, job, "skipped", report={"reason": "late", "runs_seen": 0, "added": 0})
+                    job.claimed_until = None
+                    db.commit()
+                    return
             if not can_start(db, scheduler, job, now):
                 return
             job.status, job.claim_token = "running", token
             job.claimed_until = now + timedelta(minutes=10)
             job.started_at = now
-            owner = db.get(User, job.user_id)
+            if job.trigger == "cron" and not clock.get("chain_started_at"):
+                deadline = now + timedelta(seconds=settings.memory_dream_chain_timeout_seconds)
+                clock = {**clock, "chain_started_at": now.isoformat(), "deadline": deadline.isoformat()}
+                job.report = {**(job.report or {}), **clock}
             if not owner or owner.disabled_at:
                 _finish(db, job, "skipped")
                 return
@@ -565,8 +624,17 @@ async def process_dream(run_id: str) -> None:
                 if job.trigger == "edit":
                     db.commit()
                     return ("edit",)
+                cleanup = list(clock.get("cleanup") or []) if job.trigger == "cron" else []
+                if cleanup:
+                    # Re-sort one scope under the current standard before any new conversation; protected lines stay.
+                    pid = cleanup[0]
+                    mode = project_mode(db, pid)
+                    scope = pid if mode == "isolated" else None
+                    entries = active([e for e in document["entries"] if e.get("project_id") == scope])
+                    db.commit()
+                    return owner, [], [], entries, scope, pid, mode, cleanup[1:]
                 runs = (
-                    _new_runs(db, owner.id, None, now, project_id=job.project_id, scoped=job.trigger == "manual")
+                    _new_runs(db, owner.id, None, now, project_id=job.project_id, scoped=job.trigger == "manual", cutoff=_cutoff(job))
                     if document["auto_save"]
                     else []
                 )
@@ -593,7 +661,7 @@ async def process_dream(run_id: str) -> None:
                 selected = {e.run_id for e in episodes}
                 runs = [x for x in runs if x.id in selected]
                 db.commit()
-                return owner, runs, episodes, entries, scope, pid, mode
+                return owner, runs, episodes, entries, scope, pid, mode, None
 
     snapshot = await asyncio.to_thread(prepare)
     if not snapshot:
@@ -605,10 +673,12 @@ async def process_dream(run_id: str) -> None:
 
             await edit(run_id, token)
             return
-        owner, runs, episodes, entries, scope, pid, mode = snapshot
+        owner, runs, episodes, entries, scope, pid, mode, remaining = snapshot
         from .document import apply_ops, messages
+        from .prompts import PROMPT_VERSION
 
-        raw, usage = await _chat(messages(episodes, entries), settings.memory_dream_model or get_catalog().default_id(), owner)
+        model = settings.memory_dream_model or get_catalog().default_id()
+        raw, usage = await _chat(messages(episodes, entries, cleanup=remaining is not None), model, owner)
         result = _json(raw)
         if not isinstance(result.get("ops"), list):
             raise DreamError("整理模型未返回有效ops")
@@ -646,20 +716,24 @@ async def process_dream(run_id: str) -> None:
                     for identity, e in old_targets.items()
                     if identity in current_targets and fact_hash(e["content"]) == fact_hash(current_targets[identity]["content"])
                 ]
-                ignored = {}
-                for item in result.get("ignored_runs", []):
-                    if (
-                        isinstance(item, dict)
-                        and item.get("run") in {e.run_id for e in episodes}
-                        and item.get("reason") in {"test", "repro", "no_signal"}
-                    ):
-                        ignored[item["run"]] = item["reason"]
+                from .document import CODES, code
+
+                ignored, codes = {}, {}
+                for item in result.get("ignored_runs") or []:
+                    if not isinstance(item, dict) or item.get("run") not in {e.run_id for e in episodes}:
+                        continue
+                    letter = code(item.get("r"), CODES["ignored"])
+                    codes[letter] = codes.get(letter, 0) + 1
+                    # T (test/repro) is skipped for good and its text leaves later episodes; any other reason is no_signal
+                    ignored[item["run"]] = "test" if letter == "T" else "no_signal"
                 from ..memory_recall.lineage import redact_episode_context
 
-                stale_context = {e.run_id for e in episodes if ignored.get(e.context_run_id) in {"test", "repro"}}
+                stale_context = {e.run_id for e in episodes if ignored.get(e.context_run_id) == "test"}
                 evidence = [e for e in episodes if e.run_id not in ignored and e.run_id not in stale_context]
-                redact_episode_context(db, [rid for rid, reason in ignored.items() if reason in {"test", "repro"}])
-                changed, audit = apply_ops(current["entries"], unchanged, evidence, result.get("ops", []), user, scope)
+                redact_episode_context(db, [rid for rid, reason in ignored.items() if reason == "test"])
+                changed, audit = apply_ops(
+                    current["entries"], unchanged, evidence, result.get("ops", []), user, scope, codes, pid, cleanup=remaining is not None
+                )
                 after = save(db, user, current, changed)
                 record(job, current, after)
                 if not runs:
@@ -680,7 +754,7 @@ async def process_dream(run_id: str) -> None:
                     if episode.run_id in stale_context and episode.run_id not in ignored:
                         item.source_offset = max(0, item.source_offset - len(_user_part(episode.digest)))
                         item.state = "ready"
-                    if ignored.get(episode.run_id) in {"test", "repro"}:
+                    if ignored.get(episode.run_id) == "test":
                         item.state = "skipped"
                     item.candidates = []
                     db.add(item)
@@ -696,6 +770,9 @@ async def process_dream(run_id: str) -> None:
                         "changed": len(audit),
                         "ops": audit,
                         "ignored_runs": ignored,
+                        "codes": codes,
+                        "prompt_version": PROMPT_VERSION,
+                        **({"cleanup": remaining} if remaining is not None else {}),
                     },
                     cursor_run_id=runs[-1].id if runs else None,
                 )
@@ -769,20 +846,23 @@ async def _process_dream_chain(run_id: str) -> None:
                         previous.report = {**(previous.report or {}), "chain_running": False, "chain_complete": True}
                         db.commit()
 
-                    if previous.status != "applied" or (previous.trigger != "cron" and previous.batch_index >= limit):
+                    if previous.status != "applied" or previous.batch_index >= limit:
                         publish()
                         return
-                    if (
-                        not owner
-                        or not _memory_view(owner)["auto_save"]
-                        or not _new_runs(
-                            db,
-                            previous.user_id,
-                            None,
-                            utcnow(),
-                            limit=1,
-                            project_id=previous.project_id,
-                            scoped=previous.trigger == "manual",
+                    if not owner or (
+                        not _chain_clock(previous.report).get("cleanup")
+                        and (
+                            not _memory_view(owner)["auto_save"]
+                            or not _new_runs(
+                                db,
+                                previous.user_id,
+                                None,
+                                utcnow(),
+                                limit=1,
+                                project_id=previous.project_id,
+                                scoped=previous.trigger == "manual",
+                                cutoff=_cutoff(previous),
+                            )
                         )
                     ):
                         publish()
@@ -793,33 +873,18 @@ async def _process_dream_chain(run_id: str) -> None:
                         .limit(1)
                     ):
                         return
-                    carry = False
                     if previous.trigger == "cron":
-                        ds = dream_settings(owner)
-                        local = utcnow().astimezone(ZoneInfo(ds.timezone or settings.memory_dream_default_timezone))
-                        start, end = local_window(ds)
-                        if not ds.enabled:
+                        from ..memory_recall.store import stamp
+
+                        # A chain stops; it never parks a successor. Unprocessed turns stay ready for the next night.
+                        if not dream_settings(owner).enabled:
                             publish()
                             return
-                        carry = (
-                            not start <= local.hour * 60 + local.minute < end
-                            or local.date().isoformat() != previous.local_date
-                            or previous.batch_index >= limit
-                        )
-                        used = len(
-                            list(
-                                db.scalars(
-                                    select(MemoryDreamRun.id)
-                                    .where(
-                                        MemoryDreamRun.user_id == previous.user_id,
-                                        MemoryDreamRun.local_date == previous.local_date,
-                                        MemoryDreamRun.trigger == "cron",
-                                    )
-                                    .limit(limit)
-                                )
-                            )
-                        )
-                        carry = carry or used >= limit
+                        deadline = _chain_clock(previous.report).get("deadline")
+                        if deadline and stamp(deadline) <= utcnow():
+                            previous.report = {**(previous.report or {}), "reason": "timeout"}
+                            publish()
+                            return
                     row = MemoryDreamRun(
                         id=new_id("dream"),
                         user_id=previous.user_id,
@@ -828,11 +893,12 @@ async def _process_dream_chain(run_id: str) -> None:
                         status="pending",
                         trigger=previous.trigger,
                         project_id=previous.project_id,
-                        batch_index=1 if carry else previous.batch_index + 1,
+                        batch_index=previous.batch_index + 1,
                         priority=previous.priority,
                         due_at=previous.due_at,
                         kind=previous.kind,
                         report={
+                            **_chain_clock(previous.report),
                             "runs_seen_before": (previous.report or {}).get("runs_seen_before", 0)
                             + (previous.report or {}).get("runs_seen", 0),
                             "added_before": (previous.report or {}).get("added_before", 0) + (previous.report or {}).get("added", 0),
@@ -848,11 +914,18 @@ async def _process_dream_chain(run_id: str) -> None:
                     except IntegrityError:
                         db.rollback()
                         return
-                    return None if carry else row.id
+                    return row.id
 
         run_id = await asyncio.to_thread(next_batch)
         if run_id is None:
             return
+
+
+def _cutoff(job: MemoryDreamRun) -> datetime | None:
+    from ..memory_recall.store import stamp
+
+    value = _chain_clock(job.report).get("cutoff_at") if job.trigger == "cron" else None
+    return stamp(value) if value else None
 
 
 def _validate_sources(
@@ -916,76 +989,93 @@ def recover_pending(now: datetime | None = None) -> list[str]:
         return [row.id for row in rows]
 
 
+def _ready_jobs(ids: list[str]) -> list[tuple[str, str]]:
+    from ..metrics import MEMORY_DREAM_QUEUE
+
+    with SessionLocal() as db:
+        MEMORY_DREAM_QUEUE.set(db.scalar(select(func.count()).select_from(MemoryDreamRun).where(MemoryDreamRun.status == "pending")))
+        if not ids:
+            return []
+        return list(
+            db.execute(
+                select(MemoryDreamRun.id, MemoryDreamRun.user_id)
+                .where(MemoryDreamRun.id.in_(ids))
+                .order_by(MemoryDreamRun.priority, MemoryDreamRun.due_at, MemoryDreamRun.id)
+            ).tuples()
+        )
+
+
+def _progress(job: str) -> tuple | None:
+    with SessionLocal() as db:
+        row = db.execute(
+            select(
+                MemoryDreamRun.status,
+                MemoryDreamRun.finished_at,
+                MemoryDreamRun.report["chain_complete"].as_boolean(),
+                MemoryDreamRun.report["dreaming"]["expired"].as_integer().is_not(None),
+            ).where(MemoryDreamRun.id == job)
+        ).first()
+        return tuple(row) if row else None
+
+
 async def dream_forever() -> None:
+    """Admit ready jobs every tick without waiting on chains already running.
+
+    A chain may run up to its deadline; awaiting every chain before the next claim let one slow user hold back the
+    whole night. One task per user at a time; the semaphore and the database lease bound concurrency.
+    """
     if not settings.memory_dream_enabled or settings.env == "test":
         return
     log.info("memory dream scheduler started")
-    while True:
-        try:
-            recovered = await asyncio.to_thread(recover_pending)
-            claimed = await asyncio.to_thread(claim_due)
+    semaphore = asyncio.Semaphore(settings.memory_dream_concurrency)
+    inflight: dict[str, asyncio.Task] = {}  # user_id -> chain task
+    loop = asyncio.get_running_loop()
+    claim_at = loop.time()
 
-            def ordered():
-                from ..metrics import MEMORY_DREAM_QUEUE
+    async def process(job: str) -> bool:
+        async with semaphore:
+            before = await asyncio.to_thread(_progress, job)
+            await process_dream_chain(job)
+            return await asyncio.to_thread(_progress, job) != before
 
-                with SessionLocal() as db:
-                    from sqlalchemy import func
-
-                    MEMORY_DREAM_QUEUE.set(
-                        db.scalar(select(func.count()).select_from(MemoryDreamRun).where(MemoryDreamRun.status == "pending"))
-                    )
-                    return list(
-                        db.scalars(
-                            select(MemoryDreamRun.id)
-                            .where(MemoryDreamRun.id.in_([*recovered, *claimed]))
-                            .order_by(MemoryDreamRun.priority, MemoryDreamRun.due_at, MemoryDreamRun.id)
-                        )
-                    )
-
-            jobs = await asyncio.to_thread(ordered)
-
-            def progress_snapshot():
-                with SessionLocal() as db:
-                    rows = db.execute(
-                        select(
-                            MemoryDreamRun.id,
-                            MemoryDreamRun.status,
-                            MemoryDreamRun.finished_at,
-                            MemoryDreamRun.report["chain_complete"].as_boolean(),
-                            MemoryDreamRun.report["dreaming"]["expired"].as_integer().is_not(None),
-                        ).where(MemoryDreamRun.id.in_(jobs))
-                    )
-                    return {row[0]: tuple(row[1:]) for row in rows}
-
-            before = await asyncio.to_thread(progress_snapshot)
-            semaphore = asyncio.Semaphore(settings.memory_dream_concurrency)
-
-            async def process(job):
-                async with semaphore:
-                    await process_dream_chain(job)
-
-            await asyncio.gather(*(process(job) for job in jobs))
-            after = await asyncio.to_thread(progress_snapshot)
-            if after != before:
-                # Drain ready backlog after progress, but retain the idle/backpressure
-                # delay when every attempted admission was refused.
-                def ready():
-                    with SessionLocal() as db:
-                        return db.scalar(
-                            select(MemoryDreamRun.id)
-                            .where(
-                                MemoryDreamRun.status == "pending",
-                                MemoryDreamRun.due_at <= utcnow(),
-                                or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < utcnow()),
-                            )
-                            .limit(1)
-                        )
-
-                if await asyncio.to_thread(ready):
-                    continue
-        except Exception:
-            log.exception("memory dream dispatch failed")
-        await asyncio.sleep(settings.memory_dream_interval_seconds)
+    try:
+        while True:
+            try:
+                claimed: list[str] = []
+                if loop.time() >= claim_at:
+                    claim_at = loop.time() + settings.memory_dream_interval_seconds
+                    claimed = await asyncio.to_thread(claim_due)
+                recovered = await asyncio.to_thread(recover_pending)
+                for job, user_id in await asyncio.to_thread(_ready_jobs, [*recovered, *claimed]):
+                    if user_id not in inflight:
+                        inflight[user_id] = asyncio.create_task(process(job), name=f"memory-dream-{job}")
+            except Exception:
+                log.exception("memory dream dispatch failed")
+            # Sleep until the next tick; wake earlier only when a job made progress and freed a slot, so a ready backlog
+            # drains while refused admissions (backpressure, budget) keep the idle delay.
+            while True:
+                wait = max(0.0, claim_at - loop.time())
+                if not inflight:
+                    await asyncio.sleep(wait)
+                    break
+                done, _ = await asyncio.wait(inflight.values(), timeout=wait, return_when=asyncio.FIRST_COMPLETED)
+                progressed = False
+                for user_id, task in list(inflight.items()):
+                    if not task.done():
+                        continue
+                    del inflight[user_id]
+                    if task.cancelled():
+                        continue
+                    if task.exception() is not None:
+                        log.error("memory dream chain failed", exc_info=task.exception())
+                    elif task.result():
+                        progressed = True
+                if not done or progressed:
+                    break
+    finally:
+        # Shutdown: a cancelled batch keeps its lease until expiry and is recovered by the next scheduler.
+        for task in inflight.values():
+            task.cancel()
 
 
 def list_runs(db: Session, user_id: str, limit: int = 30) -> list[MemoryDreamRunOut]:

@@ -158,7 +158,7 @@ def test_no_signal_context_does_not_reprocess_current(monkeypatch):
             calls.append(1)
             return json.dumps(
                 {
-                    "ignored_runs": [{"run": prev, "reason": "no_signal"}],
+                    "ignored_runs": [{"run": prev, "r": "N"}],
                     "ops": [{"op": "add", "kind": "project", "content": "采用PostgreSQL", "quote": "行，就这么定了", "run": current}],
                 }
             ), {}

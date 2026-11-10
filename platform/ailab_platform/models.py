@@ -1472,6 +1472,8 @@ class MemoryItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_by: Mapped[str] = mapped_column(String(20), default="addition", server_default="addition")
     superseded_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # The project an account line was learned in (no FK: a deleted project nulls it). A mode switch moves by this tag.
+    origin_project_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # Legacy adapter metadata, not another copy of the fact text.
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
 

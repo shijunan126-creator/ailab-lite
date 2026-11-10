@@ -75,15 +75,20 @@ def test_library_search_query_uses_user_index():
     init_db()
     with SessionLocal() as db:
         # Verify index suitability on both dialects; small test databases may choose a seq scan by cost.
-        query = library_query("user-for-explain", None, Search(query="name", limit=20))
-        sql = str(query.compile(db.bind, compile_kwargs={"literal_binds": True}))
-        if db.bind.dialect.name == "postgresql":
-            db.execute(text("SET LOCAL enable_seqscan = off"))
-            rows = db.execute(text("EXPLAIN " + sql))
-        else:
-            rows = db.execute(text("EXPLAIN QUERY PLAN " + sql))
-        plan = " ".join(str(tuple(row)) for row in rows)
-        assert "ix_files_" in plan and ("user_id" in plan or "user_created" in plan)
+        # account/shared scope (excludes isolated projects' files) and an isolated project (only its own files)
+        for query in (
+            library_query("user-for-explain", None, Search(query="name", limit=20)),
+            library_query("user-for-explain", "proj-for-explain", Search(query="name", limit=20), isolated=True),
+        ):
+            sql = str(query.compile(db.bind, compile_kwargs={"literal_binds": True}))
+            if db.bind.dialect.name == "postgresql":
+                db.execute(text("SET LOCAL enable_seqscan = off"))
+                rows = db.execute(text("EXPLAIN " + sql))
+            else:
+                rows = db.execute(text("EXPLAIN QUERY PLAN " + sql))
+            plan = " ".join(str(tuple(row)) for row in rows)
+            # any per-user files index is fine (PG may pick the folder-name unique index that leads with user_id)
+            assert ("ix_files_" in plan or "uq_files_" in plan) and ("user_id" in plan or "user_created" in plan), plan
 
 
 def test_work_copy_grant_is_bound_to_run_and_broker_streams_into_inputs(monkeypatch):

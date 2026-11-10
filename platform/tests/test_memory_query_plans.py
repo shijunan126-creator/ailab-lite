@@ -55,9 +55,12 @@ def test_memory_pending_and_history_queries_use_bounded_indexed_paths(engine):
             assert len(_rows(db, uid, None, None)) == 400
             assert len(service._new_runs(db, uid, None, now)) == 100
             assert len(service._new_runs(db, uid, None, now, limit=201)) == 100
+            # a nightly chain's persisted cutoff, and a shared project's extra recall candidates (ADR 0036)
+            assert len(service._new_runs(db, uid, None, now, cutoff=now)) == 100
+            assert _rows(db, uid, None, None, project_id="proj_plan", only_project="proj_plan", limit=200) == []
         finally:
             event.remove(engine, "before_cursor_execute", capture)
-        assert len(statements) == 3
+        assert len(statements) == 5
         indexes = {i["name"] for i in inspect(engine).get_indexes("runs")}
         assert {"ix_runs_memory_history", "ix_runs_memory_index"} <= indexes
         for sql, params in statements:

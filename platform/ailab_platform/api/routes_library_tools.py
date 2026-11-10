@@ -6,7 +6,7 @@ from datetime import UTC
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import case, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
 from ..deps import get_db
@@ -58,6 +58,7 @@ def authorized_source(db, run, file_id):
         or file.purpose != "library"
         or file.deleted_at
         or file.purged_at
+        or not in_scope(db, run, file)
     ):
         raise HTTPException(404, "资料不存在或不可用")
 
@@ -85,6 +86,34 @@ def authorized_source(db, run, file_id):
     return file
 
 
+def in_scope(db, run, file) -> bool:
+    """An isolated project's files stay inside it, and outside files stay out, unless the user attached one here."""
+    from ..memory_recall.policy import project_mode, run_project
+    from ..models import MessageFileRef, Run
+
+    pid = run_project(db, run)
+    if project_mode(db, pid) == "isolated":
+        allowed = file.project_id == pid
+    else:
+        allowed = not file.project_id or file.project_id == pid or project_mode(db, file.project_id) != "isolated"
+    if allowed:
+        return True
+    return (
+        db.scalar(
+            select(MessageFileRef.id)
+            .join(Run, Run.id == MessageFileRef.run_id)
+            .where(
+                MessageFileRef.file_id == file.id,
+                MessageFileRef.role == "input",
+                Run.user_id == run.user_id,
+                Run.conversation_id == run.conversation_id if run.conversation_id else Run.id == run.id,
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
 def _ready(db, run_id, file_id):
     run = _run_or_404(db, run_id)
     with user_critical_section(db, run.user_id):
@@ -102,7 +131,8 @@ def legacy_document_entry(db, run_id, name):
         raise HTTPException(422, "document_tool_not_available_for_catalog")
 
 
-def library_query(user_id, project_id, body):
+def library_query(user_id, project_id, body, isolated=False):
+    """Own project first. Inside an isolated project only its files; elsewhere never an isolated project's files."""
     q = (
         select(FileObject, Project.name)
         .outerjoin(Project, Project.id == FileObject.project_id)
@@ -115,6 +145,10 @@ def library_query(user_id, project_id, body):
             FileObject.is_head == 1,
         )
     )
+    if isolated:
+        q = q.where(FileObject.project_id == project_id)
+    else:
+        q = q.where(or_(FileObject.project_id.is_(None), Project.memory_mode != "isolated"))
     if body.query:
         q = q.where(FileObject.filename.contains(body.query, autoescape=True))
     q = q.order_by(case((FileObject.project_id == project_id, 0), else_=1), FileObject.created_at.desc(), FileObject.id.desc()).limit(
@@ -127,7 +161,10 @@ def library_query(user_id, project_id, body):
 def search_library(run_id: str, body: Search, db: Session = Depends(get_db)):
     run = _run_or_404(db, run_id)
     conv = db.get(Conversation, run.conversation_id) if run.conversation_id else None
-    q = library_query(run.user_id, conv.project_id if conv else None, body)
+    from ..memory_recall.policy import project_mode
+
+    pid = conv.project_id if conv and not conv.deleted_at else None
+    q = library_query(run.user_id, pid, body, isolated=project_mode(db, pid) == "isolated")
     return {
         "files": [
             {

@@ -30,7 +30,7 @@ class MemoryEntryInput(BaseModel):
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory", "preference", "fact", "interest", "project", "reference"] = "memory"
     origin: Literal["explicit", "inferred", "chat", "manual", "edited"] | None = None
-    created_by: Literal["addition", "correction", "condense"] | None = None
+    created_by: Literal["addition", "correction", "condense", "transition"] | None = None
     superseded_reason: Literal["correction", "condense", "evicted", "deleted"] | None = None
     reinforced_at: datetime | None = None
     observed_at: datetime | None = None
@@ -49,6 +49,7 @@ class MemoryEntryInput(BaseModel):
     # "Pause": kept and visible to the user, never shown to the model. Not the same as deleting.
     suppressed: bool | None = None
     project_id: str | None = Field(default=None, max_length=40)
+    origin_project_id: str | None = Field(default=None, max_length=40)  # the project the line was learned in
     status: Literal["active", "review", "suppressed"] | None = None
 
     @model_validator(mode="after")
@@ -238,6 +239,7 @@ class MemoryItem(BaseModel):
     project_id: str | None
     kind: Literal["preference", "fact", "interest", "project", "reference"]
     origin: Literal["explicit", "inferred", "chat", "manual", "edited"]
+    created_by: Literal["addition", "correction", "condense", "transition"] = "addition"
     content: str
     status: Literal["active", "review", "suppressed", "closed"]
     observed_at: datetime

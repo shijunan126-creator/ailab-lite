@@ -5,8 +5,9 @@ split "derived" in two:
 
 * **Verbatim copies** of the conversation (episode digests, source quotes, evidence links) are
   removed, because they are the conversation under another name.
-* **Facts** the user may have come to rely on stay, like saved memories in ChatGPT. They are
-  flagged ``evidence_deleted`` so the memory page can say so, and the user can delete them there.
+* **Facts** stay: the current line loses the deleted run and quote but is kept (ADR 0036). Forgetting a
+  fact is a separate, explicit act on the memory page or in a conversation, and leaves a tombstone.
+  Closed history versions that only depended on the deleted run are still removed.
 
 ``FORGET_DERIVED_FACTS`` flips the second rule for deployments that want the strict reading.
 """
@@ -21,7 +22,7 @@ from ..models import MemoryDreamRun, MemoryEpisode, MemoryItem, MemoryWorkItem, 
 from . import embeddings
 from .tombstones import fact_hash
 
-FORGET_DERIVED_FACTS = True  # True: also drop facts whose only evidence was the deleted conversation
+FORGET_DERIVED_FACTS = False  # True: also drop facts whose only evidence was the deleted conversation
 
 
 def forget_conversation(db: Session, user: User, conversation_id: str) -> dict:

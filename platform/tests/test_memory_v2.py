@@ -328,7 +328,7 @@ def test_extractor_excludes_test_episode_even_when_model_also_returns_a_fact(mon
             calls.append(messages)
             return json.dumps(
                 {
-                    "ignored_runs": [{"run": rid, "reason": "test"}],
+                    "ignored_runs": [{"run": rid, "r": "T"}],
                     "ops": [{"op": "add", "kind": "interest", "content": "用户关注测试上传", "quote": "测试一下上传功能", "run": rid}],
                 }
             ), {}

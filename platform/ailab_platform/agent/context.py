@@ -949,7 +949,8 @@ class ContextManager:
                     known.append(old)
                     continue
                 if entry is None:
-                    lines.append("已删除，不得再使用：[" + model_text(handle) + "]")
+                    gone = "已不在当前范围" if resolved.get("out_of_scope") else "已删除"
+                    lines.append(gone + "，不得再使用：[" + model_text(handle) + "]")
                     continue
                 change = resolved.get("change_type") or entry.get("superseded_reason")
                 corrected = old.get("content") != entry.get("content") and change != "condense"

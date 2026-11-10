@@ -177,19 +177,20 @@ def test_clear_scope_redacts_tombstones_and_all_statuses(api, monkeypatch):
     assert all(not s["items"] for s in c.delete("/v1/memory/entries", headers=me).json()["sections"])
 
 
-def test_shared_to_isolated_moves_only_complete_project_evidence(api):
+def test_shared_to_isolated_moves_only_lines_tagged_with_the_project(api):
+    # ADR 0036: lines move by the project they were learned in, not by whichever runs still back them
     c, me, uid = api
     pid = project(c, me)
+    other = project(c, me)
     conv = c.post("/v1/conversations", headers=me, json={"project_id": pid}).json()["id"]
     local = _seed(uid, "项目来源", conversation_id=conv)
-    outside = _seed(uid, "账号来源")
     doc = put(
         c,
         me,
         [
-            {"content": "完整来源", "evidence_run_ids": [local]},
-            {"content": "混合来源", "evidence_run_ids": [local, outside]},
-            {"content": "手写"},
+            {"content": "本项目学到的", "evidence_run_ids": [local], "origin_project_id": pid},
+            {"content": "别的项目学到的", "origin_project_id": other},
+            {"content": "手写", "evidence_run_ids": [local]},
         ],
     )
     assert c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "isolated"}).status_code == 200
@@ -420,14 +421,14 @@ def test_merge_undated_legacy_fact_cannot_override_known_newer_account_fact(api)
     assert {e["content"] for e in c.get("/v1/memory", headers=me).json()["entries"]} == {"账号新事实", "项目旧事实"}
 
 
-def test_isolation_rehomes_existing_evidence_from_soft_deleted_conversation(api):
+def test_isolation_moves_a_tagged_line_whose_source_conversation_was_deleted(api):
     from ailab_platform.models import Conversation
 
     c, me, uid = api
     pid = project(c, me)
     conv = c.post("/v1/conversations", headers=me, json={"project_id": pid}).json()["id"]
     rid = _seed(uid, "既有软删除来源", conversation_id=conv)
-    put(c, me, [{"content": "只属于本项目", "evidence_run_ids": [rid]}])
+    put(c, me, [{"content": "只属于本项目", "evidence_run_ids": [rid], "origin_project_id": pid}])
     with SessionLocal() as db:
         db.get(Conversation, conv).deleted_at = datetime.now(UTC)
         db.commit()

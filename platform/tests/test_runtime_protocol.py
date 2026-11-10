@@ -11,6 +11,7 @@ from sqlalchemy import select
 from ailab_platform.adapters.runtime import fresh_state
 from ailab_platform.api.reaper import expire_runtime_questions, lifecycle_once
 from ailab_platform.config import settings
+from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import OutboxMessage, Run, RunCheckpoint
 from ailab_platform.storage import get_storage
@@ -137,7 +138,7 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
     result = api.get(f"/internal/runs/{child['id']}/model-input", headers=SERVICE).json()
     assert result["previous_model_context"].pop("finished_at")
     assert result["previous_model_context"] == {
-        "context_abi_version": 5,
+        "context_abi_version": CONTEXT_ABI_VERSION,
         "context_epoch": 0,
         "prompt_anchors": state["prompt_anchors"],
         "operational_state": {

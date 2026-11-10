@@ -1,3 +1,15 @@
+## 2026-11-10 记忆质量与整理节奏
+
+- 续批行会让整理在白天跑：链停止时只要新建一个 `due_at` 已过期的 pending 行，`recover_pending` 每 5 分钟就会捡起执行，`prepare` 也不看窗口。链的结束只能写在现有行上；没处理完的对话留给 `MemoryWorkItem` 状态。
+- 链的时钟（`cutoff_at`/`chain_started_at`/`deadline`）放在 `report` 里，后继批次必须原样继承；旧测试直接造 cron 行时要带 `chain_started_at` 或改用 manual，否则会被“过窗作废”。
+- `memory_items` 新字段必须同时进 `legacy()`、`replace_entries`、`MemoryEntryInput`（extra=forbid）、`write_memory` 合并表、`_stored_entry`、维护输入；只改其中几处，旧客户端或夜间保存会把字段写回 null。需要一条全路径往返测试。
+- 提示词的操作格式必须写出 `"op"` 键：旧 `DOCUMENT_SYSTEM` 写成 `add {kind,...}`，真实模型照此省略 `op`，`apply_ops` 全部丢弃，夜间整理实际不生效。
+- ruff E501 把中文按宽度 2 计；长提示词行用字符串内 `\` 续行，不要关规则。
+- 函数默认参数在定义时求值：`limit=MAX_DOCS` 让 monkeypatch 失效，用 `None` 再在函数内取模块值。
+- 保护语义变了要迁移旧数据：ADR 0035 把 explicit 改成“用户要求记住”，旧夜间抽取写的 explicit 行没迁移，单次提问/交付变成永久保护（0068 修正）。改一个字段的含义时，先查库里按旧含义写入的行。
+- 调度循环不能 `gather` 等全部链跑完再认领：链可以跑到 30 分钟 deadline，一个慢用户就让后面的用户整晚错过窗口（300 用户压测只覆盖 34–98 人）。按用户派发任务、按间隔认领，空出名额才提前醒。
+- 压测时间压缩要压缩所有时钟：窗口、deadline、令牌预算、模型延迟一起按 K 缩放，错峰 `offset` 按窗口长度取模会自动跟随；只压缩一部分会得到假的覆盖率。
+
 ## 2026-11-10 全系统记忆审查
 
 - shared项目写入scope必须先归一为账号，不能把run_project直接当写scope；遗留project行用0066标记并在用户锁内程序融合。重复行保留condense重定向，review一起迁移；纠正沿链给当前handle。

@@ -1154,6 +1154,7 @@ def test_memory_document_repairs_shared_scopes_and_paused_rows(engine):
             ),
         )
     _upgrade_to(engine, "0066")
+    _upgrade_to(engine, "head")  # the ORM below describes the latest schema; later revisions keep these rows as 0066 left them
     with Session(engine) as db:
         row = db.get(MemoryItem, "repair-memory")
         assert row.status == "review"
@@ -1163,3 +1164,159 @@ def test_memory_document_repairs_shared_scopes_and_paused_rows(engine):
         merge_pending_projects(db, db.get(User, "u1"))
         assert db.get(MemoryItem, "repair-memory").project_id is None
         assert db.get(Project, "repair-project").memory_merge_requested_at is None
+
+
+def test_memory_origin_project_backfills_only_single_project_account_lines(engine):
+    import sqlalchemy as sa
+
+    _upgrade_to(engine, "0066")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(sa.text("INSERT INTO users (id, email, display_name, created_at) VALUES ('u2', 'b@b.c', 'B', '2026-01-01')"))
+        for pid in ("p1", "p2"):
+            conn.execute(
+                sa.text(
+                    "INSERT INTO projects(id,user_id,name,name_key,instructions,memory_mode,created_at,updated_at) "
+                    f"VALUES ('{pid}','u1','{pid}','{pid}','','shared','2026-01-01','2026-01-01')"
+                )
+            )
+        runs = sa.Table("runs", sa.MetaData(), autoload_with=conn)
+        conversations = sa.Table("conversations", sa.MetaData(), autoload_with=conn)
+
+        def required(table, **values):
+            # fill NOT NULL columns of this revision that only have ORM-side defaults
+            for col in table.columns:
+                if col.name in values or col.nullable or col.server_default is not None:
+                    continue
+                kind = type(col.type)
+                values[col.name] = (
+                    {}
+                    if issubclass(kind, sa.JSON)
+                    else datetime(2026, 1, 1)
+                    if issubclass(kind, sa.DateTime)
+                    else 0
+                    if issubclass(kind, sa.Integer | sa.Boolean | sa.Float)
+                    else ""
+                )
+            return values
+
+        for cid, pid in (("c1", "p1"), ("c2", "p2"), ("c0", None)):
+            conn.execute(conversations.insert(), required(conversations, id=cid, user_id="u1", project_id=pid))
+        template = dict(conn.execute(sa.select(runs).where(runs.c.id == "r1")).mappings().one())
+        for rid, cid in (("r_p1", "c1"), ("r_p1b", "c1"), ("r_p2", "c2"), ("r_acc", "c0")):
+            conn.execute(runs.insert(), {**template, "id": rid, "conversation_id": cid})
+        items = sa.Table("memory_items", sa.MetaData(), autoload_with=conn)
+        lines = {
+            "only_p1": (None, ["r_p1", "r_p1b"]),
+            "p1_and_account": (None, ["r_p1", "r_acc"]),
+            "two_projects": (None, ["r_p1", "r_p2"]),
+            "purged_source": (None, ["r_gone"]),
+            "no_source": (None, []),
+            "project_scope": ("p1", ["r_p1"]),
+        }
+        for mid, (scope, sources) in lines.items():
+            conn.execute(
+                items.insert(),
+                dict(
+                    id=mid,
+                    user_id="u1",
+                    project_id=scope,
+                    kind="fact",
+                    origin="inferred",
+                    content=mid,
+                    source_run_ids=sources,
+                    source_quote="",
+                    observed_at=datetime(2026, 1, 1),
+                    valid_from=datetime(2026, 1, 1),
+                    status="active",
+                    confidence=1,
+                    reinforced_at=datetime(2026, 1, 1),
+                    content_hash=mid,
+                    created_at=datetime(2026, 1, 1),
+                    updated_at=datetime(2026, 1, 1),
+                    metadata={},
+                    created_by="addition",
+                ),
+            )
+            for rid in sources:
+                conn.execute(sa.text("INSERT INTO memory_item_sources(memory_id, run_id) VALUES (:m, :r)"), {"m": mid, "r": rid})
+    _upgrade_to(engine, "0067")
+    with engine.connect() as conn:
+        tags = dict(conn.execute(sa.text("SELECT id, origin_project_id FROM memory_items")).all())
+    assert tags == {
+        "only_p1": "p1",
+        "p1_and_account": None,
+        "two_projects": None,
+        "purged_source": None,
+        "no_source": None,
+        "project_scope": None,
+    }
+    _downgrade_to(engine, "0066")
+    assert "origin_project_id" not in {c["name"] for c in inspect(engine).get_columns("memory_items")}
+    _upgrade_to(engine, "head")
+
+
+def test_nightly_lines_lose_protection_only_when_the_user_never_asked(engine):
+    """0068: nightly-extracted lines written as explicit become inferred; every line the user asked for stays protected."""
+    import json
+
+    import sqlalchemy as sa
+
+    _upgrade_to(engine, "0067")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        items = sa.Table("memory_items", sa.MetaData(), autoload_with=conn)
+        lines = {
+            # (origin, metadata.source, status, content, quote, superseded_by, superseded_reason)
+            "nightly_log": ("explicit", "nightly", "active", "关注乐信经营（两次询问）", "乐信怎么样", None, None),
+            "nightly_review": ("explicit", "nightly", "review", "要求做一份 PPT", "做成 PPT", None, None),
+            "tool_explicit": ("explicit", "agent", "active", "回答先给结论", "", None, None),
+            "page_edited": ("edited", "nightly", "active", "在券商工作", "", None, None),
+            "confirmed_sensitive": ("explicit", "nightly", "active", "患有轻度近视", "我近视", None, None),
+            "asked_to_remember": ("explicit", "nightly", "active", "周报用英文", "记住，周报都用英文", None, None),
+            "merge_target": ("explicit", "nightly", "active", "关注量化交易", "", None, None),
+            "merged_user_line": ("explicit", "agent", "closed", "关注量化", "", "merge_target", "condense"),
+            "already_inferred": ("inferred", "nightly", "active", "关注黄金", "", None, None),
+            "closed_history": ("explicit", "nightly", "closed", "旧版本", "", None, None),
+        }
+        for mid, (origin, source, status, content, quote, by, reason) in lines.items():
+            conn.execute(
+                items.insert(),
+                dict(
+                    id=mid,
+                    user_id="u1",
+                    kind="interest",
+                    origin=origin,
+                    content=content,
+                    source_run_ids=[],
+                    source_quote=quote,
+                    observed_at=datetime(2026, 1, 1),
+                    valid_from=datetime(2026, 1, 1),
+                    valid_to=datetime(2026, 1, 2) if status == "closed" else None,
+                    status=status,
+                    confidence=1,
+                    reinforced_at=datetime(2026, 1, 1),
+                    content_hash=mid,
+                    created_at=datetime(2026, 1, 1),
+                    updated_at=datetime(2026, 1, 1),
+                    metadata={"source": source, "evidence_episode_ids": ["epi_1"]},
+                    created_by="addition",
+                    superseded_by=by,
+                    superseded_reason=reason,
+                ),
+            )
+
+    def state():
+        with engine.connect() as conn:
+            rows = conn.execute(sa.text("SELECT id, origin, metadata FROM memory_items")).all()
+        return {mid: (origin, json.loads(meta) if isinstance(meta, str) else meta) for mid, origin, meta in rows}
+
+    _upgrade_to(engine, "0068")
+    after = state()
+    assert {mid for mid, (origin, _) in after.items() if origin != lines[mid][0]} == {"nightly_log", "nightly_review"}
+    assert after["nightly_log"] == ("inferred", {"source": "nightly", "evidence_episode_ids": ["epi_1"], "origin_before": "explicit"})
+    _downgrade_to(engine, "0067")
+    before = state()
+    assert {mid: origin for mid, (origin, _) in before.items()} == {mid: line[0] for mid, line in lines.items()}
+    assert all("origin_before" not in meta for _, meta in before.values())
+    _upgrade_to(engine, "head")
