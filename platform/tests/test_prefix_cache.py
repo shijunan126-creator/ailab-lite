@@ -2812,7 +2812,8 @@ def test_user_and_dream_deletion_preserve_snapshot_and_push_handle_only(user_del
 def test_latest_list_overrides_snapshot_and_earlier_updates_in_static_rules():
     from ailab_platform.agent.prompts import MEMORY_RULES, memory_prompt
 
-    assert all(text in MEMORY_RULES for text in ("我之前跟你说过", "你记错了", "先 memory.list", "覆盖快照和此前更新块"))
+    rules = ("我之前跟你说过", "你记错了", "才 memory.list", "直接用它的 handle", "覆盖快照和此前更新块")
+    assert all(text in MEMORY_RULES for text in rules)
     assert "最新 list" not in memory_prompt(memory_prefix_fixture())
 
 

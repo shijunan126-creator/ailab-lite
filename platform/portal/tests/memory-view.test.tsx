@@ -32,6 +32,9 @@ test("dates and organize notes", () => {
   assert.equal(shortDate("2025-01-02T08:00:00", now), "2025-01-02");
   assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 12, added: 3 } }), "看了 12 段对话，新增 3 条");
   assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 12, added: 0 } }), "看了 12 段对话，没有需要长期记住的内容");
+  // a re-sort before the new conversations: additions and rewrites are both shown
+  assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 1, added: 2, changed: 4 } }), "看了 1 段对话，新增 2 条，整理了 2 处记忆");
+  assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 0, added: 1, changed: 3 } }), "新增 1 条，整理了 2 处记忆");
 });
 
 test("shows the whole document by kind, each line with its source conversation, from one read", async () => {

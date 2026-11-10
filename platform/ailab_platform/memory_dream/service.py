@@ -54,7 +54,8 @@ def active_job(now: datetime | None = None):
 
 
 # Nightly chain clock, copied to every batch of a cron chain so a restart resumes against the same cutoff and deadline.
-CHAIN_KEYS = ("cutoff_at", "chain_started_at", "deadline", "cleanup")
+# a successor batch inherits the chain clock and the counts of the batches before it, so the last batch reports the chain
+CHAIN_KEYS = ("cutoff_at", "chain_started_at", "deadline", "cleanup", "runs_seen_before", "added_before", "changed_before")
 
 
 def _chain_clock(report: dict | None) -> dict:

@@ -105,11 +105,12 @@ export function shortDate(value: string | null, now = new Date()): string {
 
 /** What a finished "立即整理" did, in one line. */
 export function organizeNote(run: Run): string {
-  const seen = run.report?.runs_seen;
-  if (typeof seen !== "number" || seen <= 0) return "已整理";
+  const seen = run.report?.runs_seen || 0;
   const added = run.report?.added || 0;
-  if (!added && run.report?.changed) return `看了 ${seen} 段对话，整理了 ${run.report.changed} 处记忆`;
-  return added > 0 ? `看了 ${seen} 段对话，新增 ${added} 条` : `看了 ${seen} 段对话，没有需要长期记住的内容`;
+  const tidied = Math.max(0, (run.report?.changed || 0) - added); // `changed` counts every change, additions included
+  const parts = [added > 0 && `新增 ${added} 条`, tidied > 0 && `整理了 ${tidied} 处记忆`].filter(Boolean).join("，");
+  if (seen <= 0) return parts || "已整理";
+  return `看了 ${seen} 段对话，${parts || "没有需要长期记住的内容"}`;
 }
 
 type Change = { content: string };
