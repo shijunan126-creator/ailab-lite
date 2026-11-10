@@ -64,6 +64,8 @@ class ModelCall:
     continues_prefix: bool = False
     # What the upstream should treat as one session: the conversation, else the Run.
     session: str = ""
+    # The Run's thinking strength (a reasoning.toml level id); fixed for every call of the Run.
+    reasoning: str = ""
 
 
 model_call: ContextVar[ModelCall | None] = ContextVar("model_call", default=None)
@@ -498,6 +500,7 @@ def llm_for(model_id: str) -> LLMClient:
         echo_reasoning=spec.echo_reasoning or settings.llm_echo_reasoning,
         disable_reasoning_for_quiet=spec.disable_reasoning_for_quiet,
         session_header=spec.session_header,
+        reasoning=get_catalog().reasoning_for(spec),
     )
 
 

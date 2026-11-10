@@ -872,6 +872,7 @@ class AgentLoop:
             tool_choice=tool_choice,
             continues_prefix=continues_prefix,
             session=run.get("conversation_id") or run_id,
+            reasoning=(run.get("options") or {}).get("reasoning") or "",
         )
         try:
             await self.platform.reserve_usage(

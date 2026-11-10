@@ -70,6 +70,7 @@ class QueueCreate(BaseModel):
     prompt: str = Field(min_length=1, max_length=8000)
     file_ids: list[str] = Field(default_factory=list, max_length=50)
     model: str | None = Field(default=None, max_length=120)
+    reasoning: str | None = Field(default=None, min_length=1, max_length=64)
     mode: Literal["chat", "work"] = "work"
     skill: str | None = Field(default=None, max_length=64)
     skills: list[SkillSelection] | None = Field(default=None)

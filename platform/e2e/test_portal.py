@@ -216,13 +216,34 @@ def test_the_workbench_offers_the_platforms_models_and_the_quota(logged_in) -> N
     menu = page.get_by_role("button", name="模型", exact=True)
     menu.click()
     options = page.get_by_role("listbox", name="模型", exact=True).get_by_role("option")
-    assert [text.replace("\n", "") for text in options.all_inner_texts()] == ["Test Pro×3", "Test Fast", "Office Vision"]
+    assert [text.replace("\n", "") for text in options.all_inner_texts()] == ["Test Pro×3", "Test Fast", "Office Vision", "Test Think"]
     assert options.nth(0).get_attribute("aria-selected") == "true"
     assert options.nth(1).get_attribute("aria-selected") == "false"
     menu.click()
     page.click(".user-chip")  # usage lives in the account menu
     page.wait_for_function("() => document.body.innerText.includes('今日额度已用')", timeout=15000)
     assert "deepseek" not in page.content().lower()
+
+
+def test_thinking_strength_is_picked_beside_the_model_and_remembered(logged_in) -> None:
+    from playwright.sync_api import expect
+
+    page = logged_in
+    menu = page.get_by_role("button", name="模型", exact=True)
+    menu.click()
+    page.get_by_role("listbox", name="模型", exact=True).get_by_role("option").filter(has_text="Test Think").hover()
+    levels = page.get_by_role("listbox", name="思考强度", exact=True)
+    expect(levels.get_by_role("option", selected=True)).to_have_text("低")  # the platform default
+    levels.get_by_role("option", name="高", exact=True).click()
+    expect(menu).to_have_text("Test Think高")
+    with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/api/v1/conversations/start")) as started:
+        page.get_by_role("textbox", name="消息", exact=True).fill("你好")
+        page.keyboard.press("Enter")
+    assert started.value.json()["run"]["options"]["reasoning"] == "high"
+    _wait_for_turns(page, 1)
+    expect(page.locator(".turn-meta .meta-text").first).to_have_text("Test Think · 高")
+    page.reload()
+    expect(menu).to_have_text("Test Think高")  # the last choice of model and level stays
 
 
 def test_a_plain_question_is_answered_without_a_sandbox(logged_in, stack) -> None:

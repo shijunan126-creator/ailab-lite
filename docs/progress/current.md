@@ -1,3 +1,11 @@
+# 思考强度选择与基础技能收起（2026-11-11）
+
+- 用户要求：模型菜单加思考强度（每个模型档位单独配置，DeepSeek 默认低，记住上次选择，同一菜单）；技能页收起四个始终开启的基础技能；提 PR、CI 过后合并并部署最新版。分支 `feat/reasoning-effort`，base `main@323184b1`。
+- 已完成：`platform/reasoning.toml` + `models.toml` 引用、API 各发送路径写 `run.options.reasoning`、Agent 整次回答同档位、Portal 两栏菜单与回答标注、基础技能收成一行、深色菜单悬停 token。决定见 [ADR 0038](../architecture/adr/0038-reasoning-effort.md)，验证见[记录](updates/2026-11-11-reasoning-effort.md)。
+- 下一步：推送、开 PR、CI 全绿后合并，增量部署本机（本机 `models.local.toml` 需加 `reasoning = "deepseek-v4"`）。
+
+---
+
 # 记忆只有一种行（2026-11-11）
 
 - 用户要求：去掉受保护/推断/待确认/暂停，敏感内容照常记（证件号、银行卡、凭据除外），用真实模型测整理、记忆页对话框和对话工具并微调提示词，前缀缓存在同一次测试中观察。分支 `feat/memory-single-origin`，base `main@2a29fffe`；不授权合并、部署。

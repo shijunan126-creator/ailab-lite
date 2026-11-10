@@ -876,6 +876,33 @@ def test_summary_keeps_request_shape_and_appends_paired_tool_refusals(monkeypatc
     assert result[2]["content"].startswith("<conversation_checkpoint>\n")
 
 
+def test_summary_keeps_the_runs_thinking_level(monkeypatch):
+    """A side call with another reasoning_effort than the run's calls would not share their cached prefix."""
+    from ailab_platform.catalog import parse_reasoning
+
+    profiles = parse_reasoning(
+        {"think": {"default": "low", "levels": [{"id": x, "name": x, "body": {"reasoning_effort": x}} for x in ("low", "high")]}}
+    )
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=["tools"], reasoning="think")
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec], profiles))
+    previous = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "旧" * 4850},
+        {"role": "assistant", "content": "a"},
+    ]
+    tools = [{"type": "function", "function": {"name": "noop", "parameters": {"type": "object"}}}]
+    call = {"tool_calls": [{"index": 0, "id": "c1", "type": "function", "function": {"name": "noop", "arguments": "{}"}}]}
+    with scripted_server([call, {"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
+        transport = ModelTransport(url, disable_reasoning_for_quiet=True, reasoning=profiles["think"])
+        loop = AgentLoop(platform=FakePlatform(), llm=transport)
+        run = {"_attempt_id": "a", "options": {"reasoning": "high"}}
+        asyncio.run(loop._compact_parent_context("r", run, transport, "m", previous, {"role": "user", "content": "新" * 500}, tools))
+    assert [r.get("reasoning_effort") for r in requests] == ["high", "high"]
+    assert all("thinking" not in r for r in requests)
+    assert_extension(requests[0], requests[1])
+
+
 def test_office_skill_loaded_earlier_in_the_conversation_is_not_sent_again():
     # Work prompts naming a deck load platform.pptx; repeating that 3k-token result every turn wasted it each time.
     class Platform(FakePlatform):

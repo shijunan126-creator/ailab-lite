@@ -30,7 +30,7 @@ WORKDIR /app
 COPY platform/pyproject.toml platform/constraints.txt platform/README.md ./
 COPY platform/ailab_platform ./ailab_platform
 COPY images/sbx-office/skills /opt/ailab/skills
-COPY platform/models.toml /etc/ailab/models.toml
+COPY platform/models.toml platform/reasoning.toml /etc/ailab/
 RUN pip install --upgrade pip \
  && pip install -c constraints.txt ".[postgres]" \
  && pip install -c constraints.txt "opensandbox==1.1.1"

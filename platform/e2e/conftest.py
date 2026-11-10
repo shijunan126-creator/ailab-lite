@@ -196,6 +196,8 @@ def stack(tmp_path_factory):
         (PLATFORM / "tests/models.test.toml").read_text()
         + '\n[[models]]\nid = "test-office-vision"\nname = "Office Vision"\nprovider = "mock"\n'
         'context_tokens = 131072\nmax_output_tokens = 8192\ncapabilities = ["tools", "vision"]\n'
+        # the shipped DeepSeek thinking levels (platform/reasoning.toml) on a mock model
+        '\n[[models]]\nid = "test-think"\nname = "Test Think"\nprovider = "mock"\nreasoning = "deepseek-v4"\n'
     )
     env = {k: v for k, v in os.environ.items() if not k.startswith("AILAB_")}
     env.update(
@@ -382,7 +384,7 @@ def wait_models(page):
 def select_model(page, model):
     from playwright.sync_api import expect
 
-    name = {"test-fast": "Test Fast", "test-pro": "Test Pro", "test-office-vision": "Office Vision"}[model]
+    name = {"test-fast": "Test Fast", "test-pro": "Test Pro", "test-office-vision": "Office Vision", "test-think": "Test Think"}[model]
     menu = page.get_by_role("button", name="模型", exact=True)
     menu.click()
     page.get_by_role("listbox", name="模型", exact=True).get_by_role("option").filter(has_text=name).click()

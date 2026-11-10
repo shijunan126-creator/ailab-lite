@@ -41,7 +41,7 @@ export type Run = {
   artifacts?: Artifact[];
   input_files?: { file_id: string; filename: string; deleted?: boolean }[]; // deleted: trashed or purged; a purged one has lost its name
   doc_refs?: SentDocRef[]; // places the user quoted from the side-pane viewer with this message
-  options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string; skills?: SentSkill[] };
+  options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string; skills?: SentSkill[]; reasoning?: string };
   template?: { name: string; source: "template" | "file" } | null;
   result?: {
     file_wait?: { action: "extract-text" | "image-reference" };
@@ -346,6 +346,7 @@ export type ModelInfo = {
   default: boolean;
   context_tokens?: number;
   input_budget_tokens?: number;
+  reasoning?: { default: string; levels: { id: string; name: string }[] }; // thinking strengths, when the model has them
 };
 
 export type Limit = { used: number; limit: number };

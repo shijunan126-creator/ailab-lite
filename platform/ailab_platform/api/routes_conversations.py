@@ -108,6 +108,7 @@ def _start_turn(db: Session, user: User, conversation: Conversation, body: Messa
         locked=locked,
         commit=commit,
         client="portal",
+        reasoning=body.reasoning,
     )
 
 
