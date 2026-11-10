@@ -27,6 +27,10 @@
 - 迁移 0067：漂移检查与回填测试（只回填单一项目来源的账号行）通过；EXPLAIN 覆盖 cutoff、本项目候选、两种文件范围（SQLite/PG 各一套断言，PG 由 CI 执行）。
 - Portal：`npm test` 280/280，`npm run build` 通过。浏览器（临时 API + `next start`，种子数据）：桌面 1280 浅色/深色、iPhone SE 375 宽无横向滚动；有内容卡片、空分类「暂无」、无来源 edited 行显示「你添加的」均正确。未在浏览器单独看全空账号（单测覆盖）。
 
+## CI（`70998fd7`）
+
+首轮 CI 失败 2 项：`test_runtime_protocol` 写死上下文 ABI 5、`test_integration_migrations` 写死迁移头 0066，本地定向测试未选到这两个文件。改为引用 `CONTEXT_ABI_VERSION` 并补上 0067 后全绿：SQLite 2775 通过 / 218 跳过，PostgreSQL 2907 / 86，E2E 三片 194 / 15，存储契约 15 / 1，失败均为 0。
+
 ## 真实模型评估
 
 模型：本机目录的 `deepseek-flash`（OpenCode 端点），由脚本直接调用、不经计费。

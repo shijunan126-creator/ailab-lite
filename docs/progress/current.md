@@ -3,7 +3,7 @@
 - 用户授权按[计划](../architecture/design/2026-11-10-memory-quality.md)全部实现，含迁移 0067、ADR 0036、真实模型评估、推送、开 PR 并修到 CI 全绿；不授权合并、部署、改动本机运行中的服务或数据库。分支 `feat/memory-quality`，base `main@36b17590`；[PR #177](https://github.com/shijunan126-creator/ailab-lite/pull/177)。
 - 已完成 A–F 六步（每步一个提交）：每晚每用户一条整理链；删除来源保留记忆；中文标准、转变与理由代号（ABI 6）；来源项目标签与独立项目文件隔离；提示词版本与旧文档整理一次；记忆页分类卡片。决定见 [ADR 0036](../architecture/adr/0036-memory-quality.md)，验证、评估数字和偏差见[记录](updates/2026-11-10-memory-quality.md)，坑见 HANDOFF 2026-11-10。
 - 本地：ruff 通过；SQLite 定向 473 项 419 通过 / 51 跳过 / 3 失败（Office 运行时，main 同样失败）；Portal 280/build 通过；浏览器桌面/手机浅深色通过；真实模型六场景缓存 98.4–98.9%。真实库副本对比未做：本机 VM 已停止，启动属未授权操作，改用合成 episodes。
-- 下一步：确认 PR 最终 head 的 CI 全绿；合并与部署由用户决定。
+- CI：`70998fd7` 全绿（SQLite 2775/218 跳过，PG 2907/86，E2E 194/15）；首轮两项写死版本的断言已修。下一步：确认文档提交后的最终 head CI 仍为绿；合并与部署由用户决定。
 
 ---
 
