@@ -419,6 +419,7 @@ class Settings(ContextBandSettings, BaseSettings):
     memory_embedding_interval_seconds: int = Field(default=30, ge=5, le=3600)
     reaper_interval_seconds: int = Field(default=60, gt=0)
     reaper_grace_seconds: int = Field(default=120, ge=0)  # don't touch work younger than this
+    search_index_interval_seconds: int = Field(default=60, ge=5, le=3600)
 
     # The Portal proxies the API same-origin, so browsers need no CORS access. Leave empty unless a
     # separate browser app calls the API directly (then also give it its own login, not a shared token).

@@ -29,7 +29,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from . import naming
@@ -313,6 +313,40 @@ class Run(Base):
 
     events: Mapped[list[RunEvent]] = relationship(back_populates="run", cascade="all, delete-orphan", order_by="RunEvent.seq")
     artifacts: Mapped[list[Artifact]] = relationship(back_populates="run")
+
+
+class ConversationSearch(Base):
+    """One row per conversation: the union of every searchable term ever seen in it.
+
+    Terms are Latin words (and their identifier parts) plus CJK bigrams. The union never removes a term when a run is
+    edited or deleted, so a stale term can only cost a verification scan, never hide a real hit. SQLite indexes the
+    terms with FTS5; PostgreSQL stores a trigger-maintained tsvector and indexes it with GIN (migration 0070).
+    """
+
+    __tablename__ = "conversation_search"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", name="uq_conversation_search_conversation"),
+        Index("ix_conversation_search_user", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    terms: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # PostgreSQL maintains this with a trigger; SQLite leaves it NULL and uses FTS5 on ``terms`` instead.
+    terms_tsv: Mapped[str | None] = mapped_column(TSVECTOR().with_variant(Text(), "sqlite"), nullable=True)
+
+
+class SearchIndexState(Base):
+    """Watermarks for the background catch-up that indexes rows written before the index existed."""
+
+    __tablename__ = "search_index_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_watermark_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    run_watermark_id: Mapped[str] = mapped_column(String(40), default="", server_default="")
+    conversation_watermark_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    conversation_watermark_id: Mapped[str] = mapped_column(String(40), default="", server_default="")
 
 
 class ClientCall(Base):

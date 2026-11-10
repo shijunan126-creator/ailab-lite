@@ -18,6 +18,26 @@ from sqlalchemy import create_engine, inspect, text
 from ailab_platform.migrate import alembic_config, run_migrations
 from ailab_platform.models import Base
 
+# FTS5 virtual tables and the PostgreSQL GIN expression index implement the search index; they are not ORM tables.
+SEARCH_INDEX_OBJECTS = {"conversation_search_fts", "ix_conversation_search_terms"}
+
+
+def _search_index_diff(entry) -> bool:
+    """FTS5 tables and the PostgreSQL GIN expression index are index implementation, not ORM schema."""
+    if not isinstance(entry, tuple) or len(entry) < 2:
+        return False
+    kind, obj = entry[0], entry[1]
+    name = getattr(obj, "name", None)
+    if kind in {"add_table", "remove_table"} and name and name.startswith("conversation_search_fts"):
+        return True
+    return kind in {"add_index", "remove_index"} and name in SEARCH_INDEX_OBJECTS
+
+
+def assert_schema_matches(conn) -> None:
+    diff = compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata)
+    diff = [entry for entry in diff if not _search_index_diff(entry)]
+    assert diff == [], f"models.py differs from the migrated schema; run alembic revision --autogenerate: {diff}"
+
 
 @pytest.fixture(params=["sqlite", "postgres"])
 def engine(request, tmp_path):
@@ -76,8 +96,7 @@ def test_migrations_and_models_do_not_drift(engine) -> None:
     """Fails when someone edits models.py without writing a migration (the old create_all never noticed)."""
     run_migrations(engine)
     with engine.connect() as conn:
-        diff = compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata)
-    assert diff == [], f"models.py differs from the migrated schema; run alembic revision --autogenerate: {diff}"
+        assert_schema_matches(conn)
 
 
 def test_running_twice_is_harmless(engine) -> None:
@@ -275,7 +294,7 @@ def test_projects_upgrade_and_downgrade_preserve_referenced_rows(tmp_path) -> No
         assert conn.execute(text("PRAGMA foreign_key_check")).all() == []
     run_migrations(eng)
     with eng.connect() as conn:
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)
     eng.dispose()
 
 
@@ -313,7 +332,7 @@ def test_ledger_migration_freezes_legacy_price_and_preserves_referenced_rows(eng
         assert conn.execute(text("SELECT prompt_tokens, cached_tokens, completion_tokens FROM model_usage")).one() == (100, 80, 10)
     run_migrations(engine)
     with engine.connect() as conn:
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)
 
 
 def test_preview_outbox_migration_and_bounded_dispatch_plan(engine):
@@ -376,7 +395,7 @@ def test_identity_roundtrip_preserves_existing_users_and_references(engine):
     run_migrations(engine)  # to head: the models describe the latest schema
     with engine.connect() as conn:
         assert conn.execute(text("SELECT id, dept_id, issuer FROM users WHERE id='u1'")).one() == ("u1", None, None)
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)
         if engine.dialect.name == "sqlite":
             assert conn.execute(text("PRAGMA foreign_key_check")).all() == []
 
@@ -589,7 +608,7 @@ def test_inbox_queue_upgrade_downgrade_upgrade(engine):
     _upgrade_to(engine, "head")  # the ORM includes later revisions: compare at the integrated head
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)
 
 
 def test_workspace_gc_status_cursor_index_round_trip(engine):
@@ -698,7 +717,7 @@ def test_ui_state_upgrade_downgrade_preserves_run(engine):
     _upgrade_to(engine, "head")
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT ui_state FROM runs WHERE id='r1'")) is None
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)
 
 
 def test_base_skill_migration_removes_only_xlsx_disables(engine):
@@ -929,7 +948,7 @@ def test_platform_skills_roundtrip_and_run_lookup_plan(engine):
         assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
     _upgrade_to(engine, "head")
     with engine.connect() as conn:
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)
 
 
 def test_document_refs_and_captures_roundtrip_and_index_plans(engine):
@@ -1095,7 +1114,7 @@ def test_derived_budget_roundtrip_preserves_files_and_restarts_backfill(engine):
         assert conn.execute(text("SELECT id FROM runs WHERE id='r1'")).scalar() == "r1"
     _upgrade_to(engine, "head")
     with engine.connect() as conn:
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)
 
 
 def test_native_ranges_roundtrip_preserves_legacy_block_shape(engine):
@@ -1106,7 +1125,7 @@ def test_native_ranges_roundtrip_preserves_legacy_block_shape(engine):
     assert "byte_offset" not in {column["name"] for column in inspect(engine).get_columns("document_blocks")}
     _upgrade_to(engine, "head")
     with engine.connect() as conn:
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)
 
 
 def test_memory_document_repairs_shared_scopes_and_paused_rows(engine):

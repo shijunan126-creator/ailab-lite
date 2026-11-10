@@ -74,6 +74,12 @@ def _transition_run(
     if not won:
         return run, False  # someone else moved it first; theirs stands
 
+    if summary is not None:
+        # This write bypasses the ORM dirty hook (compare-and-set UPDATE), so feed the search index explicitly.
+        from .search_index import index_run_terms
+
+        index_run_terms(db, run)
+
     if new_status in RunStatus.TERMINAL:
         db.execute(
             update(ClientCall).where(ClientCall.run_id == run_id, ClientCall.status.in_(["pending", "claimed"])).values(status="canceled")

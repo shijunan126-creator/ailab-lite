@@ -3,7 +3,6 @@
 import re
 import subprocess
 import sys
-from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from playwright.sync_api import expect
@@ -14,7 +13,7 @@ pytestmark = pytest.mark.e2e
 
 
 @pytest.mark.parametrize("mobile", [False, True])
-def test_search_keeps_a_continuation_after_six_empty_pages(logged_in, stack, mobile):
+def test_search_returns_everything_in_one_request(logged_in, stack, mobile):
     page = logged_in
     if mobile:
         page.set_viewport_size({"width": 390, "height": 844})
@@ -22,38 +21,34 @@ def test_search_keeps_a_continuation_after_six_empty_pages(logged_in, stack, mob
 
     def search(route):
         calls.append(route.request.url)
-        if len(calls) <= 6:
-            route.fulfill(json={"items": [], "next_cursor": str(len(calls))})
-        else:
-            route.fulfill(
-                json={
-                    "items": [
-                        {
-                            "conversation_id": "sparse-result",
-                            "title": "稀疏搜索最终命中",
-                            "match": "title",
-                            "snippet": "稀疏搜索最终命中",
-                            "highlight": [],
-                            "updated_at": "2026-10-25T00:00:00Z",
-                        }
-                    ],
-                    "next_cursor": None,
-                }
-            )
+        route.fulfill(
+            json={
+                "items": [
+                    {
+                        "conversation_id": "sparse-result",
+                        "title": "稀疏搜索最终命中",
+                        "project_id": None,
+                        "run_id": None,
+                        "match": "title",
+                        "snippet": "稀疏搜索最终命中",
+                        "highlight": [[0, 4]],
+                        "updated_at": "2026-10-25T00:00:00Z",
+                    }
+                ]
+            }
+        )
 
     page.route("**/api/v1/search?**", search)
     page.keyboard.press("Control+k")
     dialog = page.get_by_role("dialog", name="搜索对话")
     dialog.get_by_role("textbox").fill("稀疏搜索")
-    continuation = dialog.get_by_role("button", name="继续搜索", exact=True)
-    expect(continuation).to_be_enabled()
-    assert len(calls) == 6
-    expect(dialog.get_by_text("没有找到相关对话")).to_have_count(0)
+    expect(dialog.get_by_role("option")).to_contain_text("稀疏搜索最终命中")
+    # One request covers the whole account; there is no continuation control and no second page.
+    assert len(calls) == 1
+    expect(dialog.get_by_role("button", name="继续搜索")).to_have_count(0)
+    expect(dialog.locator(".search-title mark")).to_have_text("稀疏搜索")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.screenshot(path=str(stack.log_dir / f"review-search-{'mobile' if mobile else 'desktop'}.png"))
-    continuation.click()
-    expect(dialog.get_by_role("option")).to_contain_text("稀疏搜索最终命中")
-    assert parse_qs(urlsplit(calls[-1]).query)["cursor"] == ["6"]
 
 
 def test_typing_a_new_search_clears_previous_clickable_results(logged_in):
@@ -66,8 +61,18 @@ def test_typing_a_new_search_clears_previous_clickable_results(logged_in):
             return
         route.fulfill(
             json={
-                "items": [{"conversation_id": "old", "title": "旧查询结果", "match": "title", "updated_at": "2026-01-01T00:00:00Z"}],
-                "next_cursor": None,
+                "items": [
+                    {
+                        "conversation_id": "old",
+                        "title": "旧查询结果",
+                        "project_id": None,
+                        "run_id": None,
+                        "match": "title",
+                        "snippet": "旧查询结果",
+                        "highlight": [],
+                        "updated_at": "2026-01-01T00:00:00Z",
+                    }
+                ]
             }
         )
 

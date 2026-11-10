@@ -1,19 +1,16 @@
 """The merged feature chain is linear and round-trips existing history."""
 
-from alembic.autogenerate import compare_metadata
-from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
 from ailab_platform.migrate import alembic_config
-from ailab_platform.models import Base
-from tests.test_migrations import _downgrade_to, _seed_user_and_run, _upgrade_to, _version
+from tests.test_migrations import _downgrade_to, _seed_user_and_run, _upgrade_to, _version, assert_schema_matches
 from tests.test_migrations import engine as engine
 
 
 def test_integrated_feature_chain_up_down_reup(engine):
     scripts = ScriptDirectory.from_config(alembic_config())
-    assert scripts.get_heads() == ["0069"]
+    assert scripts.get_heads() == ["0070"]
     revisions = (
         "0022",
         "0023",
@@ -142,6 +139,6 @@ def test_integrated_feature_chain_up_down_reup(engine):
         assert conn.execute(text("SELECT active_run_id FROM conversations WHERE id='c1'")).scalar() == "r1"
         _upgrade_to(engine, "head")
     with engine.connect() as conn:
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)
         if engine.dialect.name == "sqlite":
             assert conn.execute(text("PRAGMA foreign_key_check")).all() == []

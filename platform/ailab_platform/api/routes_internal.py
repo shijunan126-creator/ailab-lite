@@ -1475,6 +1475,9 @@ def set_conversation_title(
             else 0
         )
         if changed:
+            from ..search_index import refresh_conversation
+
+            refresh_conversation(db, run.conversation_id)
             append_event(db, run.id, "conversation.titled", {"conversation_id": run.conversation_id, "title": title}, commit=False)
         db.commit()
         return {"ok": bool(changed)}
