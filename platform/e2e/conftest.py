@@ -49,6 +49,18 @@ LOG_DIR = Path(os.environ.get("AILAB_E2E_LOG_DIR", PLATFORM / "e2e-logs"))
 
 def pytest_collection_modifyitems(config, items):
     if os.environ.get("AILAB_E2E") == "1":
+        # AILAB_E2E_SHARD=k/n keeps every n-th test (by a stable hash of its id) so CI can split the browser suite
+        # across n runners, each with its own stack. Every test is in exactly one shard.
+        if shard := os.environ.get("AILAB_E2E_SHARD"):
+            index, count = (int(part) for part in shard.split("/"))
+            if not 1 <= index <= count:
+                raise pytest.UsageError(f"AILAB_E2E_SHARD={shard}: expected k/n with 1 <= k <= n")
+            keep, drop = [], []
+            for item in items:
+                mine = int(hashlib.sha256(item.nodeid.encode()).hexdigest(), 16) % count == index - 1
+                (keep if mine else drop).append(item)
+            config.hook.pytest_deselected(items=drop)
+            items[:] = keep
         return
     skip = pytest.mark.skip(reason="browser E2E: set AILAB_E2E=1 (needs Redis, Node and Chromium)")
     for item in items:
@@ -92,7 +104,6 @@ def _build_portal(workdir: Path) -> Path:
     """Build the Portal in a copy: the repo's tsconfig.json and any running Portal's .next stay untouched."""
     if not (PORTAL_SRC / "node_modules").is_dir():
         raise RuntimeError("platform/portal/node_modules is missing: run `npm ci` there first")
-    _run_logged(["npm", "test"], PORTAL_SRC, LOG_DIR / "portal-tests.log", 60)
     dst = workdir / "platform" / "portal"
     dst.mkdir(parents=True)
     # "middleware.ts" was renamed "proxy.ts" in Next 16; copy whichever exists

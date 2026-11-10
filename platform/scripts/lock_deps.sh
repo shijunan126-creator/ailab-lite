@@ -19,7 +19,7 @@ compile() {  # output file
 if [ "${1:-}" = "--check" ]; then
   # keep the pins we have; only complain if pyproject asks for something they cannot satisfy
   compile "$tmp/check.txt" --constraint constraints.txt
-  diff <(grep -E '^[A-Za-z0-9_.\[\]-]+==' constraints.txt) <(grep -E '^[A-Za-z0-9_.\[\]-]+==' "$tmp/check.txt") >/dev/null \
+  diff <(grep -E '^[][A-Za-z0-9_.-]+==' constraints.txt) <(grep -E '^[][A-Za-z0-9_.-]+==' "$tmp/check.txt") >/dev/null \
     && echo "constraints.txt is consistent with pyproject.toml" \
     || { echo "constraints.txt is out of date: run  bash scripts/lock_deps.sh" >&2; exit 1; }
 else

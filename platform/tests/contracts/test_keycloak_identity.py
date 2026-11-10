@@ -45,7 +45,7 @@ def callback_server(redirect):
             pass  # Authorization codes must not enter HTTP access logs.
 
     server = ThreadingHTTPServer((parsed.hostname, parsed.port or 80), Callback)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         yield callbacks

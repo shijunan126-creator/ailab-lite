@@ -64,10 +64,14 @@ cryptography==50.0.2
     #   pyjwt
 dateparser==1.4.3
     # via htmldate
+defusedxml==0.7.1
+    # via ailab-platform (pyproject.toml)
 et-xmlfile==2.0.0
     # via
     #   -c constraints.txt
     #   openpyxl
+execnet==2.1.2
+    # via pytest-xdist
 fastapi==0.156.4
     # via
     #   -c constraints.txt
@@ -268,6 +272,8 @@ pytest-cov==7.1.0
     # via
     #   -c constraints.txt
     #   ailab-platform (pyproject.toml)
+pytest-xdist==3.8.0
+    # via ailab-platform (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via
     #   -c constraints.txt

@@ -7,12 +7,59 @@ import os
 import shutil
 import tempfile
 import traceback
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
 _TMP = tempfile.mkdtemp(prefix="ailab-platform-test-")
+
+# pytest-xdist runs one process per worker ("gw0", "gw1", ...). Each worker already has its own _TMP (and so its own
+# SQLite file); it also gets its own PostgreSQL databases and Redis database, because tests wipe the public schema
+# and flush Redis. Without xdist the URLs are used as given.
+_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+
+
+def _worker_postgres(url: str | None) -> str | None:
+    if not url or not _WORKER:
+        return url
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+
+    base = make_url(url)
+    name = f"{base.database}_{_WORKER}"
+    admin = create_engine(base, isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as conn:
+            if conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": name}).scalar() is None:
+                conn.execute(text(f'CREATE DATABASE "{name}"'))
+    finally:
+        admin.dispose()
+    return base.set(database=name).render_as_string(hide_password=False)
+
+
+def _worker_redis(url: str) -> str:
+    if not _WORKER:
+        return url
+    parts = urlsplit(url)
+    db = int(parts.path.strip("/") or 0) - int(_WORKER.removeprefix("gw"))
+    if db < 0:
+        raise RuntimeError(f"{url}: not enough Redis databases below it for xdist worker {_WORKER}; use fewer workers")
+    return urlunsplit(parts._replace(path=f"/{db}"))
+
+
+for _name in ("AILAB_TEST_DATABASE_URL", "AILAB_TEST_POSTGRES_URL"):
+    if os.environ.get(_name):
+        os.environ[_name] = _worker_postgres(os.environ[_name])
+if os.environ.get("AILAB_TEST_REDIS_URL"):
+    os.environ["AILAB_TEST_REDIS_URL"] = _worker_redis(os.environ["AILAB_TEST_REDIS_URL"])
+
+# Tests only talk to loopback servers. httpx honours the system proxy (trust_env), and a developer's macOS proxy
+# that also captures 127.0.0.1 added 0.2-0.5s to every scripted model request (test_prefix_cache: 3m locally).
+_LOOPBACK = "127.0.0.1,localhost,::1"
+for _name in ("NO_PROXY", "no_proxy"):
+    os.environ[_name] = ",".join(filter(None, (os.environ.get(_name), _LOOPBACK)))
 
 # Never read the developer's platform/.env: it may hold a real model key and a different model name.
 os.environ["AILAB_ENV_FILE"] = os.path.join(_TMP, "no-such.env")
@@ -35,9 +82,11 @@ os.environ["AILAB_SANDBOX_PROVIDER"] = "mock"
 os.environ["AILAB_MODELS_FILE"] = os.path.join(os.path.dirname(__file__), "models.test.toml")
 os.environ["AILAB_DEV_TOKEN"] = "test-token"
 os.environ["AILAB_SERVICE_TOKEN"] = "test-service"
-os.environ["AILAB_REDIS_URL"] = "redis://127.0.0.1:6379/15"
+os.environ["AILAB_REDIS_URL"] = _worker_redis("redis://127.0.0.1:6379/15")
 os.environ["AILAB_MAX_ACTIVE_RUNS_PER_USER"] = "1000"
 os.environ["AILAB_IMAGE_SEARCH_PROVIDER"] = "mock"  # never call Openverse from tests
+# Retries are exercised for their count and accounting, not their pacing; tests of the backoff set it themselves.
+os.environ["AILAB_LLM_RETRY_BACKOFF_SECONDS"] = "0.001"
 os.environ["AILAB_WATCHDOG_MODE"] = "off"  # scripted models answer in order; tests that need the judge turn it on
 
 

@@ -153,7 +153,7 @@ class _Handler(BaseHTTPRequestHandler):
 @pytest.fixture()
 def internet(monkeypatch):
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     port = server.server_address[1]
     real_check = web.public_addresses
 
