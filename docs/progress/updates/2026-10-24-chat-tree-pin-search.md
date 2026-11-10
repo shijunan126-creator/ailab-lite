@@ -1,5 +1,7 @@
 # 2026-10-24 会话树 / 置顶 / 全局搜索 / 上下文用量
 
+> 搜索部分（有界扫描、游标、`next_cursor`）已被 [ADR 0039](../architecture/adr/0039-global-search-index.md) 取代；本文件保留当时的历史结论。
+
 ## 范围与固定基线
 
 后端子任务，工作树 `t3-14e9630c`，分支 `feat/chat-tree-pin-search`，实际起点 `09a011baa274a41a823c8769fb5f7f7522c5dff1`（开始时 T3 分支名为 `t3/chat-tree-pin-search`；已按任务新建目标分支）。起点属于父集成分支 `feat/ui-polish-fork-retry`；父分支之后已继续前进，本子任务没有自动合入平行标题或计划任务改动。只本地提交，不 push / PR / deploy，不修改 `platform/portal/`。

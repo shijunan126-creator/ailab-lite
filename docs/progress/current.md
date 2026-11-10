@@ -1,8 +1,18 @@
+# 全量对话搜索：去掉继续搜索，会话级索引（2026-11-11）
+
+- 用户要求：去掉“继续搜索”的 UI 和逻辑，一次搜完；提升精准度和性能，在对话很多时也快；做性能对比测试；UI/UX 做到最好。分支 `feat/search-index`，base `origin/main@323184b1`；工作树 `.worktrees/search-optimization`。不部署。
+- 已完成：`/v1/search` 去游标、一次返回整个账号；会话级词项并集索引（SQLite FTS5 / PostgreSQL `terms_tsv` GIN）、ORM 同事务维护、后台水位回填；多关键词 AND、跨 prompt/answer、标题优先；Portal 去续查、标题高亮、移动端收起侧栏。决定见 [ADR 0039](../architecture/adr/0039-global-search-index.md)，性能数字、验证和边界见[记录](updates/2026-11-11-search-index.md)。
+- 本地：Ruff、完整 SQLite 套件（2995 收集）与 PG+Redis 完整套件 exit 0；Portal 279 项/build；浏览器搜索 E2E 3 项通过。基准：2000 会话稀有词 SQLite 3.0ms vs 旧 2100.9ms，PG 7.3ms vs 2828.1ms；5000 会话 SQLite 7.0ms vs 6362.2ms。
+- 下一步：推送、开 PR、等最终 head 的 CI 全绿后合并；合并后清理工作树和本地基准库，不部署。
+
+---
+
 # 思考强度选择与基础技能收起（2026-11-11）
 
 - 用户要求：模型菜单加思考强度（每个模型档位单独配置，DeepSeek 默认低，记住上次选择，同一菜单）；技能页收起四个始终开启的基础技能；提 PR、CI 过后合并并部署最新版。分支 `feat/reasoning-effort`，base `main@323184b1`。
 - 已完成：`platform/reasoning.toml` + `models.toml` 引用、API 各发送路径写 `run.options.reasoning`、Agent 整次回答同档位、Portal 两栏菜单与回答标注、基础技能收成一行、深色菜单悬停 token。决定见 [ADR 0038](../architecture/adr/0038-reasoning-effort.md)，验证见[记录](updates/2026-11-11-reasoning-effort.md)。
 - 下一步：推送、开 PR、CI 全绿后合并，增量部署本机（本机 `models.local.toml` 需加 `reasoning = "deepseek-v4"`）。
+
 
 ---
 
