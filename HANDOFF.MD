@@ -1,3 +1,14 @@
+## 2026-11-11 全量对话搜索
+
+- SQLite 里 `conversation_search_fts` 如果直接和 `conversations`/`conversation_search` 平铺 JOIN，规划器会先扫会话、再对每行跑一次 FTS `MATCH`：2000 会话的稀有词要 590ms。候选查询必须用 `WITH matched AS MATERIALIZED (...)` 让 FTS 结果先物化；同一查询 3ms。`EXPLAIN QUERY PLAN` 里出现 `SCAN f VIRTUAL TABLE ... M0` 而不是 `M1` 就是退化。
+- PostgreSQL 的表达式索引 `to_tsvector('simple', terms)` 在小表上会被规划器放弃（2000 行 Seq Scan 480ms）。要存 `terms_tsv`（触发器维护）+ GIN；查询用 `terms_tsv @@ plainto_tsquery(...)`，不要每次重算 `to_tsvector`。
+- `before_flush` 里做 `select`/`db.get` 前必须临时关掉 `session.autoflush`；测试里 `Session(engine)` 默认 autoflush=True，否则嵌套 flush。
+- `autoflush=False` 时新加的 `ConversationSearch` 行对 SELECT 不可见；`_index_row` 先查 `session.new`，否则同一事务里同一会话插两次，撞 `uq_conversation_search_conversation`。
+- 迁移漂移测试要过滤 FTS5 虚表/影子表和 `ix_conversation_search_terms`（索引实现，不是 ORM 表）；统一用 `tests/test_migrations.py::assert_schema_matches`，不要恢复成裸 `compare_metadata == []`。
+- 词项并集只增不减：编辑/重试/删除 Run 后旧词项仍在，候选会多一点，但 SQL `LIKE` + Python 校验保证不会误报；不要为了让候选变少而删除词项（会漏命中）。
+- 单字/纯标点查询没有可用索引词项，只回退扫最近 200 个会话；两字及以上才全量。不要把这个回退扩大成无界扫描。
+- E2E 的 mock viewer 需要 `vendor/office-suite/runtime/node_modules` 和 `runner.mjs`；两者都是本地构建产物，不要提交。
+
 ## 2026-11-11 思考强度
 
 - DeepSeek（经 OpenCode 网关）按 `reasoning_effort` 分开缓存：换档那一轮 cached=0，再换回旧档也不能复用新前缀。档位必须在一次回答内固定，旁路调用（摘要、收尾）带同一档位；只有用户换档才多一轮冷启动。

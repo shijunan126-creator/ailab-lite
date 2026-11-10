@@ -1,13 +1,12 @@
 """0023 additive migration preserves retries as siblings and checks production query plans."""
 
-from alembic.autogenerate import compare_metadata
-from alembic.migration import MigrationContext
-from sqlalchemy import select, text
+from sqlalchemy import func, literal_column, select, text
+from sqlalchemy.sql.elements import TextClause
 
-from ailab_platform.api.routes_search import conversation_scan, run_scan, search_match_query
 from ailab_platform.conversation_tree import ancestor_query, siblings_query
-from ailab_platform.models import Base, Conversation, ModelUsage, Run
-from tests.test_migrations import _downgrade_to, _seed_user_and_run, _upgrade_to
+from ailab_platform.models import Conversation, ConversationSearch, ModelUsage, Run
+from ailab_platform.search_index import candidate_query, matching_run_query
+from tests.test_migrations import _downgrade_to, _seed_user_and_run, _upgrade_to, assert_schema_matches
 from tests.test_migrations import engine as engine
 
 
@@ -44,7 +43,7 @@ def test_tree_backfill_and_roundtrip(engine):
                 ("r5", "r4"),
             ]
             assert conn.execute(text("SELECT active_run_id FROM conversations WHERE id='c1'")).scalar() == "r5"
-            assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+            assert_schema_matches(conn)
             if engine.dialect.name == "sqlite":
                 assert conn.execute(text("PRAGMA foreign_key_check")).all() == []
         _downgrade_to(engine, "0022")
@@ -54,12 +53,11 @@ def test_tree_backfill_and_roundtrip(engine):
 def test_tree_search_pin_context_production_query_plans(engine):
     _upgrade_to(engine, "head")
     path = ancestor_query("c1", "r5")
-    window = run_scan("c1")
     queries = {
         "ancestors": select(path.c.id).order_by(path.c.depth.desc()),
         "siblings": siblings_query("c1", "r1").limit(50),
-        "search_conversations": conversation_scan("u1"),
-        "search_runs": search_match_query(window, "literal_", engine.dialect.name),
+        "search_candidates": candidate_query("u1", ["机器"], engine.dialect.name, limit=50),
+        "search_runs": matching_run_query("c1", ["机器"], engine.dialect.name, limit=20),
         "pin": select(Conversation.id)
         .where(Conversation.user_id == "u1", Conversation.deleted_at.is_(None), Conversation.project_id.is_(None))
         .order_by(Conversation.pinned_at.desc().nulls_last(), Conversation.updated_at.desc())
@@ -73,19 +71,32 @@ def test_tree_search_pin_context_production_query_plans(engine):
         .order_by(Run.created_at.desc(), Run.id.desc())
         .limit(1),
     }
+    if engine.dialect.name == "postgresql":
+        # Prove the GIN index itself is usable; the candidate query may legitimately prefer the user index.
+        tsquery = func.plainto_tsquery(literal_column("'simple'"), "机器")
+        queries["search_terms"] = select(ConversationSearch.id).where(ConversationSearch.terms_tsv.op("@@")(tsquery))
     with engine.begin() as conn:
         if engine.dialect.name == "sqlite":
             conn.connection.driver_connection.create_function("ailab_search_lower", 1, lambda value: value.lower() if value else "")
         if engine.dialect.name == "postgresql":
             conn.execute(text("SET LOCAL enable_seqscan=off"))
         for name, query in queries.items():
-            sql = str(query.compile(engine, compile_kwargs={"literal_binds": True}))
             prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
-            plan = " ".join(str(tuple(r)) for r in conn.execute(text(prefix + sql)))
+            if isinstance(query, TextClause):
+                plan = " ".join(
+                    str(tuple(row)) for row in conn.execute(text(prefix + str(query)), {"user": "u1", "match": '"机器"', "limit": 50})
+                )
+            else:
+                sql = str(query.compile(engine, compile_kwargs={"literal_binds": True}))
+                plan = " ".join(str(tuple(row)) for row in conn.execute(text(prefix + sql)))
             print("TREE PLAN", engine.dialect.name, name, plan)
             assert "INDEX" in plan.upper() or "_pkey" in plan
-            if name == "search_conversations":
-                assert "ix_conversations_user_search" in plan, plan
+            if name == "search_candidates" and engine.dialect.name == "sqlite":
+                assert "conversation_search_fts" in plan, plan
+            if name == "search_terms":
+                assert "ix_conversation_search_terms" in plan, plan
+            if name == "search_runs":
+                assert "ix_runs_conversation_created_id" in plan, plan
             if name == "ancestors" and engine.dialect.name == "sqlite":
                 assert plan.count("sqlite_autoindex_runs_1 (id=?)") >= 3, plan
             if name == "ancestors" and engine.dialect.name == "postgresql":

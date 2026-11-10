@@ -472,4 +472,3 @@ class ConversationSearchItem(UTCModel):
 
 class ConversationSearchResult(BaseModel):
     items: list[ConversationSearchItem]
-    next_cursor: str | None

@@ -28,7 +28,7 @@ def apply_result_title(db: Session, run: Run) -> None:
     if not title or title in {"总结", "回答", "结果", "分析", "结论"}:
         return
     # Compare-and-set preserves manual names, including a rename racing completion.
-    db.execute(
+    changed = db.execute(
         update(Conversation)
         .where(
             Conversation.id == run.conversation_id,
@@ -37,4 +37,8 @@ def apply_result_title(db: Session, run: Run) -> None:
             Conversation.title == "",
         )
         .values(title=title)
-    )
+    ).rowcount
+    if changed:
+        from .search_index import refresh_conversation
+
+        refresh_conversation(db, run.conversation_id)

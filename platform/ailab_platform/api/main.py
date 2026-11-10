@@ -67,6 +67,7 @@ from .routes_skills import router as skills_router
 from .routes_templates import router as templates_router
 from .routes_web_images import router as web_images_router
 from .routes_workspace_ocr import router as workspace_ocr_router
+from .search_index import index_forever
 from .skill_view import router as skill_view_internal_router
 from .workspace_documents import router as workspace_documents_router
 
@@ -119,7 +120,18 @@ async def lifespan(_: FastAPI):
     skill_drafts = asyncio.create_task(draft_forever(), name="skill-drafts")
     memory_dream = asyncio.create_task(dream_forever(), name="memory-dream")
     memory_embeddings = asyncio.create_task(embed_forever(), name="memory-embeddings")
-    tasks = (memory_embeddings, memory_dream, skill_drafts, schedules, lifecycle_cleanup, preview_dispatch, reaper, workspace_cleanup)
+    search_index = asyncio.create_task(index_forever(), name="search-index")
+    tasks = (
+        memory_embeddings,
+        search_index,
+        memory_dream,
+        skill_drafts,
+        schedules,
+        lifecycle_cleanup,
+        preview_dispatch,
+        reaper,
+        workspace_cleanup,
+    )
     try:
         yield
     finally:

@@ -21,6 +21,12 @@ from ailab_platform.passwords import hash_password, verify_password
 PASSWORD = "correct horse battery"
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _database():
+    # Two tests use SessionLocal before any TestClient starts the app; xdist may run them first.
+    init_db()
+
+
 def make_user(password: str = PASSWORD) -> str:
     init_db()  # the API creates the schema at startup; these tests touch the database first
     name = f"u{uuid.uuid4().hex[:10]}"

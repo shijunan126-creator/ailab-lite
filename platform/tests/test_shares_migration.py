@@ -1,11 +1,8 @@
 """The shares migration (0027, after 0026) round-trips on SQLite and throwaway PostgreSQL."""
 
-from alembic.autogenerate import compare_metadata
-from alembic.migration import MigrationContext
 from sqlalchemy import inspect, text
 
-from ailab_platform.models import Base
-from tests.test_migrations import _downgrade_to, _head, _seed_user_and_run, _upgrade_to, _version
+from tests.test_migrations import _downgrade_to, _head, _seed_user_and_run, _upgrade_to, _version, assert_schema_matches
 from tests.test_migrations import engine as engine
 
 
@@ -28,4 +25,4 @@ def test_shares_up_down_up(engine):
     _upgrade_to(engine, "head")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT prompt FROM runs WHERE id='r1'")).scalar() == "p"
-        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        assert_schema_matches(conn)

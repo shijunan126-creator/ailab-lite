@@ -1,3 +1,5 @@
+2026-11-11 全量对话搜索（ADR0039，`feat/search-index`）：去掉继续搜索和游标，一次搜完整个账号；会话级词项并集索引（SQLite FTS5、PostgreSQL `terms_tsv` GIN）、同事务维护与后台回填、多关键词 AND/跨问题与回答、标题高亮。本地完整双库套件、Portal 282/build 与浏览器 E2E 通过；2000 会话稀有词 SQLite 3.0ms vs 旧 2100.9ms，PG 7.3ms vs 2828.1ms。[PR #181](https://github.com/shijunan126-creator/ailab-lite/pull/181) CI 全绿，未部署。见[记录](../progress/updates/2026-11-11-search-index.md)。
+
 2026-11-11 思考强度（ADR0038，`feat/reasoning-effort`）：模型按 `reasoning.toml` 档位组提供思考强度，DeepSeek 低/高/最高、默认低，按模型记住上次选择；档位写入 `run.options` 并在整次回答内固定（同档位续轮缓存 96–97%，换档那一轮冷）。技能页基础技能收成一行。PR CI 验收中。见[记录](../progress/updates/2026-11-11-reasoning-effort.md)。
 
 2026-11-11 记忆只有一种行（ADR0037，`feat/memory-single-origin`）：去掉受保护/推断/待确认/暂停，敏感内容照常记、证件号/卡号/凭据不记，一次性整理可拆分混合行，迁移0069、ABI7；定向测试与真实模型（整理/记忆页对话框/对话工具，缓存97.4%）通过，PR CI 验收中，未部署。见[记录](../progress/updates/2026-11-11-memory-single-origin.md)。
