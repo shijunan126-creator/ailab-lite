@@ -116,7 +116,7 @@ Target machine: 2 vCPU / ~8 GB for the whole stack, with pod limits in `platform
 cd platform
 export PATH="$(brew --prefix coreutils)/libexec/gnubin:$(brew --prefix findutils)/libexec/gnubin:$PATH"  # macOS
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
-.venv/bin/pytest tests -q
+.venv/bin/pytest tests -q -n auto   # pytest-xdist; each worker gets its own temp dir, PG databases and Redis db
 AILAB_TEST_REDIS_URL=redis://127.0.0.1:16379/15 \
 AILAB_TEST_DATABASE_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_test \
 AILAB_TEST_POSTGRES_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_migrations .venv/bin/pytest tests -q
@@ -124,14 +124,14 @@ AILAB_E2E=1 .venv/bin/pytest e2e -q
 cd portal && npm test && npm run build
 ```
 
-Tests build their own isolated settings (`tests/conftest.py`). Never point a test at a developer database; the Postgres test URLs are wiped. Start throwaway Redis/PostgreSQL on non-default ports and stop them afterwards.
+Tests build their own isolated settings (`tests/conftest.py`). Never point a test at a developer database; the Postgres test URLs are wiped. Start throwaway Redis/PostgreSQL on non-default ports and stop them afterwards. Under xdist the PG user needs CREATEDB (workers create `<db>_gwN`) and the Redis URL's db index must leave room below it for one db per worker.
 
 **Where the full suites run (2026-11-09).** CI is the full run; do not repeat it locally before pushing.
 
 - Locally: `ruff check`/`ruff format --check`, the tests of the modules you changed, and anything CI cannot run (real-model checks, a browser look at changed UI, migrations against a copy of real data).
 - CI: the full Python suite on SQLite and PostgreSQL, E2E, Portal tests and build, plus the other jobs. Its result on the exact commit to merge is the acceptance record.
 - Run a full suite locally only to reproduce a CI failure, or when the change cannot be pushed yet.
-- CI time limits are part of acceptance. A change that slows a suite (for example an autouse fixture whose cost grows with the database) is a bug to fix, not a reason to raise the limit.
+- CI time limits are part of acceptance. A change that slows a suite (for example an autouse fixture whose cost grows with the database) is a bug to fix, not a reason to raise the limit. A test that waits on a real clock (retry backoff, a server's poll interval, a sleep) costs that wait on every run; shorten the wait in the test, not the assertion.
 
 ## 10. Workflow
 
