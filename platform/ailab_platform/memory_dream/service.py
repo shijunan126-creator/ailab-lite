@@ -989,76 +989,93 @@ def recover_pending(now: datetime | None = None) -> list[str]:
         return [row.id for row in rows]
 
 
+def _ready_jobs(ids: list[str]) -> list[tuple[str, str]]:
+    from ..metrics import MEMORY_DREAM_QUEUE
+
+    with SessionLocal() as db:
+        MEMORY_DREAM_QUEUE.set(db.scalar(select(func.count()).select_from(MemoryDreamRun).where(MemoryDreamRun.status == "pending")))
+        if not ids:
+            return []
+        return list(
+            db.execute(
+                select(MemoryDreamRun.id, MemoryDreamRun.user_id)
+                .where(MemoryDreamRun.id.in_(ids))
+                .order_by(MemoryDreamRun.priority, MemoryDreamRun.due_at, MemoryDreamRun.id)
+            ).tuples()
+        )
+
+
+def _progress(job: str) -> tuple | None:
+    with SessionLocal() as db:
+        row = db.execute(
+            select(
+                MemoryDreamRun.status,
+                MemoryDreamRun.finished_at,
+                MemoryDreamRun.report["chain_complete"].as_boolean(),
+                MemoryDreamRun.report["dreaming"]["expired"].as_integer().is_not(None),
+            ).where(MemoryDreamRun.id == job)
+        ).first()
+        return tuple(row) if row else None
+
+
 async def dream_forever() -> None:
+    """Admit ready jobs every tick without waiting on chains already running.
+
+    A chain may run up to its deadline; awaiting every chain before the next claim let one slow user hold back the
+    whole night. One task per user at a time; the semaphore and the database lease bound concurrency.
+    """
     if not settings.memory_dream_enabled or settings.env == "test":
         return
     log.info("memory dream scheduler started")
-    while True:
-        try:
-            recovered = await asyncio.to_thread(recover_pending)
-            claimed = await asyncio.to_thread(claim_due)
+    semaphore = asyncio.Semaphore(settings.memory_dream_concurrency)
+    inflight: dict[str, asyncio.Task] = {}  # user_id -> chain task
+    loop = asyncio.get_running_loop()
+    claim_at = loop.time()
 
-            def ordered():
-                from ..metrics import MEMORY_DREAM_QUEUE
+    async def process(job: str) -> bool:
+        async with semaphore:
+            before = await asyncio.to_thread(_progress, job)
+            await process_dream_chain(job)
+            return await asyncio.to_thread(_progress, job) != before
 
-                with SessionLocal() as db:
-                    from sqlalchemy import func
-
-                    MEMORY_DREAM_QUEUE.set(
-                        db.scalar(select(func.count()).select_from(MemoryDreamRun).where(MemoryDreamRun.status == "pending"))
-                    )
-                    return list(
-                        db.scalars(
-                            select(MemoryDreamRun.id)
-                            .where(MemoryDreamRun.id.in_([*recovered, *claimed]))
-                            .order_by(MemoryDreamRun.priority, MemoryDreamRun.due_at, MemoryDreamRun.id)
-                        )
-                    )
-
-            jobs = await asyncio.to_thread(ordered)
-
-            def progress_snapshot():
-                with SessionLocal() as db:
-                    rows = db.execute(
-                        select(
-                            MemoryDreamRun.id,
-                            MemoryDreamRun.status,
-                            MemoryDreamRun.finished_at,
-                            MemoryDreamRun.report["chain_complete"].as_boolean(),
-                            MemoryDreamRun.report["dreaming"]["expired"].as_integer().is_not(None),
-                        ).where(MemoryDreamRun.id.in_(jobs))
-                    )
-                    return {row[0]: tuple(row[1:]) for row in rows}
-
-            before = await asyncio.to_thread(progress_snapshot)
-            semaphore = asyncio.Semaphore(settings.memory_dream_concurrency)
-
-            async def process(job):
-                async with semaphore:
-                    await process_dream_chain(job)
-
-            await asyncio.gather(*(process(job) for job in jobs))
-            after = await asyncio.to_thread(progress_snapshot)
-            if after != before:
-                # Drain ready backlog after progress, but retain the idle/backpressure
-                # delay when every attempted admission was refused.
-                def ready():
-                    with SessionLocal() as db:
-                        return db.scalar(
-                            select(MemoryDreamRun.id)
-                            .where(
-                                MemoryDreamRun.status == "pending",
-                                MemoryDreamRun.due_at <= utcnow(),
-                                or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < utcnow()),
-                            )
-                            .limit(1)
-                        )
-
-                if await asyncio.to_thread(ready):
-                    continue
-        except Exception:
-            log.exception("memory dream dispatch failed")
-        await asyncio.sleep(settings.memory_dream_interval_seconds)
+    try:
+        while True:
+            try:
+                claimed: list[str] = []
+                if loop.time() >= claim_at:
+                    claim_at = loop.time() + settings.memory_dream_interval_seconds
+                    claimed = await asyncio.to_thread(claim_due)
+                recovered = await asyncio.to_thread(recover_pending)
+                for job, user_id in await asyncio.to_thread(_ready_jobs, [*recovered, *claimed]):
+                    if user_id not in inflight:
+                        inflight[user_id] = asyncio.create_task(process(job), name=f"memory-dream-{job}")
+            except Exception:
+                log.exception("memory dream dispatch failed")
+            # Sleep until the next tick; wake earlier only when a job made progress and freed a slot, so a ready backlog
+            # drains while refused admissions (backpressure, budget) keep the idle delay.
+            while True:
+                wait = max(0.0, claim_at - loop.time())
+                if not inflight:
+                    await asyncio.sleep(wait)
+                    break
+                done, _ = await asyncio.wait(inflight.values(), timeout=wait, return_when=asyncio.FIRST_COMPLETED)
+                progressed = False
+                for user_id, task in list(inflight.items()):
+                    if not task.done():
+                        continue
+                    del inflight[user_id]
+                    if task.cancelled():
+                        continue
+                    if task.exception() is not None:
+                        log.error("memory dream chain failed", exc_info=task.exception())
+                    elif task.result():
+                        progressed = True
+                if not done or progressed:
+                    break
+    finally:
+        # Shutdown: a cancelled batch keeps its lease until expiry and is recovered by the next scheduler.
+        for task in inflight.values():
+            task.cancel()
 
 
 def list_runs(db: Session, user_id: str, limit: int = 30) -> list[MemoryDreamRunOut]:

@@ -6,6 +6,8 @@
 
 每个用户每个本地日期最多一条 cron 链，只在 `[window_start + 错峰, window_end)` 内建链。链停止时不再新建续批行；没处理完的对话依靠 `MemoryWorkItem` 状态留到下一晚，`recover_pending` 只续跑租约过期的已有批次。链在 `report` 中持久化 `cutoff_at`（建链时间，只处理此前结束的对话）、`chain_started_at` 和 `deadline = chain_started_at + AILAB_MEMORY_DREAM_CHAIN_TIMEOUT_SECONDS`（默认 1800，60..7200），后继批次原样继承。每批开始前检查：deadline 已过 → 链尾标 `reason: timeout`，待执行批次 `failed`；05:00 后才被接纳且尚未开始的链 `skipped(reason: late)`，不调用模型，仍算当晚名额。手动整理不占名额、不受窗口限制。
 
+调度循环（`dream_forever`）每个 tick 认领并派发，不等待已在运行的链；每个用户同时只有一个任务，并发由信号量和数据库租约（`memory_dream_concurrency`）限制。有任务取得进展、空出名额时提前进入下一轮，所有接纳都被拒绝（忙、令牌预算）时仍按间隔休眠。原实现等所有链跑完才认领下一批，一个接近 deadline 的慢链就能让整晚其余用户错过窗口。
+
 ## 记忆标准与操作
 
 整理（`DOCUMENT_SYSTEM`）、页面编辑（`EDIT_SYSTEM`）和对话工具（`MEMORY_RULES`）共用 `memory_dream/prompts.py` 的中文 `STANDARD`：判断标准、五类记/不记、判断顺序、转变和取自真实截图的正反例。
@@ -30,10 +32,10 @@
 
 ## 旧数据整理
 
-成功的 cron/manual 批次在 `report.prompt_version` 记录 `PROMPT_VERSION`。`claim_due` 只读比较最近一次成功整理的版本；过期且存在非受保护行时，即使没有新对话也建链，并先按新标准整理每个作用域一次（只用 merge/H/I，受保护行不动）。版本不写入 `user.settings` 或 `MemoryDreamSettings`。
+成功的 cron/manual 批次在 `report.prompt_version` 记录 `PROMPT_VERSION`。`claim_due` 只读比较最近一次成功整理的版本；过期且存在非受保护行时，即使没有新对话也建链，并先按新标准整理每个作用域一次。这次整理没有对话可引，只依据文档本身：非受保护行可以 update（F）、merge（G）、transition（E，项目结束转为经历），也可以 delete（H 重复 / O 一次性 / K 已完成的单次任务 / W 外部知识）；受保护行不动，不新增行。日常整理的 delete 仍只接受 H/I。版本不写入 `user.settings` 或 `MemoryDreamSettings`。
 
 ## 后果
 
 - 每晚每用户最多一条链，白天不再自动整理，模型调用只减不增；静态提示词增加约 740 token（跨用户共享前缀）。
-- 受保护（explicit/manual/edited）的旧行不会被旧数据整理改动；真实库里由旧流程写成 explicit 的流水账行需要用户在页面清理。
+- 迁移 0068：ADR 0035 之前夜间抽取把每一行写成 `origin=explicit`，ADR 0035 把 explicit 改为“用户要求记住”的保护语义却没迁移旧行，单次提问和交付因此变成永久保护。0068 把 `source=nightly` 的 explicit 行改回 inferred，以下保持受保护：敏感内容（只能经用户确认才会 active）、引文里有“记住”类请求、在项目合并中吸收过用户受保护行。改动的行带 `metadata.origin_before`，降级只恢复这些行。`replace_entries` 对 nightly 来源的缺省 origin 同步改为 inferred。工具 `explicit=true`、页面新增/编辑/确认的行不受影响。
 - 部署：一个迁移；API、Agent、Worker 同时更新。

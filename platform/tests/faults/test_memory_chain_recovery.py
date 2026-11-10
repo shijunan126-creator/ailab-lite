@@ -292,10 +292,49 @@ def test_dispatch_sleeps_when_backpressure_makes_no_progress(monkeypatch):
 
     async def idle(seconds):
         assert attempts == [identity]
-        assert seconds == service.settings.memory_dream_interval_seconds
+        assert 0 < seconds <= service.settings.memory_dream_interval_seconds
         raise asyncio.CancelledError()
 
     monkeypatch.setattr(service, "process_dream_chain", blocked)
     monkeypatch.setattr(service.asyncio, "sleep", idle)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(service.dream_forever())
+
+
+def test_a_slow_chain_does_not_hold_back_claiming_other_users(monkeypatch):
+    """The dispatcher keeps claiming while a chain runs; awaiting every chain let one slow user stall the night."""
+    now = utcnow()
+    with SessionLocal() as db:
+        users = [User(email=f"slow-{now.timestamp()}-{i}@test.invalid") for i in range(2)]
+        db.add_all(users)
+        db.flush()
+        slow, quick = (MemoryDreamRun(user_id=u.id, local_date="2026-11-09", due_at=now, trigger="cron") for u in users)
+        db.add_all([slow, quick])
+        db.commit()
+        slow_id, quick_id = slow.id, quick.id
+    ticks = iter([[slow_id], [quick_id]])
+    started, release = [], asyncio.Event()
+    monkeypatch.setattr(service.settings, "env", "development")
+    monkeypatch.setattr(service.settings, "memory_dream_interval_seconds", 0.01)
+    monkeypatch.setattr(service, "claim_due", lambda: next(ticks, []))
+    monkeypatch.setattr(service, "recover_pending", lambda: [])
+
+    async def process(identity):
+        started.append(identity)
+        if identity == slow_id:
+            await release.wait()
+
+    async def scenario():
+        scheduler = asyncio.create_task(service.dream_forever())
+        try:
+            async with asyncio.timeout(5):
+                while quick_id not in started:
+                    await asyncio.sleep(0.01)
+            assert not release.is_set()
+        finally:
+            scheduler.cancel()
+            release.set()
+
+    monkeypatch.setattr(service, "process_dream_chain", process)
+    asyncio.run(scenario())
+    assert started == [slow_id, quick_id]
