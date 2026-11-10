@@ -8,6 +8,9 @@ from sqlalchemy.orm import object_session
 from ..models import MemoryItem, MemoryItemSource, utcnow
 from .tombstones import fact_hash
 
+# origin_before: set by migration 0068 on the nightly lines it unprotected, so a downgrade restores exactly those
+METADATA_KEYS = ("source", "evidence_episode_ids", "evidence_deleted", "last_used_at", "origin_before")
+
 
 def stamp(value, fallback=None):
     if isinstance(value, str):
@@ -87,7 +90,8 @@ def replace_entries(db, user, entries):
         row.project_id = e.get("project_id")
         row.origin_project_id = e.get("origin_project_id")
         row.kind = {"user": "preference", "memory": "fact"}.get(e["kind"], e["kind"])
-        row.origin = e.get("origin") or ("explicit" if e.get("source") == "nightly" else "chat" if e.get("source") == "agent" else "edited")
+        # a nightly line is never the user's own request; only the user (edited) or a tool call they asked for (explicit) protects a line
+        row.origin = e.get("origin") or ("inferred" if e.get("source") == "nightly" else "chat" if e.get("source") == "agent" else "edited")
         row.created_by = e.get("created_by") or "addition"
         row.superseded_reason = e.get("superseded_reason")
         row.content = e["content"]
@@ -105,7 +109,7 @@ def replace_entries(db, user, entries):
         row.reinforced_at = stamp(e.get("reinforced_at"), row.reinforced_at if not fresh else now)
         row.content_hash = fact_hash(row.content)
         row.updated_at = stamp(e.get("updated_at"), now)
-        row.metadata_ = {k: e[k] for k in ("source", "evidence_episode_ids", "evidence_deleted", "last_used_at") if k in e}
+        row.metadata_ = {k: e[k] for k in METADATA_KEYS if k in e}
     db.flush()
     if entries:
         db.execute(delete(MemoryItemSource).where(MemoryItemSource.memory_id.in_([e["id"] for e in entries])))

@@ -1254,3 +1254,69 @@ def test_memory_origin_project_backfills_only_single_project_account_lines(engin
     _downgrade_to(engine, "0066")
     assert "origin_project_id" not in {c["name"] for c in inspect(engine).get_columns("memory_items")}
     _upgrade_to(engine, "head")
+
+
+def test_nightly_lines_lose_protection_only_when_the_user_never_asked(engine):
+    """0068: nightly-extracted lines written as explicit become inferred; every line the user asked for stays protected."""
+    import json
+
+    import sqlalchemy as sa
+
+    _upgrade_to(engine, "0067")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        items = sa.Table("memory_items", sa.MetaData(), autoload_with=conn)
+        lines = {
+            # (origin, metadata.source, status, content, quote, superseded_by, superseded_reason)
+            "nightly_log": ("explicit", "nightly", "active", "关注乐信经营（两次询问）", "乐信怎么样", None, None),
+            "nightly_review": ("explicit", "nightly", "review", "要求做一份 PPT", "做成 PPT", None, None),
+            "tool_explicit": ("explicit", "agent", "active", "回答先给结论", "", None, None),
+            "page_edited": ("edited", "nightly", "active", "在券商工作", "", None, None),
+            "confirmed_sensitive": ("explicit", "nightly", "active", "患有轻度近视", "我近视", None, None),
+            "asked_to_remember": ("explicit", "nightly", "active", "周报用英文", "记住，周报都用英文", None, None),
+            "merge_target": ("explicit", "nightly", "active", "关注量化交易", "", None, None),
+            "merged_user_line": ("explicit", "agent", "closed", "关注量化", "", "merge_target", "condense"),
+            "already_inferred": ("inferred", "nightly", "active", "关注黄金", "", None, None),
+            "closed_history": ("explicit", "nightly", "closed", "旧版本", "", None, None),
+        }
+        for mid, (origin, source, status, content, quote, by, reason) in lines.items():
+            conn.execute(
+                items.insert(),
+                dict(
+                    id=mid,
+                    user_id="u1",
+                    kind="interest",
+                    origin=origin,
+                    content=content,
+                    source_run_ids=[],
+                    source_quote=quote,
+                    observed_at=datetime(2026, 1, 1),
+                    valid_from=datetime(2026, 1, 1),
+                    valid_to=datetime(2026, 1, 2) if status == "closed" else None,
+                    status=status,
+                    confidence=1,
+                    reinforced_at=datetime(2026, 1, 1),
+                    content_hash=mid,
+                    created_at=datetime(2026, 1, 1),
+                    updated_at=datetime(2026, 1, 1),
+                    metadata={"source": source, "evidence_episode_ids": ["epi_1"]},
+                    created_by="addition",
+                    superseded_by=by,
+                    superseded_reason=reason,
+                ),
+            )
+
+    def state():
+        with engine.connect() as conn:
+            rows = conn.execute(sa.text("SELECT id, origin, metadata FROM memory_items")).all()
+        return {mid: (origin, json.loads(meta) if isinstance(meta, str) else meta) for mid, origin, meta in rows}
+
+    _upgrade_to(engine, "0068")
+    after = state()
+    assert {mid for mid, (origin, _) in after.items() if origin != lines[mid][0]} == {"nightly_log", "nightly_review"}
+    assert after["nightly_log"] == ("inferred", {"source": "nightly", "evidence_episode_ids": ["epi_1"], "origin_before": "explicit"})
+    _downgrade_to(engine, "0067")
+    before = state()
+    assert {mid: origin for mid, (origin, _) in before.items()} == {mid: line[0] for mid, line in lines.items()}
+    assert all("origin_before" not in meta for _, meta in before.values())
+    _upgrade_to(engine, "head")

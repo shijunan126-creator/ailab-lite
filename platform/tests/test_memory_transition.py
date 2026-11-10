@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from ailab_platform.api.main import app
 from ailab_platform.api.routes_memory import memory_for
+from ailab_platform.contracts.memory import MemoryEntryInput
 from ailab_platform.db import SessionLocal
 from ailab_platform.memory_dream import service
 from ailab_platform.memory_dream.document import apply_ops
@@ -166,3 +167,74 @@ def test_page_edit_can_move_an_ended_project_to_past_experience(monkeypatch):
         assert edit(c, me, "记忆模块项目做完了")["status"] in {"pending", "running", "applied"}
         entries = c.get("/v1/memory", headers=me).json()["entries"]
         assert [(e["kind"], e["content"]) for e in entries] == [("memory", "2026-11 完成记忆模块上线")]
+
+
+def test_the_one_time_resort_rewrites_and_drops_unprotected_lines_without_quotes():
+    shown = [
+        line("mem_ppt", kind="project", content="要求把奈飞营收做成 PPT（已交付）"),
+        line("mem_ask", kind="interest", content="关注乐信经营（2026-11-08 两次询问）"),
+        line("mem_gold", kind="interest", content="关注黄金走势（询问）"),
+        line("mem_done", kind="project", content="推进记忆模块上线"),
+        line("mem_mine", kind="interest", content="关注量化交易", origin="explicit"),
+    ]
+    ops = [
+        {"op": "delete", "id": "mem_ppt", "r": "K"},
+        {"op": "update", "id": "mem_ask", "content": "关注中概金融科技公司的经营风险", "r": "F"},
+        {"op": "delete", "id": "mem_gold", "r": "W"},
+        {"op": "transition", "id": "mem_done", "past": "2026-11 完成记忆模块上线", "past_kind": "fact", "r": "E"},
+        {"op": "delete", "id": "mem_mine", "r": "O"},  # protected: refused
+        {"op": "update", "id": "mem_mine", "content": "关注量化", "r": "F"},  # protected needs a newer quote: refused
+        {"op": "add", "kind": "fact", "content": "新的一行", "r": "B"},  # a re-sort adds nothing
+        {"op": "delete", "id": "mem_ask", "r": "I"},  # wrong needs the user's words: unknown here
+    ]
+    codes = {}
+    result, audit = apply_ops(shown, shown, [], ops, nobody(), None, codes, cleanup=True)
+    live = {e["content"]: e for e in result if not e.get("invalid_at")}
+    assert set(live) == {"关注中概金融科技公司的经营风险", "2026-11 完成记忆模块上线", "关注量化交易"}
+    rewritten = live["关注中概金融科技公司的经营风险"]
+    assert rewritten["source_quote"] == "" and rewritten["evidence_run_ids"] == ["run_old"] and rewritten["origin"] == "inferred"
+    assert live["2026-11 完成记忆模块上线"]["kind"] == "fact" and live["2026-11 完成记忆模块上线"]["created_by"] == "transition"
+    assert sorted(a["op"] for a in audit) == ["delete", "delete", "transition", "update"]
+    assert codes == {"K": 1, "F": 2, "W": 1, "E": 1, "O": 1, "B": 1, "?": 1}
+
+
+def test_daily_batches_still_delete_only_duplicates_and_user_corrections():
+    shown = [line("mem_ppt", kind="project", content="要求把奈飞营收做成 PPT（已交付）")]
+    codes = {}
+    ops = [{"op": "delete", "id": "mem_ppt", "r": "K"}, {"op": "update", "id": "mem_ppt", "content": "改写", "r": "F"}]
+    result, audit = apply_ops(shown, shown, [episode()], ops, nobody(), None, codes)
+    assert audit == [] and not result[0].get("invalid_at")
+    assert codes == {"?": 1, "F": 1}
+
+
+def test_an_unprotected_marker_survives_rewrites_and_nightly_writes_default_to_inferred():
+    from ailab_platform.memory_recall.store import replace_entries
+
+    with TestClient(app) as c:
+        me = _user(c)
+        uid = _uid(c, me)
+        mid = "mem_m" + uid[4:20]
+        with SessionLocal() as db:
+            replace_entries(
+                db,
+                db.get(User, uid),
+                [
+                    {
+                        "id": mid,
+                        "kind": "interest",
+                        "content": "关注乐信",
+                        "origin": "inferred",
+                        "source": "nightly",
+                        "origin_before": "explicit",
+                    },
+                    {"id": "mem_n" + uid[4:20], "kind": "fact", "content": "没有 origin 的夜间行", "source": "nightly"},
+                ],
+            )
+            db.commit()
+        current = c.get("/v1/memory", headers=me).json()
+        body = [{k: v for k, v in e.items() if k in MemoryEntryInput.model_fields} for e in current["entries"]]
+        saved = c.put("/v1/memory", headers=me, json={"expected_revision": current["revision"], "entries": body})
+        assert saved.status_code == 200, saved.text
+        with SessionLocal() as db:
+            assert db.get(MemoryItem, mid).metadata_["origin_before"] == "explicit"
+            assert db.get(MemoryItem, "mem_n" + uid[4:20]).origin == "inferred"

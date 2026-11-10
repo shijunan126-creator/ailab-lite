@@ -32,7 +32,8 @@ def protected(entry):
 
 
 # Reason codes the model attaches to every op and ignored run. They explain, they never authorize: an unknown
-# code is counted as "?" in the batch report. Only delete reads its code, because I (wrong) needs the user's words.
+# code is counted as "?" in the batch report. Only delete reads its code, because I (wrong) needs the user's words
+# and the one-time re-sort may also drop an unprotected line as one-off (O), a finished task (K) or outside knowledge (W).
 CODES = {
     "add": set("ABCD"),
     "transition": {"E"},
@@ -41,6 +42,7 @@ CODES = {
     "delete": {"H", "I"},
     "ignored": set("TOKWPN"),
 }
+CLEANUP_DELETES = {"H", "O", "K", "W"}
 KINDS = {"fact", "preference", "project", "interest", "reference"}
 
 
@@ -48,8 +50,13 @@ def code(value, allowed):
     return value if isinstance(value, str) and value in allowed else "?"
 
 
-def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=None):
-    """`label` is the project this batch's conversations belong to; a new line carries it as origin_project_id."""
+def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=None, *, cleanup=False):
+    """`label` is the project this batch's conversations belong to; a new line carries it as origin_project_id.
+
+    `cleanup`: the one-time re-sort under a new standard. There is no conversation to quote, so an unprotected line may be
+    rewritten (update/merge/transition) or dropped (H/O/K/W) without a quote; protected lines still need a newer quote,
+    which a re-sort never has, so they stay as they are. Nothing new is added.
+    """
     from html import unescape
 
     from .service import _user_part
@@ -107,7 +114,7 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=
         action = op.get("op")
         if action not in CODES or action == "ignored":
             continue
-        reason = code(op.get("r"), CODES[action])
+        reason = code(op.get("r"), CLEANUP_DELETES if cleanup and action == "delete" else CODES[action])
         codes[reason] = codes.get(reason, 0) + 1
         ids = op.get("ids", []) if action == "merge" else [op.get("id")] if action in {"update", "delete", "transition"} else []
         if not isinstance(ids, list) or any(i not in allowed or i in touched for i in ids):
@@ -124,7 +131,9 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=
         if isinstance(quote, str):
             quote = unescape(quote)
         quoted = bool(episode) and isinstance(quote, str) and bool(quote.strip()) and quote in _user_part(episode.digest)
-        if action in {"add", "update", "transition"} or (action == "delete" and reason == "I"):
+        if cleanup and action in {"update", "transition"} and not any(protected(e) for e in targets):
+            episode, quote = None, ""  # a re-sort rewrites an unprotected line from the document itself, never from a quote
+        elif action in {"add", "update", "transition"} or (action == "delete" and reason == "I"):
             if not quoted:
                 continue
             if action in {"update", "transition"} and any(
@@ -137,7 +146,7 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=
             past, current = op.get("past", ""), op.get("now") or ""
             if not acceptable(past, quote, episode) or duplicate(past_kind, past, ids):
                 continue
-            runs = list(dict.fromkeys([*target.get("evidence_run_ids", []), episode.run_id]))[-50:]
+            runs = list(dict.fromkeys([*target.get("evidence_run_ids", []), *([episode.run_id] if episode else [])]))[-50:]
             # the old line is corrected by its past tense, so open conversations get the existing correction notice
             tag = target.get("origin_project_id")
             was = line(past, past_kind, target.get("origin", "inferred"), "transition", episode, quote, runs, tag)
