@@ -2,7 +2,7 @@
 
 - 用户要求排查 tests/CI 的低效和无用部分并修复。分支 `ci/faster-tests`，base `origin/main@37850623`，[PR #176](https://github.com/shijunan126-creator/ailab-lite/pull/176)；未改产品代码，未部署。
 - 已完成：Python 双库套件改为 pytest-xdist 并行，每个 worker 独立库与 Redis db；E2E 分 3 片，Portal 单测只跑一次；去掉测试里的固定等待（服务器轮询、LLM 退避、本机代理）；修复 `lock_deps.sh --check` 恒通过的问题。根因、数字和边界见[记录](updates/2026-11-10-ci-speed.md)，坑见 HANDOFF 2026-11-10。
-- 本机：SQLite 11:21 → 91 秒，PG+Redis `-n 4` 185 秒，全部通过。下一步：核对 PR #176 最终 head 的 CI 结果与各 job 耗时，补进记录；合并由用户决定。
+- 本机：SQLite 11:21 → 91 秒，PG+Redis `-n 4` 185 秒，全部通过。CI `533ae0cd` 11 项全绿：整轮 12.2 分钟（原约 20 分钟），双库各约 7 分钟，E2E 三片 6.5–11.3 分钟（最慢一片含 3.8 分钟 apt 波动）。下一步：用户决定是否合并 PR #176；之后观察几轮 CI 有没有并行带来的偶发失败。
 
 ---
 
