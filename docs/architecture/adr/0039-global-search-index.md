@@ -1,6 +1,6 @@
 # ADR 0039：全量对话搜索用会话级词项索引
 
-- 状态：已实施（2026-11-11，分支 `feat/search-index`，base `origin/main@323184b1`）
+- 状态：已实施（2026-11-11，分支 `feat/search-index`，base `origin/main@01c1d16a`）
 - 相关：[搜索性能记录](../../progress/updates/2026-11-11-search-index.md)、[基准脚本](../../../platform/scripts/bench_search.py)
 
 ## 背景

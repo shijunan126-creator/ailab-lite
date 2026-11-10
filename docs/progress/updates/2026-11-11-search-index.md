@@ -1,6 +1,6 @@
 # 全量对话搜索：去掉继续搜索，会话级索引与性能对比（2026-11-11）
 
-- 分支 `feat/search-index`，base `origin/main@323184b1`；工作树 `.worktrees/search-optimization`。未部署。
+- 分支 `feat/search-index`，base `origin/main@01c1d16a`；工作树 `.worktrees/search-optimization`；[PR #181](https://github.com/shijunan126-creator/ailab-lite/pull/181)。未部署。
 - 用户要求：去掉“继续搜索”的 UI 和逻辑，一次搜完；提升精准度和性能，在对话很多时也快；做性能对比测试；UI/UX 做到最好。
 - 决定与边界见 [ADR 0039](../architecture/adr/0039-global-search-index.md)。
 
