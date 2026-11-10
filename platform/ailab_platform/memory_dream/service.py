@@ -54,7 +54,7 @@ def active_job(now: datetime | None = None):
 
 
 # Nightly chain clock, copied to every batch of a cron chain so a restart resumes against the same cutoff and deadline.
-CHAIN_KEYS = ("cutoff_at", "chain_started_at", "deadline")
+CHAIN_KEYS = ("cutoff_at", "chain_started_at", "deadline", "cleanup")
 
 
 def _chain_clock(report: dict | None) -> dict:
@@ -133,6 +133,23 @@ def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
         .order_by(MemoryDreamRun.finished_at.desc(), MemoryDreamRun.created_at.desc())
         .limit(1)
     )
+
+
+def _cleanup_scopes(db: Session, user_id: str, entries: list[dict]) -> list:
+    """Scopes to re-sort once under a new standard. Read-only: the version lives in the last batch report, not in settings."""
+    from .document import protected
+    from .prompts import PROMPT_VERSION
+
+    version = db.scalar(
+        select(MemoryDreamRun.report["prompt_version"].as_string())
+        .where(MemoryDreamRun.user_id == user_id, MemoryDreamRun.status == "applied", MemoryDreamRun.trigger.in_(("cron", "manual")))
+        .order_by(MemoryDreamRun.finished_at.desc())
+        .limit(1)
+    )
+    if version == PROMPT_VERSION:
+        return []
+    scopes = {e.get("project_id") for e in _active(entries) if not protected(e)}
+    return sorted(scopes, key=lambda pid: (pid is not None, pid or ""))  # the account first
 
 
 def _new_runs(
@@ -235,7 +252,8 @@ def claim_due(now: datetime | None = None) -> list[str]:
 
             scopes = {e.get("project_id") for e in document["entries"]}
             maintenance = any(maintenance_needed([e for e in document["entries"] if e.get("project_id") == pid], user) for pid in scopes)
-            if not runs and not maintenance:
+            cleanup = _cleanup_scopes(db, user.id, document["entries"])
+            if not runs and not maintenance and not cleanup:
                 db.commit()
                 continue
             if db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == user.id, active_job(now)).limit(1)):
@@ -249,7 +267,7 @@ def claim_due(now: datetime | None = None) -> list[str]:
                 trigger="cron",
                 input_run_ids=[r.id for r in runs],
                 token_usage={},
-                report={"cutoff_at": now.isoformat()},
+                report={"cutoff_at": now.isoformat(), **({"cleanup": cleanup} if cleanup else {})},
             )
             backfill = bool(runs) and any((item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "backfill" for r in runs)
             row.kind = "dream"
@@ -606,6 +624,15 @@ async def process_dream(run_id: str) -> None:
                 if job.trigger == "edit":
                     db.commit()
                     return ("edit",)
+                cleanup = list(clock.get("cleanup") or []) if job.trigger == "cron" else []
+                if cleanup:
+                    # Re-sort one scope under the current standard before any new conversation; protected lines stay.
+                    pid = cleanup[0]
+                    mode = project_mode(db, pid)
+                    scope = pid if mode == "isolated" else None
+                    entries = active([e for e in document["entries"] if e.get("project_id") == scope])
+                    db.commit()
+                    return owner, [], [], entries, scope, pid, mode, cleanup[1:]
                 runs = (
                     _new_runs(db, owner.id, None, now, project_id=job.project_id, scoped=job.trigger == "manual", cutoff=_cutoff(job))
                     if document["auto_save"]
@@ -634,7 +661,7 @@ async def process_dream(run_id: str) -> None:
                 selected = {e.run_id for e in episodes}
                 runs = [x for x in runs if x.id in selected]
                 db.commit()
-                return owner, runs, episodes, entries, scope, pid, mode
+                return owner, runs, episodes, entries, scope, pid, mode, None
 
     snapshot = await asyncio.to_thread(prepare)
     if not snapshot:
@@ -646,10 +673,12 @@ async def process_dream(run_id: str) -> None:
 
             await edit(run_id, token)
             return
-        owner, runs, episodes, entries, scope, pid, mode = snapshot
+        owner, runs, episodes, entries, scope, pid, mode, remaining = snapshot
         from .document import apply_ops, messages
+        from .prompts import PROMPT_VERSION
 
-        raw, usage = await _chat(messages(episodes, entries), settings.memory_dream_model or get_catalog().default_id(), owner)
+        model = settings.memory_dream_model or get_catalog().default_id()
+        raw, usage = await _chat(messages(episodes, entries, cleanup=remaining is not None), model, owner)
         result = _json(raw)
         if not isinstance(result.get("ops"), list):
             raise DreamError("整理模型未返回有效ops")
@@ -740,6 +769,8 @@ async def process_dream(run_id: str) -> None:
                         "ops": audit,
                         "ignored_runs": ignored,
                         "codes": codes,
+                        "prompt_version": PROMPT_VERSION,
+                        **({"cleanup": remaining} if remaining is not None else {}),
                     },
                     cursor_run_id=runs[-1].id if runs else None,
                 )
@@ -816,18 +847,20 @@ async def _process_dream_chain(run_id: str) -> None:
                     if previous.status != "applied" or previous.batch_index >= limit:
                         publish()
                         return
-                    if (
-                        not owner
-                        or not _memory_view(owner)["auto_save"]
-                        or not _new_runs(
-                            db,
-                            previous.user_id,
-                            None,
-                            utcnow(),
-                            limit=1,
-                            project_id=previous.project_id,
-                            scoped=previous.trigger == "manual",
-                            cutoff=_cutoff(previous),
+                    if not owner or (
+                        not _chain_clock(previous.report).get("cleanup")
+                        and (
+                            not _memory_view(owner)["auto_save"]
+                            or not _new_runs(
+                                db,
+                                previous.user_id,
+                                None,
+                                utcnow(),
+                                limit=1,
+                                project_id=previous.project_id,
+                                scoped=previous.trigger == "manual",
+                                cutoff=_cutoff(previous),
+                            )
                         )
                     ):
                         publish()

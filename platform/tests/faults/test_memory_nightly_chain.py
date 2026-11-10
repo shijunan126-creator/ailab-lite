@@ -228,3 +228,75 @@ def test_chain_timeout_setting_is_bounded():
     for value in (59, 7201):
         with pytest.raises(ValidationError):
             Settings(memory_dream_chain_timeout_seconds=value)
+
+
+def _lines(uid, *items):
+    from ailab_platform.memory_recall.store import replace_entries
+
+    with SessionLocal() as db:
+        replace_entries(db, db.get(User, uid), [dict(item) for item in items])
+        db.commit()
+
+
+def test_a_stale_standard_starts_one_resort_chain_without_writing_settings(monkeypatch):
+    from ailab_platform.memory_dream.prompts import PROMPT_VERSION
+
+    with SessionLocal() as db:
+        uid = _user(db, runs=0)
+        settings_before = dict(db.get(User, uid).settings)
+    _lines(uid, {"id": "mem_s" + uid[2:18], "kind": "project", "content": "做了一份奈飞营收 PPT", "origin": "inferred"})
+    first = _claim(monkeypatch, uid, NIGHT)
+    assert len(first) == 1
+    with SessionLocal() as db:
+        assert db.get(MemoryDreamRun, first[0]).report["cleanup"] == [None]
+        assert db.get(User, uid).settings == settings_before  # claim_due only reads
+        db.add(
+            MemoryDreamRun(
+                user_id=uid, local_date="2026-11-11", trigger="manual", status="applied", report={"prompt_version": PROMPT_VERSION}
+            )
+        )
+        db.commit()
+    # once a batch ran under the current standard, a quiet night costs nothing
+    assert _claim(monkeypatch, uid, NIGHT + timedelta(days=2)) == []
+
+
+def test_protected_lines_alone_do_not_need_a_resort(monkeypatch):
+    with SessionLocal() as db:
+        uid = _user(db, runs=0)
+    _lines(uid, {"id": "mem_p" + uid[2:18], "kind": "preference", "content": "回答先给结论", "origin": "explicit"})
+    assert _claim(monkeypatch, uid, NIGHT) == []
+
+
+def test_resort_batch_runs_first_then_new_conversations(monkeypatch):
+    from ailab_platform.memory_dream.prompts import CLEANUP, PROMPT_VERSION
+
+    with SessionLocal() as db:
+        uid = _user(db, runs=1)
+        rid = db.scalar(select(Run.id).where(Run.user_id == uid))
+    a, b = "mem_a" + uid[2:18], "mem_b" + uid[2:18]
+    _lines(
+        uid,
+        {"id": a, "kind": "interest", "content": "关注英伟达财报（11-02 询问）", "origin": "inferred"},
+        {"id": b, "kind": "interest", "content": "关注英特尔财报（10-30 询问）", "origin": "inferred"},
+    )
+    first = _claim(monkeypatch, uid, NIGHT)[0]
+    monkeypatch.setattr(service, "utcnow", lambda: NIGHT + timedelta(minutes=1))
+    seen = []
+
+    async def chat(messages, model, user):
+        seen.append(messages[1]["content"])
+        if messages[1]["content"] == CLEANUP:
+            return json.dumps({"ops": [{"op": "merge", "ids": [a, b], "content": "关注美股科技公司的财报", "r": "G"}]}), {}
+        return json.dumps({"ops": [], "ignored_runs": [{"run": rid, "r": "N"}]}), {}
+
+    monkeypatch.setattr(service, "_chat", chat)
+    asyncio.run(service.process_dream_chain(first))
+    assert seen[0] == CLEANUP and rid in seen[1] and len(seen) == 2
+    with SessionLocal() as db:
+        rows = sorted(_cron(db, uid), key=lambda r: r.batch_index)
+        assert [r.status for r in rows] == ["applied", "applied"]
+        assert all(r.report["prompt_version"] == PROMPT_VERSION for r in rows)
+        assert not rows[1].report.get("cleanup")
+        from ailab_platform.api.routes_memory import memory_for
+
+        assert [e["content"] for e in memory_for(db.get(User, uid))["entries"]] == ["关注美股科技公司的财报"]

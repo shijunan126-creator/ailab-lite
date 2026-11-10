@@ -10,15 +10,16 @@ from ..memory_recall.policy import review_required
 from ..memory_recall.store import stamp
 from ..memory_recall.tombstones import blocked_by_tombstone, fact_hash, tombstones_of
 from ..models import new_id, utcnow
-from .prompts import DOCUMENT_SYSTEM
+from .prompts import CLEANUP, DOCUMENT_SYSTEM
 
 
-def messages(episodes, entries):
+def messages(episodes, entries, *, cleanup=False):
+    """Static rules, then this batch's conversations (or the one-time re-sort instruction), then the document last."""
     from .service import _episode_payload
 
     return [
         {"role": "system", "content": DOCUMENT_SYSTEM},
-        {"role": "user", "content": _episode_payload(episodes)},
+        {"role": "user", "content": CLEANUP if cleanup else _episode_payload(episodes)},
         {
             "role": "user",
             "content": json.dumps({"max_chars": settings.memory_doc_max_chars, "document": render(entries)}, ensure_ascii=False),
