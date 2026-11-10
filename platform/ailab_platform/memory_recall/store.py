@@ -8,8 +8,8 @@ from sqlalchemy.orm import object_session
 from ..models import MemoryItem, MemoryItemSource, utcnow
 from .tombstones import fact_hash
 
-# origin_before: set by migration 0068 on the nightly lines it unprotected, so a downgrade restores exactly those
-METADATA_KEYS = ("source", "evidence_episode_ids", "evidence_deleted", "last_used_at", "origin_before")
+# origin_before / origin_0069 / status_0069: set by migrations 0068 / 0069 so a downgrade restores exactly the rows they changed
+METADATA_KEYS = ("source", "evidence_episode_ids", "evidence_deleted", "last_used_at", "origin_before", "origin_0069", "status_0069")
 
 
 def stamp(value, fallback=None):
@@ -27,7 +27,6 @@ def legacy(row):
         "project_id": row.project_id,
         "origin_project_id": row.origin_project_id,
         "kind": {"preference": "user", "fact": "memory"}.get(row.kind, row.kind),
-        "origin": row.origin,
         "created_by": row.created_by,
         "superseded_reason": row.superseded_reason,
         "content": row.content,
@@ -38,8 +37,7 @@ def legacy(row):
         "invalid_at": row.valid_to.isoformat() if row.valid_to else None,
         "expires_at": row.expires_at.isoformat() if row.expires_at else None,
         "superseded_by": row.superseded_by,
-        "status": "review" if row.status == "suppressed" else row.status,
-        "suppressed": False,
+        "status": row.status,
         "confidence": row.confidence,
         "updated_at": stamp(row.updated_at).isoformat(),
         "reinforced_at": stamp(row.reinforced_at).isoformat(),
@@ -54,7 +52,7 @@ def entries_for(user):
         legacy(row)
         for row in db.scalars(
             select(MemoryItem)
-            .where(MemoryItem.user_id == user.id, MemoryItem.status.in_(("active", "review", "suppressed")))
+            .where(MemoryItem.user_id == user.id, MemoryItem.status == "active")
             .order_by(MemoryItem.created_at, MemoryItem.id)
         )
     ]
@@ -62,12 +60,7 @@ def entries_for(user):
 
 def replace_entries(db, user, entries):
     """Caller owns the user lock and revision CAS; changes join that transaction."""
-    rows = {
-        r.id: r
-        for r in db.scalars(
-            select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.status.in_(("active", "review", "suppressed")))
-        )
-    }
+    rows = {r.id: r for r in db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.status == "active"))}
     ids = {e["id"] for e in entries} - rows.keys()
     if ids:
         rows.update({r.id: r for r in db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.id.in_(ids)))})
@@ -77,8 +70,8 @@ def replace_entries(db, user, entries):
             db.delete(row)
     # Close superseded rows before inserts so the partial unique index sees the final state.
     for e in entries:
-        if e["id"] in rows and (e.get("invalid_at") or e.get("suppressed")):
-            rows[e["id"]].status = "review" if e.get("suppressed") else "closed"
+        if e["id"] in rows and e.get("invalid_at"):
+            rows[e["id"]].status = "closed"
     db.flush()
     now = utcnow()
     for e in entries:
@@ -90,8 +83,7 @@ def replace_entries(db, user, entries):
         row.project_id = e.get("project_id")
         row.origin_project_id = e.get("origin_project_id")
         row.kind = {"user": "preference", "memory": "fact"}.get(e["kind"], e["kind"])
-        # a nightly line is never the user's own request; only the user (edited) or a tool call they asked for (explicit) protects a line
-        row.origin = e.get("origin") or ("inferred" if e.get("source") == "nightly" else "chat" if e.get("source") == "agent" else "edited")
+        row.origin = "memory"  # one kind of line (ADR 0037): whoever wrote it, the user can edit or ask to change it
         row.created_by = e.get("created_by") or "addition"
         row.superseded_reason = e.get("superseded_reason")
         row.content = e["content"]
@@ -102,9 +94,7 @@ def replace_entries(db, user, entries):
         row.valid_to = stamp(e.get("invalid_at"))
         row.expires_at = stamp(e.get("expires_at"))
         row.superseded_by = e.get("superseded_by")
-        row.status = (
-            "review" if e.get("suppressed") or e.get("status") == "suppressed" else "closed" if row.valid_to else e.get("status", "active")
-        )
+        row.status = "closed" if row.valid_to else "active"
         row.confidence = e.get("confidence", 1.0)
         row.reinforced_at = stamp(e.get("reinforced_at"), row.reinforced_at if not fresh else now)
         row.content_hash = fact_hash(row.content)

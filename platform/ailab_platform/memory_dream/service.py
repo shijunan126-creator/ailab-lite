@@ -54,7 +54,8 @@ def active_job(now: datetime | None = None):
 
 
 # Nightly chain clock, copied to every batch of a cron chain so a restart resumes against the same cutoff and deadline.
-CHAIN_KEYS = ("cutoff_at", "chain_started_at", "deadline", "cleanup")
+# a successor batch inherits the chain clock and the counts of the batches before it, so the last batch reports the chain
+CHAIN_KEYS = ("cutoff_at", "chain_started_at", "deadline", "cleanup", "runs_seen_before", "added_before", "changed_before")
 
 
 def _chain_clock(report: dict | None) -> dict:
@@ -137,7 +138,6 @@ def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
 
 def _cleanup_scopes(db: Session, user_id: str, entries: list[dict]) -> list:
     """Scopes to re-sort once under a new standard. Read-only: the version lives in the last batch report, not in settings."""
-    from .document import protected
     from .prompts import PROMPT_VERSION
 
     version = db.scalar(
@@ -165,7 +165,7 @@ def _cleanup_scopes(db: Session, user_id: str, entries: list[dict]) -> list:
             .limit(100)
         )
     )
-    scopes = {e.get("project_id") for e in _active(entries) if not protected(e)} - done
+    scopes = {e.get("project_id") for e in _active(entries)} - done
     return sorted(scopes, key=lambda pid: (pid is not None, pid or ""))  # the account first
 
 
@@ -643,7 +643,7 @@ async def process_dream(run_id: str) -> None:
                     return ("edit",)
                 cleanup = list(clock.get("cleanup") or []) if job.trigger in {"cron", "manual"} else []
                 if cleanup:
-                    # Re-sort one scope under the current standard before any new conversation; protected lines stay.
+                    # Re-sort one scope under the current standard before any new conversation.
                     pid = cleanup[0]
                     mode = project_mode(db, pid)
                     scope = pid if mode == "isolated" else None

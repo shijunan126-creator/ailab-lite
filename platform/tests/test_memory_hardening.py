@@ -80,19 +80,6 @@ def install_extractor(monkeypatch, seen=None):
     install_plan_builder(monkeypatch, extract)
 
 
-def test_paused_memory_is_not_disclosed_by_the_agent_list_tool():
-    with TestClient(app) as c:
-        me = _user(c)
-        put(c, me, [{"content": "暂停后不应给模型的事实", "suppressed": True}])
-        rid = _running(c, me)
-        out = c.get(
-            f"/internal/runs/{rid}/memory-context",
-            headers=attempt_headers(c, rid),
-        )
-        assert out.status_code == 200
-        assert "暂停后不应给模型的事实" not in out.text
-
-
 def test_nightly_extraction_obeys_auto_save_off(monkeypatch):
     install_extractor(monkeypatch)
     with TestClient(app) as c:
@@ -297,11 +284,6 @@ def test_disabled_accounts_do_not_starve_embedding_backfill(monkeypatch):
         assert embeddings.index_pending() > 0
 
 
-def test_paused_fact_is_excluded_from_dream_model_inputs():
-    paused = {"id": "mem_pause", "content": "不应被后台模型参考", "suppressed": True}
-    assert service._active([paused]) == []
-
-
 def test_conflict_replacement_and_invalidation_are_an_atomic_change(monkeypatch):
     install_extractor(monkeypatch)
     with TestClient(app) as c:
@@ -334,7 +316,7 @@ def test_conflict_replacement_and_invalidation_are_an_atomic_change(monkeypatch)
             assert not ({f"项目{i}旧状态", f"项目{i}新状态"} <= active), active
 
 
-def test_model_bootstrap_filters_paused_and_invalid_facts():
+def test_model_bootstrap_filters_invalid_facts_and_a_legacy_pause_is_just_active():
     user = User(
         settings={
             "memory": {
@@ -357,7 +339,8 @@ def test_model_bootstrap_filters_paused_and_invalid_facts():
         db.add(user)
         db.flush()
         replace_entries(db, user, [{"kind": "memory", **e} for e in user.settings["memory"]["entries"]])
-        assert [e["id"] for e in memory_for(user, for_model=True)["entries"]] == ["mem_c"]
+        # the pause/review states are gone (ADR 0037): a legacy paused line is an ordinary active line
+        assert [e["id"] for e in memory_for(user, for_model=True)["entries"]] == ["mem_a", "mem_c"]
         db.rollback()
 
 
@@ -437,31 +420,46 @@ def test_dialog_policy_freezes_no_write_and_live_read_disable():
             assert service._new_runs(db, uid, None, datetime.now(UTC)) == []
 
 
-def test_sensitive_inferences_need_user_confirmation_and_history_is_temporal():
+def test_personal_facts_are_remembered_and_id_or_card_numbers_never_are():
+    """ADR 0037: health or faith the user mentions is ordinary memory; an id number, card number or credential is not."""
     from ailab_platform.memory_dream.document import apply_ops
     from ailab_platform.memory_dream.maintenance import save
     from ailab_platform.memory_recall.policy import model_view
     from tests.test_memory_document import episode
 
+    said = "我有高血压，身份证号 110101199003071234，卡号 6222 0212 3456 7890 123"
     with TestClient(app) as c:
         me = _user(c)
         uid = _uid(c, me)
-        rid = _seed(uid, "我有病史", days_ago=0)
+        rid = _seed(uid, said, days_ago=0)
         ep = episode()
         ep.run_id = rid
-        ep.digest = json.dumps({"user_said": "我有病史"})
+        ep.digest = json.dumps({"user_said": said})
+        ops = [
+            {"op": "add", "kind": "fact", "content": "有高血压", "quote": "我有高血压", "run": rid},
+            *(
+                {"op": "add", "kind": "reference", "content": text, "quote": text, "run": rid}
+                for text in ("身份证号 110101199003071234", "卡号 6222 0212 3456 7890 123")
+            ),
+        ]
         with SessionLocal() as db:
             user = db.get(User, uid)
             before = memory_for(user)
-            changed, _ = apply_ops(
-                [], [], [ep], [{"op": "add", "kind": "fact", "content": "用户有病史", "quote": "我有病史", "run": rid}], user, None
-            )
+            changed, _ = apply_ops([], [], [ep], ops, user, None)
             save(db, user, before, changed)
             db.commit()
         doc = c.get("/v1/memory", headers=me).json()
-        assert doc["entries"][0]["status"] == "review" and model_view(doc)["entries"] == []
-        put(c, me, [{"content": "用户有病史", "status": "active"}])
-        assert model_view(c.get("/v1/memory", headers=me).json())["entries"]
+        assert [(e["content"], e["status"]) for e in doc["entries"]] == [("有高血压", "active")]
+        assert [e["content"] for e in model_view(doc)["entries"]] == ["有高血压"]
+        refused = c.put(
+            "/v1/memory",
+            headers=me,
+            json={
+                "expected_revision": doc["revision"],
+                "entries": [{"id": e["id"], "content": e["content"]} for e in doc["entries"]] + [{"content": "银行卡 6222021234567890123"}],
+            },
+        )
+        assert refused.status_code == 422 and "卡号" in refused.text
 
 
 def test_dream_claim_is_exclusive_and_pending_candidates_survive_budget(monkeypatch):
@@ -644,47 +642,3 @@ def test_concurrent_dream_dispatch_has_one_model_owner(monkeypatch):
         assert calls == [1]
         with SessionLocal() as db:
             assert db.get(MemoryDreamRun, did).status == "applied"
-
-
-def test_late_historical_fact_cannot_supersede_a_newer_confirmed_state():
-    from types import SimpleNamespace
-
-    from ailab_platform.memory_dream.document import apply_ops
-    from tests.test_memory_document import entry, episode
-
-    old = entry(origin="explicit", content="用户当前使用pnpm")
-    old["updated_at"] = "2027-01-01T00:00:00+00:00"
-    result, audit = apply_ops(
-        [old],
-        [old],
-        [episode()],
-        [{"op": "update", "id": old["id"], "content": "npm", "quote": "我住在上海", "run": "run_one"}],
-        SimpleNamespace(settings={}),
-        None,
-    )
-    assert result == [old] and audit == []
-
-
-def test_judge_denies_unsupported_inferences_even_with_valid_quotes():
-    from ailab_platform.models import MemoryEpisode
-
-    """The removed judge is replaced by the deterministic sensitive-review boundary."""
-    from types import SimpleNamespace
-
-    from ailab_platform.memory_dream.document import apply_ops
-
-    ep = MemoryEpisode(
-        id="epi_hypothesis", run_id="run_hypothesis", observed_at=datetime.now(UTC), digest=json.dumps({"user_said": "假设有人患有某疾病"})
-    )
-    entries, _ = apply_ops(
-        [],
-        [],
-        [ep],
-        [{"op": "add", "kind": "fact", "content": "用户患有某疾病", "quote": "假设有人患有某疾病", "run": ep.run_id}],
-        SimpleNamespace(settings={}),
-        None,
-    )
-    assert len(entries) == 1 and entries[0]["status"] == "review"
-    from ailab_platform.memory_recall.policy import model_view
-
-    assert model_view({"entries": entries})["entries"] == []

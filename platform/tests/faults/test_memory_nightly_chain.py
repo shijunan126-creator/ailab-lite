@@ -260,11 +260,13 @@ def test_a_stale_standard_starts_one_resort_chain_without_writing_settings(monke
     assert _claim(monkeypatch, uid, NIGHT + timedelta(days=2)) == []
 
 
-def test_protected_lines_alone_do_not_need_a_resort(monkeypatch):
+def test_an_empty_document_needs_no_resort_and_a_line_the_user_typed_does(monkeypatch):
     with SessionLocal() as db:
         uid = _user(db, runs=0)
-    _lines(uid, {"id": "mem_p" + uid[2:18], "kind": "preference", "content": "回答先给结论", "origin": "explicit"})
     assert _claim(monkeypatch, uid, NIGHT) == []
+    # one kind of line (ADR 0037): what the user wrote is re-sorted with the rest
+    _lines(uid, {"id": "mem_p" + uid[2:18], "kind": "preference", "content": "回答先给结论", "origin": "explicit"})
+    assert len(_claim(monkeypatch, uid, NIGHT + timedelta(days=1))) == 1
 
 
 def test_resort_batch_runs_first_then_new_conversations(monkeypatch):

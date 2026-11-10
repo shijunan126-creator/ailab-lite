@@ -117,7 +117,6 @@ async def edit(run_id, token):
                                 content=str(op.get("content") or "").strip(),
                                 project_id=pid,
                                 origin_project_id=pid,
-                                origin="edited",
                             )
                         except ValueError:
                             continue
@@ -140,9 +139,7 @@ async def edit(run_id, token):
                                 # a replace may move a line to another kind: an ended project becomes past experience
                                 moved = rekind and kind(e) != kind(item.model_dump())
                                 if e["id"] == op["id"] and (e["content"] != item.content or moved):
-                                    e.update(
-                                        content=item.content, origin="edited", evidence_run_ids=[], evidence_episode_ids=[], source_quote=""
-                                    )
+                                    e.update(content=item.content, evidence_run_ids=[], evidence_episode_ids=[], source_quote="")
                                     if rekind:
                                         e["kind"] = item.kind
                                     counts["replaced"] += 1
@@ -177,18 +174,14 @@ def merge_project(db, user, project):
     entries = copy.deepcopy(before["entries"])
     account = {}
     for e in entries:
-        if e.get("project_id") is None and e.get("status") in {"active", "review"}:
-            key = (kind(e), fact_hash(e["content"]))
-            if key not in account or e.get("status") == "active":
-                account[key] = e
+        if e.get("project_id") is None and e.get("status") == "active":
+            account.setdefault((kind(e), fact_hash(e["content"])), e)
     for e in entries:
-        if e.get("project_id") != project.id or e.get("status") not in {"active", "review"}:
+        if e.get("project_id") != project.id or e.get("status") != "active":
             continue
         key = (kind(e), fact_hash(e["content"]))
         if key in account:
             target = account[key]
-            if e.get("status") == "active":
-                target["status"] = "active"
             for field in ("evidence_run_ids", "evidence_episode_ids"):
                 target[field] = list(dict.fromkeys([*target.get(field, []), *e.get(field, [])]))
                 if len(target[field]) > 50:
@@ -206,8 +199,6 @@ def merge_project(db, user, project):
                         )
                     )
                     target[field] = ordered
-            if e.get("origin") in {"explicit", "manual", "edited"} and target.get("origin") == "inferred":
-                target["origin"] = e["origin"]
             target["reinforced_at"] = utcnow().isoformat()
             e.update(invalid_at=utcnow().isoformat(), superseded_by=target["id"], superseded_reason="condense")
         else:

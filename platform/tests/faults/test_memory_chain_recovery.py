@@ -206,6 +206,27 @@ def test_successor_batch_keeps_due_priority_and_counters(monkeypatch):
         assert successor.report["runs_seen_before"] == 1
 
 
+def test_the_last_batch_of_a_chain_reports_the_whole_chain():
+    # a re-sort batch that split and merged lines, then a batch of new conversations: "立即整理" shows both
+    with SessionLocal() as db:
+        user = User(email=f"chain-counts-{utcnow().timestamp()}@test.invalid")
+        db.add(user)
+        db.flush()
+        job = MemoryDreamRun(
+            user_id=user.id,
+            local_date="2026-01-01",
+            timezone="UTC",
+            status="running",
+            trigger="manual",
+            report={"runs_seen_before": 0, "added_before": 1, "changed_before": 3},
+        )
+        db.add(job)
+        db.commit()
+        service._finish(db, job, "applied", report={"runs_seen": 1, "added": 1, "changed": 1})
+        report = service._run_out(db.get(MemoryDreamRun, job.id)).report
+        assert (report["runs_seen"], report["added"], report["changed"]) == (1, 2, 4)
+
+
 def test_crash_after_extraction_commit_resumes_only_dreaming(monkeypatch):
 
     now = utcnow()

@@ -365,8 +365,8 @@ MEMORY = {
     "type": "function",
     "function": {
         "name": "memory",
-        "description": "首轮快照已是当前文档，无需list；后续轮提及别处记忆、质疑某行或修改快照外条目前list；"
-        "写操作无需revision；replace/remove用活动行id，行已变化时先list。仅用户要求时explicit=true；自主保存静默。",
+        "description": "快照、更新块和工具结果就是当前文档，要改的行在其中时直接replace/remove；用户提到的记忆找不到或行已变化时才list；"
+        "写操作无需revision；replace/remove用活动行id。仅用户要求时explicit=true；自主保存静默。",
         "parameters": {
             "type": "object",
             "properties": {

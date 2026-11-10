@@ -456,10 +456,8 @@ export type MemoryItem = {
   id: string;
   project_id: string | null;
   kind: "preference" | "fact" | "interest" | "project" | "reference";
-  origin: "explicit" | "chat" | "inferred" | "edited" | "manual"; // inferred: the AI concluded it; the rest the user said or wrote
   created_by?: "addition" | "correction" | "condense" | "transition"; // transition: the past tense of a line whose state changed
   content: string;
-  status: "active" | "review";
   observed_at: string | null;
   updated_at: string;
   sources: { run_id: string; conversation_id: string | null; conversation_title: string | null; date: string }[];
@@ -475,7 +473,6 @@ export type MemoryView = {
   active: { id: string; status: string; trigger: string } | null; // a consolidation or edit in progress
   used_chars: number;
   max_chars: number;
-  review: MemoryItem[]; // sensitive lines the AI may not use until the user confirms them
   sections: { kind: MemoryItem["kind"]; items: MemoryItem[] }[];
 };
 

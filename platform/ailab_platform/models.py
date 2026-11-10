@@ -1455,7 +1455,7 @@ class MemoryItem(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(20), default="fact")
-    origin: Mapped[str] = mapped_column(String(20), default="manual")
+    origin: Mapped[str] = mapped_column(String(20), default="memory")
     content: Mapped[str] = mapped_column(Text)
     source_run_ids: Mapped[list] = mapped_column(JSON, default=list)
     source_quote: Mapped[str] = mapped_column(Text, default="")

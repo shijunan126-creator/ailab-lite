@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 def visible(
     entry: dict, project_id: str | None = None, mode: str = "shared", *, as_of: datetime | None = None, standing: bool = False
 ) -> bool:
-    if entry.get("suppressed") or entry.get("status", "active") not in ({"active", "closed"} if as_of else {"active"}):
+    if entry.get("status", "active") not in ({"active", "closed"} if as_of else {"active"}):
         return False
     scope = entry.get("project_id")
     if scope != project_id and (scope is not None or (project_id is not None and mode == "isolated")):
@@ -58,15 +58,6 @@ def run_permissions(db, run) -> dict:
     current = (conv.memory_policy or {}) if conv else {}
     frozen = (run.options or {}).get("memory_policy") or {}
     return {key: current.get(key, True) and frozen.get(key, True) for key in ("read", "write")}
-
-
-def review_required(content: str) -> bool:
-    """Sensitive personal inferences need a human decision, rather than an invented confidence threshold."""
-    import re
-
-    return bool(
-        re.search(r"诊断|患有|病史|宗教信仰|政治倾向|性取向|身份证|银行卡|diagnosed|medical condition|sexual orientation", content, re.I)
-    )
 
 
 def source_available(db, run) -> bool:

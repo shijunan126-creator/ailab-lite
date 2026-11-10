@@ -18,7 +18,7 @@ from ailab_platform.memory_recall.invalidations import for_handles
 from ailab_platform.memory_recall.lineage import forget_conversations
 from ailab_platform.memory_recall.retention import purge_closed
 from ailab_platform.memory_recall.store import replace_entries
-from ailab_platform.models import Conversation, MemoryDreamRun, MemoryItem, Run, User, utcnow
+from ailab_platform.models import Conversation, MemoryItem, Run, User, utcnow
 from tests.run_claims import attempt_headers
 from tests.test_memory_hardening import dream_row, put
 from tests.test_memory_recall import _conversation, _running, _seed, _uid
@@ -30,7 +30,7 @@ def tool(c, me, rid, delivery, **body):
     return c.post(f"/internal/runs/{rid}/memory", headers={**attempt_headers(c, rid), "X-Delivery-Id": rid + ":" + delivery}, json=body)
 
 
-def test_shared_tools_write_account_and_preserve_kind_protection():
+def test_shared_tools_write_account_and_preserve_kind():
     with TestClient(app) as c:
         me = _user(c)
         uid = _uid(c, me)
@@ -49,7 +49,7 @@ def test_shared_tools_write_account_and_preserve_kind_protection():
         replace = tool(c, me, rid, "b", action="replace", id=old["id"], content="先列风险")
         assert replace.status_code == 200, replace.text
         current = replace.json()["entries"][0]
-        assert current["project_id"] is None and current["origin"] == "explicit"
+        assert current["project_id"] is None and "origin" not in current
         with SessionLocal() as db:
             row = db.get(MemoryItem, current["id"])
             assert row.kind == "preference" and row.created_by == "correction"
@@ -98,7 +98,7 @@ def test_redacted_and_expired_ancestors_keep_correction_redirects():
             assert db.get(MemoryItem, old).content == ""
 
 
-def test_merge_duplicate_becomes_condense_redirect_and_carries_review():
+def test_merge_duplicate_becomes_condense_redirect_and_carries_the_rest():
     with TestClient(app) as c:
         me = _user(c)
         pid = project(c, me, "isolated")
@@ -108,7 +108,7 @@ def test_merge_duplicate_becomes_condense_redirect_and_carries_review():
             [
                 {"content": "duplicate"},
                 {"content": "duplicate", "project_id": pid},
-                {"content": "待确认", "project_id": pid, "suppressed": True},
+                {"content": "项目里的事实", "project_id": pid},
             ],
         )
         project_row = next(e for e in doc["entries"] if e["project_id"] == pid and e["content"] == "duplicate")
@@ -116,33 +116,30 @@ def test_merge_duplicate_becomes_condense_redirect_and_carries_review():
         with SessionLocal() as db:
             row = db.get(MemoryItem, project_row["id"])
             assert row.status == "closed" and row.superseded_by and row.superseded_reason == "condense"
-        review = c.get("/v1/memory/view", headers=me).json()["review"]
-        assert review[0]["content"] == "待确认" and review[0]["project_id"] is None
+        moved = [i for s in c.get("/v1/memory/view", headers=me).json()["sections"] for i in s["items"] if i["content"] == "项目里的事实"]
+        assert moved and moved[0]["project_id"] is None
 
 
-def test_maintenance_probe_is_read_only_and_inferred_multisource_can_evict(monkeypatch):
+def test_maintenance_probe_is_read_only_and_multisource_lines_can_evict(monkeypatch):
     monkeypatch.setattr(settings, "memory_doc_max_chars", 1000)
     owner = SimpleNamespace(settings={"memory": {"revision": 7, "tombstones": [{"hash": "x"}]}})
-    lines = [{"id": "mem_" + str(i), "kind": "fact", "origin": "explicit", "content": str(i) + "长" * 180} for i in range(7)]
+    lines = [{"id": "mem_" + str(i), "kind": "fact", "content": str(i) + "长" * 180} for i in range(7)]
     before = json.dumps(owner.settings)
-    assert not maintenance_needed(lines, owner)
+    assert maintenance_needed(lines, owner)
     assert json.dumps(owner.settings) == before
     for e in lines:
-        e.update(origin="inferred", evidence_run_ids=["run_a", "run_b"])
+        e.update(evidence_run_ids=["run_a", "run_b"])
     after, audit = apply_ops(lines, lines, [], [], owner, None)
     assert used_chars(after) <= 1000 and audit
 
 
-def test_review_add_requires_confirmation_and_settings_read_does_not_load_document(monkeypatch):
+def test_repeated_add_is_a_no_op_and_settings_read_does_not_load_document(monkeypatch):
     with TestClient(app) as c:
         me = _user(c)
-        put(c, me, [{"kind": "preference", "content": "待确认偏好", "suppressed": True}])
+        put(c, me, [{"kind": "preference", "content": "先给结论"}])
         rid = _running(c, me)
-        response = tool(c, me, rid, "r1", action="add", kind="preference", content="待确认偏好")
-        assert response.json()["awaiting_confirmation"] and not response.json()["entries"]
-        response = tool(c, me, rid, "r2", action="add", kind="preference", content="待确认偏好", explicit=True)
-        assert response.status_code == 200, response.text
-        assert not c.get("/v1/memory/view", headers=me).json()["review"]
+        response = tool(c, me, rid, "r1", action="add", kind="preference", content="先给结论")
+        assert response.status_code == 200 and not response.json()["entries"], response.text
 
         def forbidden(*a, **kw):
             raise AssertionError("settings must not compile all scopes")
@@ -192,36 +189,12 @@ def test_concurrent_target_edit_drops_only_that_op(monkeypatch):
             assert service.list_runs(db, uid)[0].report["changed"] == 1
 
 
-def test_protected_only_overcap_is_skipped_without_model_or_unlocked_settings_write(monkeypatch):
-    monkeypatch.setattr(settings, "memory_doc_max_chars", 1000)
-    with TestClient(app) as c:
-        me = _user(c)
-        uid = _uid(c, me)
-        put(c, me, [{"content": str(i) + "长" * 180, "origin": "explicit"} for i in range(6)])
-
-        async def forbidden(*args):
-            raise AssertionError("protected-only maintenance must not call model")
-
-        monkeypatch.setattr(service, "_chat", forbidden)
-        with SessionLocal() as db:
-            row = dream_row(uid)
-            db.add(row)
-            db.commit()
-            identity = row.id
-        asyncio.run(service.process_dream(identity))
-        with SessionLocal() as db:
-            assert db.get(MemoryDreamRun, identity).status == "skipped"
-            # prepare() runs outside the user lock, so it must not rewrite user.settings (a racing write would lose tombstones)
-            assert "nothing_condensable" not in db.get(User, uid).settings["memory"]
-
-
-def test_review_input_can_be_activated_without_invisible_suppression():
+def test_legacy_review_and_pause_inputs_become_active():
     from ailab_platform.contracts.memory import MemoryEntryInput
 
-    row = MemoryEntryInput(content="paused", status="suppressed")
-    assert row.status == "review" and row.suppressed is False
-    row = MemoryEntryInput(content="paused", suppressed=True)
-    assert row.status == "review" and row.suppressed is False
+    for legacy in ({"status": "suppressed"}, {"status": "review"}, {"suppressed": True}):
+        row = MemoryEntryInput(content="paused", **legacy)
+        assert row.status == "active" and row.suppressed is False
 
 
 def test_maintenance_no_progress_signature_prevents_another_paid_call(monkeypatch):

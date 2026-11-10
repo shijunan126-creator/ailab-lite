@@ -11,17 +11,16 @@ vi.mock("../lib/dialog", () => ({ confirmDialog: vi.fn(async () => true) }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a> }));
 
 const item = (id: string, content: string, extra: Partial<MemoryItem> = {}): MemoryItem => ({
-  id, project_id: null, kind: "preference", origin: "explicit", content, status: "active",
+  id, project_id: null, kind: "preference", content,
   observed_at: "2026-11-03T08:00:00Z", updated_at: "2026-11-03T08:00:00Z",
   sources: [{ run_id: "run_1", conversation_id: "conv_1", conversation_title: "周报", date: "2026-11-03" }], ...extra,
 });
 const view: MemoryView = {
   project_id: null, enabled: true, memory_mode: null, merge_pending: false, revision: 7, active: null, used_chars: 40, max_chars: 6000,
-  review: [],
   sections: [
     { kind: "preference", items: [item("mem_core", "回答先给结论")] },
     { kind: "project", items: [item("mem_proj", "在做 AILab 记忆模块", { kind: "project" })] },
-    { kind: "interest", items: [item("mem_fin", "关注乐信季度业绩", { kind: "interest", origin: "inferred" })] },
+    { kind: "interest", items: [item("mem_fin", "关注乐信季度业绩", { kind: "interest" })] },
   ],
 };
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); });
@@ -33,6 +32,9 @@ test("dates and organize notes", () => {
   assert.equal(shortDate("2025-01-02T08:00:00", now), "2025-01-02");
   assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 12, added: 3 } }), "看了 12 段对话，新增 3 条");
   assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 12, added: 0 } }), "看了 12 段对话，没有需要长期记住的内容");
+  // a re-sort before the new conversations: additions and rewrites are both shown
+  assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 1, added: 2, changed: 4 } }), "看了 1 段对话，新增 2 条，整理了 2 处记忆");
+  assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 0, added: 1, changed: 3 } }), "新增 1 条，整理了 2 处记忆");
 });
 
 test("shows the whole document by kind, each line with its source conversation, from one read", async () => {
@@ -71,28 +73,16 @@ test("every kind shows even when empty; a nearly full document says it will be c
   await waitFor(() => assert.ok(screen.getByText("快满了，下次整理会合并精简")));
 });
 
-test("an inferred line is marked and can be confirmed; deleting one sends the revision it was read at", async () => {
+test("every line is one kind: no tag, no confirm action; deleting one sends the revision it was read at", async () => {
   vi.mocked(api).mockResolvedValue(view);
   render(<MemoryPanel projectId={null} title="记忆" />);
   await waitFor(() => assert.ok(screen.getByText("关注乐信季度业绩")));
-  assert.equal(screen.getAllByText("推断").length, 1);
+  assert.equal(screen.queryByText("推断"), null);
   fireEvent.click(screen.getByLabelText("更多操作 关注乐信季度业绩"));
-  await act(async () => { fireEvent.click(screen.getByText("确认无误")); });
-  const confirm = vi.mocked(api).mock.calls.find(([path, o]) => path === "/v1/memory/items/mem_fin" && o?.method === "PATCH");
-  assert.deepEqual(JSON.parse(confirm![1]!.body as string), { expected_revision: 7, origin: "explicit" });
-  fireEvent.click(screen.getByLabelText("更多操作 关注乐信季度业绩"));
+  assert.equal(screen.queryByText("确认无误"), null);
   await act(async () => { fireEvent.click(screen.getByText("删除")); });
   assert.equal(vi.mocked(confirmDialog).mock.calls.length, 1);
   await waitFor(() => assert.ok(vi.mocked(api).mock.calls.some(([path, o]) => path === "/v1/memory/items/mem_fin?expected_revision=7" && o?.method === "DELETE")));
-});
-
-test("a sensitive item waits for confirmation and is confirmed in place", async () => {
-  vi.mocked(api).mockResolvedValue({ ...view, review: [item("mem_rev", "做过一次手术", { status: "review" })] });
-  render(<MemoryPanel projectId={null} title="记忆" />);
-  await waitFor(() => assert.ok(screen.getByText(/做过一次手术/)));
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "确认" })); });
-  const patch = vi.mocked(api).mock.calls.find(([path, o]) => path === "/v1/memory/items/mem_rev" && o?.method === "PATCH");
-  assert.deepEqual(JSON.parse(patch![1]!.body as string), { expected_revision: 7, status: "active" });
 });
 
 test("立即整理 follows its own run in the requested scope and says what it did", async () => {
@@ -156,24 +146,14 @@ test("an item is edited in place and saved with the revision it was read at", as
   await waitFor(() => assert.equal(screen.queryByLabelText("编辑记忆"), null));
 });
 
-test("a line without a source shows only its date; only an edited one says the user added it", async () => {
+test("a line without a source shows only its date", async () => {
   vi.mocked(api).mockResolvedValue({
     ...view,
-    sections: [
-      {
-        kind: "fact",
-        items: [
-          item("mem_gone", "在券商做量化", { origin: "inferred", sources: [] }),
-          item("mem_said", "常用 Python", { origin: "explicit", sources: [] }),
-          item("mem_typed", "住在上海", { origin: "edited", sources: [] }),
-        ],
-      },
-    ],
+    sections: [{ kind: "fact", items: [item("mem_gone", "在券商做量化", { sources: [] }), item("mem_typed", "住在上海", { sources: [] })] }],
   });
   render(<MemoryPanel projectId={null} title="记忆" />);
   await waitFor(() => assert.ok(screen.getByText("在券商做量化")));
   const meta = (text: string) => screen.getByText(text).closest("li")!.querySelector(".memory-meta")!.textContent;
   assert.equal(meta("在券商做量化"), "11-03");
-  assert.equal(meta("常用 Python"), "11-03");
-  assert.equal(meta("住在上海"), "你添加的11-03");
+  assert.equal(meta("住在上海"), "11-03");
 });

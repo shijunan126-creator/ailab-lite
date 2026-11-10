@@ -10,11 +10,7 @@ def kind(entry):
 
 
 def active(entries):
-    return [
-        e
-        for e in entries
-        if e.get("status", "active") == "active" and not e.get("suppressed") and not e.get("invalid_at") and not e.get("superseded_by")
-    ]
+    return [e for e in entries if e.get("status", "active") == "active" and not e.get("invalid_at") and not e.get("superseded_by")]
 
 
 def render(entries):
@@ -25,7 +21,7 @@ def render(entries):
             lines.append("## " + title)
         for e in items:
             date = str(e.get("observed_at") or e.get("valid_from") or e.get("updated_at") or "")[:10]
-            lines.append(f"- [{model_text(e['id'])}] [{date}] [{model_text(e.get('origin') or 'manual')}] {model_text(e['content'])}")
+            lines.append(f"- [{model_text(e['id'])}] [{date}] {model_text(e['content'])}")
     return "\n".join(lines)
 
 
@@ -37,7 +33,7 @@ def write_result(before, after):
     """A successful write appends only its delta; the conversation already contains the document."""
     left = {e["id"]: e for e in before.get("entries", [])}
     right = {e["id"]: e for e in after.get("entries", [])}
-    fields = ("id", "project_id", "kind", "origin", "content", "observed_at", "updated_at", "source", "evidence_run_ids")
+    fields = ("id", "project_id", "kind", "content", "observed_at", "updated_at", "source", "evidence_run_ids")
     changed = [e for key, e in sorted(right.items()) if key not in left or any(e.get(f) != left[key].get(f) for f in fields)]
     return {
         "memory_delta": True,
@@ -48,7 +44,7 @@ def write_result(before, after):
 
 
 def maintenance_needed(entries, user=None, *, record=False):
-    """Protected content cannot be shrunk by a maintenance-only call."""
+    """An over-long document is condensed; a single line that alone exceeds the budget cannot be."""
     from hashlib import sha256
 
     from ..config import settings
@@ -58,8 +54,7 @@ def maintenance_needed(entries, user=None, *, record=False):
         return False
     if user is not None and ((user.settings or {}).get("memory") or {}).get("nothing_condensable") == signature:
         return False
-    protected = [e for e in active(entries) if e.get("origin") in {"explicit", "edited", "manual"}]
-    possible = used_chars(protected) <= settings.memory_doc_max_chars and len(protected) < len(active(entries))
+    possible = len(active(entries)) > 1
     if not possible and user is not None and record:
         memory = dict((user.settings or {}).get("memory") or {})
         memory["nothing_condensable"] = signature

@@ -26,12 +26,10 @@ def test_view_items_revision_and_delete_contract():
 
     with TestClient(app) as client:
         headers = _user(client)
-        saved = put(
-            client, headers, [{"kind": "preference", "content": "简洁中文"}, {"kind": "fact", "content": "待确认", "status": "review"}]
-        )
+        saved = put(client, headers, [{"kind": "preference", "content": "简洁中文"}, {"kind": "fact", "content": "常用 Python"}])
         view = client.get("/v1/memory/view", headers=headers).json()
-        item = view["sections"][1]["items"][0]
-        assert len(view["review"]) == 1
+        item = view["sections"][0]["items"][0]
+        assert "review" not in view
         assert client.get("/v1/memory/items", headers=headers).status_code == 404
         assert (
             client.patch(f"/v1/memory/items/{item['id']}", headers=headers, json={"expected_revision": 0, "content": "新内容"}).status_code
@@ -43,7 +41,7 @@ def test_view_items_revision_and_delete_contract():
         assert patched.status_code == 200
         revision = client.get("/v1/memory/view", headers=headers).json()["revision"]
         assert client.delete(f"/v1/memory/items/{item['id']}?expected_revision={revision}", headers=headers).status_code == 200
-        assert client.get("/v1/memory/view", headers=headers).json()["sections"][1]["items"] == []
+        assert client.get("/v1/memory/view", headers=headers).json()["sections"][0]["items"] == []
 
 
 def test_stagger_is_stable_and_spreads_hundreds_of_users():
