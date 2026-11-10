@@ -22,6 +22,7 @@ def legacy(row):
         **(row.metadata_ or {}),
         "id": row.id,
         "project_id": row.project_id,
+        "origin_project_id": row.origin_project_id,
         "kind": {"preference": "user", "fact": "memory"}.get(row.kind, row.kind),
         "origin": row.origin,
         "created_by": row.created_by,
@@ -84,6 +85,7 @@ def replace_entries(db, user, entries):
             row = MemoryItem(id=e["id"], user_id=user.id)
             db.add(row)
         row.project_id = e.get("project_id")
+        row.origin_project_id = e.get("origin_project_id")
         row.kind = {"user": "preference", "memory": "fact"}.get(e["kind"], e["kind"])
         row.origin = e.get("origin") or ("explicit" if e.get("source") == "nightly" else "chat" if e.get("source") == "agent" else "edited")
         row.created_by = e.get("created_by") or "addition"

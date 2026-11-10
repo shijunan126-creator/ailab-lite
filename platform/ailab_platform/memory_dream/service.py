@@ -702,7 +702,7 @@ async def process_dream(run_id: str) -> None:
                 stale_context = {e.run_id for e in episodes if ignored.get(e.context_run_id) == "test"}
                 evidence = [e for e in episodes if e.run_id not in ignored and e.run_id not in stale_context]
                 redact_episode_context(db, [rid for rid, reason in ignored.items() if reason == "test"])
-                changed, audit = apply_ops(current["entries"], unchanged, evidence, result.get("ops", []), user, scope, codes)
+                changed, audit = apply_ops(current["entries"], unchanged, evidence, result.get("ops", []), user, scope, codes, pid)
                 after = save(db, user, current, changed)
                 record(job, current, after)
                 if not runs:

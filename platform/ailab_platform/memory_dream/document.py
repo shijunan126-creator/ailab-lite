@@ -47,7 +47,8 @@ def code(value, allowed):
     return value if isinstance(value, str) and value in allowed else "?"
 
 
-def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None):
+def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=None):
+    """`label` is the project this batch's conversations belong to; a new line carries it as origin_project_id."""
     from html import unescape
 
     from .service import _user_part
@@ -80,7 +81,7 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None):
             and not blocked_by_tombstone(tombstones, content, [episode.run_id] if episode else [])
         )
 
-    def line(content, section, origin, created_by, episode, quote, runs):
+    def line(content, section, origin, created_by, episode, quote, runs, tag):
         return {
             "id": new_id("mem"),
             "kind": section,
@@ -96,6 +97,7 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None):
             "source_quote": quote,
             "source": "nightly",
             "created_by": created_by,
+            "origin_project_id": tag,
         }
 
     for op in ops:
@@ -136,13 +138,14 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None):
                 continue
             runs = list(dict.fromkeys([*target.get("evidence_run_ids", []), episode.run_id]))[-50:]
             # the old line is corrected by its past tense, so open conversations get the existing correction notice
-            was = line(past, past_kind, target.get("origin", "inferred"), "transition", episode, quote, runs)
+            tag = target.get("origin_project_id")
+            was = line(past, past_kind, target.get("origin", "inferred"), "transition", episode, quote, runs, tag)
             entries.append(was)
             fresh_ids = [was["id"]]
             present = isinstance(current, str) and current.strip() and acceptable(current, quote, episode)
             if present and not duplicate(kind(target), current, ids):
                 # the present is a plain addition: no notice; a clash with an active line or a tombstone keeps only the past
-                entries.append(line(current, kind(target), "inferred", "addition", episode, quote, runs))
+                entries.append(line(current, kind(target), "inferred", "addition", episode, quote, runs, tag))
                 fresh_ids.append(entries[-1]["id"])
             target.update(superseded_reason="correction", invalid_at=now, updated_at=now, superseded_by=was["id"])
             touched.update([*ids, *fresh_ids])
@@ -166,6 +169,8 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None):
                 list(dict.fromkeys([*(targets[0].get("evidence_run_ids", []) if action == "update" else []), episode.run_id]))[-50:]
                 if episode
                 else sorted({rid for e in targets for rid in e.get("evidence_run_ids", [])})[:50],
+                # update keeps its line's project; merge keeps one only when every line agrees
+                label if not targets else tags.pop() if len(tags := {e.get("origin_project_id") for e in targets}) == 1 else None,
             )
             entries.append(fresh)
         for target in targets:

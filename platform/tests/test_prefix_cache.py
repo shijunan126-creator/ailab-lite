@@ -2855,3 +2855,22 @@ def test_memory_enabled_mid_conversation_uses_list_without_rewriting_snapshot():
     assert_extension(*requests)
     assert "enabled=false" in requests[-1]["messages"][1]["content"]
     assert "设置：记忆已开启，需了解当前记忆时用 memory.list" in requests[-1]["messages"][-1]["content"]
+
+
+def test_line_moved_out_of_scope_is_announced_without_a_boundary():
+    """A project switched to isolated takes its lines along: open account conversations hear "not in scope", not "deleted"."""
+    initial = memory_prefix_fixture()
+    moved = copy.deepcopy(initial)
+    moved["entries"] = moved["entries"][1:]
+    moved["invalidations"] = {"mem_core": {"current": None, "change_type": None, "out_of_scope": True}}
+    platform = MemoryPrefixPlatform([initial, moved])
+    with scripted_server([{"content": "1"}, {"content": "2"}]) as (url, requests):
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        for i in range(2):
+            asyncio.run(loop.process(f"turn{i}", attempt_id=f"a{i}"))
+    assert_extension(*requests)
+    blocks = [m for m in requests[-1]["messages"] if str(m.get("content", "")).startswith("<memory_update>")]
+    assert len(blocks) == 1 and "已不在当前范围，不得再使用：[mem_core]" in blocks[0]["content"]
+    assert "已删除" not in blocks[0]["content"]
+    assert requests[0]["messages"][:2] == requests[-1]["messages"][:2]
+    assert not any(kind == "agent.context_boundary" for kind, _ in platform.events)

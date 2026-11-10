@@ -28,6 +28,8 @@ from ..models import Artifact, Conversation, FileObject, FileStatus, Run, User
 from . import embeddings, text
 
 MAX_DOCS = 400  # newest runs scanned per query
+PROJECT_DOCS = 200  # in a shared project, its own newest runs are added so older project turns stay reachable
+PROJECT_BOOST = 1.2  # and rank a little ahead of equally relevant turns elsewhere
 FIELD_CHARS = 2000
 MIN_COVERAGE = 0.3  # share of the question's (IDF-weighted) terms a run must answer
 RECENCY_BOOST = 0.25  # at most +25% for something from the last few days
@@ -70,6 +72,8 @@ def _rows(
     after=None,
     cursor=None,
     order="desc",
+    only_project=None,
+    limit=None,
 ):
     from .policy import history_pool
 
@@ -93,8 +97,10 @@ def _rows(
             or_(Run.conversation_id.is_(None), Conversation.deleted_at.is_(None)),
         )
         .order_by(*((Run.created_at.asc(), Run.id.asc()) if order == "asc" else (Run.created_at.desc(), Run.id.desc())))
-        .limit(MAX_DOCS)
+        .limit(limit or MAX_DOCS)
     )
+    if only_project:
+        stmt = stmt.where(Conversation.project_id == only_project)
     from ..api.source_lifecycle import invalid_sources_query
 
     stmt = stmt.where(Run.id.not_in(invalid_sources_query(user_id)))
@@ -172,8 +178,20 @@ def search_history(
     seen: set[str] = set()
     docs: list[text.Doc] = []
     by_key: dict[str, tuple] = {}
-    rows = _rows(db, user.id, since, exclude_conversation_id, project_id=project_id, before=before, after=after, cursor=cursor, order=order)
-    for run_id, conv_id, created_at, prompt, summary, title in rows:
+    window = dict(project_id=project_id, before=before, after=after, cursor=cursor, order=order)
+    rows = _rows(db, user.id, since, exclude_conversation_id, **window)
+    # Pagination (cursor/before/asc and next_cursor) still follows the global rows; the extra batch only adds candidates.
+    from .policy import project_mode
+
+    local = set()
+    if project_id and project_mode(db, project_id) == "shared":
+        extra = _rows(db, user.id, since, exclude_conversation_id, **window, only_project=project_id, limit=PROJECT_DOCS)
+        local = {row[0] for row in extra}
+        known = {row[0] for row in rows}
+        candidates = [*rows, *(row for row in extra if row[0] not in known)]
+    else:
+        candidates = rows
+    for run_id, conv_id, created_at, prompt, summary, title in candidates:
         fingerprint = f"{(prompt or '').strip()}\x00{(summary or '').strip()}"
         if fingerprint in seen:  # a forked conversation repeats its parent's turns
             continue
@@ -204,6 +222,8 @@ def search_history(
     for channel_order in (lex_order, dense_order):
         for rank, key in enumerate(channel_order):
             fused[key] = fused.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
+    for key in local & fused.keys():
+        fused[key] *= PROJECT_BOOST
     ranked = sorted(fused, key=lambda k: (-fused[k], k))
     if order == "asc":
         ranked.sort(key=lambda k: (by_key[k][1], k))

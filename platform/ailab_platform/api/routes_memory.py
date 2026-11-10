@@ -51,6 +51,7 @@ def _entry(entry: dict) -> dict:
     out.setdefault("suppressed", False)
     out.setdefault("evidence_deleted", False)
     out.setdefault("project_id", None)
+    out.setdefault("origin_project_id", None)
     out.setdefault("status", "active")
     return out
 
@@ -199,10 +200,11 @@ def write_memory(
                 "last_used_at",
                 "suppressed",
                 "project_id",
+                "origin_project_id",
                 "status",
             ):
                 value = getattr(entry, field)
-                if value is not None or (field == "project_id" and field in entry.model_fields_set):
+                if value is not None or (field in {"project_id", "origin_project_id"} and field in entry.model_fields_set):
                     merged[field] = (
                         value.isoformat()
                         if field in {"valid_from", "invalid_at", "last_used_at", "observed_at", "reinforced_at", "expires_at"}
@@ -318,6 +320,7 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
         "last_used_at": entry.last_used_at.isoformat() if entry.last_used_at else None,
         "suppressed": bool(entry.suppressed),
         "project_id": entry.project_id,
+        "origin_project_id": entry.origin_project_id,
         "status": entry.status or "active",
     }
 
@@ -611,6 +614,7 @@ def run_memory(
                 content=body.content,
                 evidence_run_ids=[run.id],
                 project_id=write_scope,
+                origin_project_id=project_id,
             )
             if not body.explicit and blocked_by_tombstone(tombstones_of(user), item.content):
                 raise HTTPException(422, "用户之前删除过这条记忆；除非用户明确要求，不要再次保存")
@@ -691,6 +695,7 @@ def run_memory(
                     content=body.content,
                     evidence_run_ids=[run.id],
                     project_id=write_scope,
+                    origin_project_id=entries[match].origin_project_id,
                 )
                 entries[match].invalid_at = datetime.now(UTC)
                 entries[match].superseded_by = corrected.id

@@ -34,11 +34,14 @@ def for_handles(db, user_id, handles, document, project_id, mode):
         target = active.get(current)
         if target is None and current in rows and rows[current].status != "closed":
             target = legacy(rows[current])
-        if target and not visible(target, project_id, mode=mode):
+        # a line that still exists but left this scope (a project's memory mode changed) is not a deletion
+        moved = bool(target) and not visible(target, project_id, mode=mode)
+        if moved:
             target = None
         correction |= (target or {}).get("superseded_reason") == "correction"
         out[handle] = {
             "current": target,
             "change_type": "correction" if correction else "condense" if condensed else (target or {}).get("superseded_reason"),
+            **({"out_of_scope": True} if moved else {}),
         }
     return out

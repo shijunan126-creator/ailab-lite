@@ -49,6 +49,7 @@ class MemoryEntryInput(BaseModel):
     # "Pause": kept and visible to the user, never shown to the model. Not the same as deleting.
     suppressed: bool | None = None
     project_id: str | None = Field(default=None, max_length=40)
+    origin_project_id: str | None = Field(default=None, max_length=40)  # the project the line was learned in
     status: Literal["active", "review", "suppressed"] | None = None
 
     @model_validator(mode="after")

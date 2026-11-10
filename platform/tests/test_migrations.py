@@ -1154,6 +1154,7 @@ def test_memory_document_repairs_shared_scopes_and_paused_rows(engine):
             ),
         )
     _upgrade_to(engine, "0066")
+    _upgrade_to(engine, "head")  # the ORM below describes the latest schema; later revisions keep these rows as 0066 left them
     with Session(engine) as db:
         row = db.get(MemoryItem, "repair-memory")
         assert row.status == "review"
@@ -1163,3 +1164,93 @@ def test_memory_document_repairs_shared_scopes_and_paused_rows(engine):
         merge_pending_projects(db, db.get(User, "u1"))
         assert db.get(MemoryItem, "repair-memory").project_id is None
         assert db.get(Project, "repair-project").memory_merge_requested_at is None
+
+
+def test_memory_origin_project_backfills_only_single_project_account_lines(engine):
+    import sqlalchemy as sa
+
+    _upgrade_to(engine, "0066")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(sa.text("INSERT INTO users (id, email, display_name, created_at) VALUES ('u2', 'b@b.c', 'B', '2026-01-01')"))
+        for pid in ("p1", "p2"):
+            conn.execute(
+                sa.text(
+                    "INSERT INTO projects(id,user_id,name,name_key,instructions,memory_mode,created_at,updated_at) "
+                    f"VALUES ('{pid}','u1','{pid}','{pid}','','shared','2026-01-01','2026-01-01')"
+                )
+            )
+        runs = sa.Table("runs", sa.MetaData(), autoload_with=conn)
+        conversations = sa.Table("conversations", sa.MetaData(), autoload_with=conn)
+
+        def required(table, **values):
+            # fill NOT NULL columns of this revision that only have ORM-side defaults
+            for col in table.columns:
+                if col.name in values or col.nullable or col.server_default is not None:
+                    continue
+                kind = type(col.type)
+                values[col.name] = (
+                    {}
+                    if issubclass(kind, sa.JSON)
+                    else datetime(2026, 1, 1)
+                    if issubclass(kind, sa.DateTime)
+                    else 0
+                    if issubclass(kind, sa.Integer | sa.Boolean | sa.Float)
+                    else ""
+                )
+            return values
+
+        for cid, pid in (("c1", "p1"), ("c2", "p2"), ("c0", None)):
+            conn.execute(conversations.insert(), required(conversations, id=cid, user_id="u1", project_id=pid))
+        template = dict(conn.execute(sa.select(runs).where(runs.c.id == "r1")).mappings().one())
+        for rid, cid in (("r_p1", "c1"), ("r_p1b", "c1"), ("r_p2", "c2"), ("r_acc", "c0")):
+            conn.execute(runs.insert(), {**template, "id": rid, "conversation_id": cid})
+        items = sa.Table("memory_items", sa.MetaData(), autoload_with=conn)
+        lines = {
+            "only_p1": (None, ["r_p1", "r_p1b"]),
+            "p1_and_account": (None, ["r_p1", "r_acc"]),
+            "two_projects": (None, ["r_p1", "r_p2"]),
+            "purged_source": (None, ["r_gone"]),
+            "no_source": (None, []),
+            "project_scope": ("p1", ["r_p1"]),
+        }
+        for mid, (scope, sources) in lines.items():
+            conn.execute(
+                items.insert(),
+                dict(
+                    id=mid,
+                    user_id="u1",
+                    project_id=scope,
+                    kind="fact",
+                    origin="inferred",
+                    content=mid,
+                    source_run_ids=sources,
+                    source_quote="",
+                    observed_at=datetime(2026, 1, 1),
+                    valid_from=datetime(2026, 1, 1),
+                    status="active",
+                    confidence=1,
+                    reinforced_at=datetime(2026, 1, 1),
+                    content_hash=mid,
+                    created_at=datetime(2026, 1, 1),
+                    updated_at=datetime(2026, 1, 1),
+                    metadata={},
+                    created_by="addition",
+                ),
+            )
+            for rid in sources:
+                conn.execute(sa.text("INSERT INTO memory_item_sources(memory_id, run_id) VALUES (:m, :r)"), {"m": mid, "r": rid})
+    _upgrade_to(engine, "0067")
+    with engine.connect() as conn:
+        tags = dict(conn.execute(sa.text("SELECT id, origin_project_id FROM memory_items")).all())
+    assert tags == {
+        "only_p1": "p1",
+        "p1_and_account": None,
+        "two_projects": None,
+        "purged_source": None,
+        "no_source": None,
+        "project_scope": None,
+    }
+    _downgrade_to(engine, "0066")
+    assert "origin_project_id" not in {c["name"] for c in inspect(engine).get_columns("memory_items")}
+    _upgrade_to(engine, "head")

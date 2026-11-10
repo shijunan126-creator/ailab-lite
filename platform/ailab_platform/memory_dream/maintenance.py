@@ -116,6 +116,7 @@ async def edit(run_id, token):
                                 kind=op.get("kind") if rekind else "memory",
                                 content=str(op.get("content") or "").strip(),
                                 project_id=pid,
+                                origin_project_id=pid,
                                 origin="edited",
                             )
                         except ValueError:
@@ -211,6 +212,7 @@ def merge_project(db, user, project):
             e.update(invalid_at=utcnow().isoformat(), superseded_by=target["id"], superseded_reason="condense")
         else:
             e["project_id"] = None
+            e["origin_project_id"] = project.id  # moved, not copied: a later switch back moves it again
             account[key] = e
     after = write_memory(
         db,

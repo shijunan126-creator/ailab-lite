@@ -103,19 +103,12 @@ def rename_project(
 
             db.refresh(user)
             if body.memory_mode == "isolated":
+                # Move, never copy, the active and review lines learned in this project (ADR 0036).
                 current = memory_for(user)
-                current_evidence = {rid for entry in current["entries"] for rid in entry.get("evidence_run_ids", [])}
-                evidence = set(
-                    db.scalars(
-                        select(Run.id)
-                        .join(Conversation, Conversation.id == Run.conversation_id)
-                        .where(Run.user_id == user.id, Conversation.project_id == project.id, Run.id.in_(current_evidence))
-                    )
-                )
                 entries = inputs(current["entries"])
                 changed = False
                 for entry in entries:
-                    if entry.project_id is None and entry.evidence_run_ids and set(entry.evidence_run_ids) <= evidence:
+                    if entry.project_id is None and entry.origin_project_id == project.id:
                         entry.project_id = project.id
                         changed = True
                 if changed:
@@ -203,6 +196,14 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
                 head.meta = {**(head.meta or {}), "trashed_project_name": project.name}
             trash_lineages(db, user.id, lineages, project_id=project.id)
         db.execute(update(ScheduledTask).where(ScheduledTask.project_id == project.id).values(project_id=None, enabled=False))
+        from ..models import MemoryItem
+
+        # account lines learned here stay; only the tag pointing at the deleted project goes (no FK on purpose)
+        db.execute(
+            update(MemoryItem)
+            .where(MemoryItem.user_id == user.id, MemoryItem.origin_project_id == project.id)
+            .values(origin_project_id=None)
+        )
         db.delete(project)
         db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
