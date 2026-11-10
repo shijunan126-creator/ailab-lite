@@ -116,7 +116,7 @@ function Provenance({ item }: { item: MemoryItem }) {
     <span className="memory-meta">
       {first ? (
         <Link href={`/c/${first.conversation_id}`} title="打开来源对话">{first.conversation_title || "对话"}</Link>
-      ) : item.origin !== "inferred" && item.origin !== "chat" ? (
+      ) : item.origin === "edited" && !item.sources.length ? (
         <span>你添加的</span>
       ) : null}
       {others > 0 ? <span>{first ? `等 ${others + 1} 段对话` : `${others} 段对话`}</span> : null}

@@ -376,7 +376,9 @@ def test_file_deletion_fences_dream_raw_recall_and_snapshot_replay(monkeypatch):
             from ailab_platform.api.routes_memory import memory_for
 
             online = memory_for(db.get(User, uid))["entries"]
-            assert len(online) == 1 and online[0]["source_quote"] == ""
+            # an invalid file source removes the run and quote; every remembered line stays (ADR 0036)
+            assert [e["id"] for e in online] == ["auto", "explicit"]
+            assert all(e["source_quote"] == "" and e["evidence_run_ids"] == [] for e in online)
             assert run_permissions(db, run) == {"read": False, "write": False}
             from fastapi import HTTPException
 
@@ -395,9 +397,10 @@ def test_file_deletion_fences_dream_raw_recall_and_snapshot_replay(monkeypatch):
             assert db.get(FileSourceInvalidation, fid).state == "done"
             assert db.get(MemoryItem, closed_id) is None
             snapshot = db.get(MemoryDreamRun, dream_id)
-            assert [e["id"] for e in delta_snapshot(snapshot, "before")["entries"]] == ["explicit"]
-            assert delta_snapshot(snapshot, "before")["entries"][0]["source_quote"] == ""
-            assert snapshot.plan["changes"] == []
+            before = delta_snapshot(snapshot, "before")["entries"]
+            assert [e["id"] for e in before] == ["auto", "explicit"]
+            assert all(e.get("source_quote", "") == "" and e["evidence_run_ids"] == [] for e in before)
+            assert [(c["content"], c["evidence_run_ids"]) for c in snapshot.plan["changes"]] == [("derived", [])]
             from ailab_platform.models import RunEvent
 
             assert all(e.payload == {"source_unavailable": True} for e in db.scalars(select(RunEvent).where(RunEvent.run_id == run.id)))

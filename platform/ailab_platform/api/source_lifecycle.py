@@ -176,9 +176,8 @@ def _drain_invalidation(db, file_id, limit):
         changed = False
         for entry in stored.get("entries") or []:
             if removed_ids.intersection(entry.get("evidence_run_ids") or []):
+                # an invalid source takes its run and quote with it; the remembered line stays (ADR 0036)
                 changed = True
-                if entry.get("source") != "user":
-                    continue
                 entry = {
                     **entry,
                     "source_quote": "",
@@ -262,8 +261,6 @@ def _drain_memory_copies(db, item, path, limit):
         invalid = set(db.scalars(select(Run.id).where(Run.id.in_(ids), Run.id.in_(select(path.c.id))))) if ids else set()
         if not invalid:
             return entry
-        if entry.get("source") != "user":
-            return None
         return {
             **entry,
             "source_quote": "",
@@ -325,7 +322,7 @@ def visible_memory_entries(db, user_id, entries):
     for entry in entries:
         if not invalid.intersection(entry.get("evidence_run_ids") or []):
             result.append(entry)
-        elif entry.get("source") == "user":
+        else:
             result.append(
                 {
                     **entry,

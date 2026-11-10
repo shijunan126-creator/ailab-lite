@@ -151,3 +151,25 @@ test("an item is edited in place and saved with the revision it was read at", as
   assert.deepEqual(JSON.parse(patch![1]!.body as string), { expected_revision: 7, content: "回答先给结论，再给依据" });
   await waitFor(() => assert.equal(screen.queryByLabelText("编辑记忆"), null));
 });
+
+test("a line without a source shows only its date; only an edited one says the user added it", async () => {
+  vi.mocked(api).mockResolvedValue({
+    ...view,
+    sections: [
+      {
+        kind: "fact",
+        items: [
+          item("mem_gone", "在券商做量化", { origin: "inferred", sources: [] }),
+          item("mem_said", "常用 Python", { origin: "explicit", sources: [] }),
+          item("mem_typed", "住在上海", { origin: "edited", sources: [] }),
+        ],
+      },
+    ],
+  });
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText("在券商做量化")));
+  const meta = (text: string) => screen.getByText(text).closest("li")!.querySelector(".memory-meta")!.textContent;
+  assert.equal(meta("在券商做量化"), "11-03");
+  assert.equal(meta("常用 Python"), "11-03");
+  assert.equal(meta("住在上海"), "你添加的11-03");
+});
