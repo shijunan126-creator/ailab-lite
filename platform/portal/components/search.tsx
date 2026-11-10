@@ -3,25 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import {Conversation, SearchHit, api, errorMessage} from "../lib/api";
+import { Conversation, SearchHit, api, errorMessage } from "../lib/api";
 import { timeAgo } from "../lib/format";
 import { IconFolder, IconMessage, IconSearch } from "./icons";
 
 /** Opens the search from anywhere (the sidebar entry, ⌘K / Ctrl+K). */
 export const OPEN_SEARCH = "ailab:open-search";
 
-function Snippet({ hit }: { hit: SearchHit }) {
+function Highlighted({ text, ranges }: { text: string; ranges: [number, number][] }) {
   // offsets count Unicode code points, not UTF-16 units: an emoji before a hit must not shift it
-  const chars = Array.from(hit.snippet);
+  const chars = Array.from(text);
   const parts: React.ReactNode[] = [];
   let at = 0;
-  for (const [start, end] of [...(hit.highlight || [])].sort((a, b) => a[0] - b[0])) {
-    if (start < at || end <= start) continue;
+  for (const [start, end] of [...(ranges || [])].sort((a, b) => a[0] - b[0])) {
+    if (start < at || end <= start || start >= chars.length) continue;
     parts.push(chars.slice(at, start).join(""), <mark key={start}>{chars.slice(start, end).join("")}</mark>);
     at = end;
   }
   parts.push(chars.slice(at).join(""));
-  return <span className="search-snippet">{parts}</span>;
+  return <>{parts}</>;
 }
 
 /** Every conversation, by title and by what was said in it. Empty query: the recent ones. */
@@ -32,28 +32,16 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [active, setActive] = useState(0);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const controllerRef = useRef<AbortController | null>(null);
   const list = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
 
-  async function search(query: string, after: string | null, controller: AbortController, append: boolean) {
-    const found: SearchHit[] = [];
+  async function search(query: string, controller: AbortController) {
     try {
-      // Bound each interaction, retaining the continuation instead of reporting an unfinished scan as empty.
-      for (let i = 0; i < 6; i++) {
-        const res: { items: SearchHit[]; next_cursor: string | null } = await api(
-          `/v1/search?q=${encodeURIComponent(query.slice(0, 200))}&limit=20${after ? `&cursor=${encodeURIComponent(after)}` : ""}`,
-          { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]) }
-        );
-        if (controller.signal.aborted) return;
-        found.push(...res.items.filter((h) => !found.some((x) => x.conversation_id === h.conversation_id)));
-        after = res.next_cursor;
-        if (!after || found.length >= 12) break;
-      }
+      const res = await api<{ items: SearchHit[] }>(`/v1/search?q=${encodeURIComponent(query.slice(0, 200))}&limit=30`, {
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+      });
       if (controller.signal.aborted) return;
-      setHits((previous) => append ? [...(previous || []), ...found.filter((h) => !previous?.some((x) => x.conversation_id === h.conversation_id))] : found);
-      setCursor(after);
+      setHits(res.items);
       setError("");
     } catch (err: any) {
       if (!controller.signal.aborted) setError(errorMessage(err));
@@ -70,11 +58,10 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
     };
   }, []);
 
-  // searched as the user types: a later query cancels the one still on its way
+  // searched as the user types: a later query aborts the one still on its way
   useEffect(() => {
     const query = q.trim();
     setActive(0);
-    setCursor(null);
     setError("");
     if (!query) {
       setHits(null);
@@ -82,10 +69,9 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
       return;
     }
     const controller = new AbortController();
-    controllerRef.current = controller;
     setHits([]);
     setLoading(true);
-    const timer = setTimeout(() => search(query, null, controller, false), 180);
+    const timer = setTimeout(() => search(query, controller), 120);
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -125,6 +111,9 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
             value={q}
             placeholder="搜索对话"
             aria-label="搜索对话"
+            autoComplete="off"
+            spellCheck={false}
+            enterKeyHint="go"
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") onClose();
@@ -140,13 +129,14 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
               }
             }}
           />
-          {loading ? <span className="chip-spin" aria-hidden="true" /> : null}
+          <span className="search-spin">{loading ? <span className="chip-spin" aria-hidden="true" /> : null}</span>
         </div>
-        <div className="search-results" ref={list} role="listbox" aria-label="结果">
+        <div className="search-results" ref={list} role="listbox" aria-label="结果" aria-busy={loading}>
           {rows.map((row, i) => (
             <button
               key={row.key}
               data-index={i}
+              type="button"
               role="option"
               aria-selected={i === active}
               className={`search-row ${i === active ? "on" : ""}`}
@@ -155,19 +145,19 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
             >
               <span className="search-icon">{row.project ? <IconFolder size={15} /> : <IconMessage size={15} />}</span>
               <span className="search-text">
-                <span className="search-title">{row.title}</span>
-                {row.hit && row.hit.match !== "title" ? <Snippet hit={row.hit} /> : null}
+                <span className="search-title">
+                  {row.hit?.match === "title" ? <Highlighted text={row.title} ranges={row.hit.highlight} /> : row.title}
+                </span>
+                {row.hit && row.hit.match !== "title" ? (
+                  <span className="search-snippet">
+                    <Highlighted text={row.hit.snippet} ranges={row.hit.highlight} />
+                  </span>
+                ) : null}
               </span>
               <span className="search-when">{timeAgo(row.when)}</span>
             </button>
           ))}
-          {cursor ? <button className="link" disabled={loading} onClick={() => {
-            const controller = controllerRef.current;
-            if (!controller || controller.signal.aborted || loading) return;
-            setLoading(true);
-            search(q.trim(), cursor, controller, true);
-          }}>继续搜索</button> : null}
-          {hits && !hits.length && !loading && !cursor ? <div className="search-empty">没有找到相关对话</div> : null}
+          {hits && !hits.length && !loading && !error ? <div className="search-empty">没有找到相关对话</div> : null}
           {error ? <div className="alert error">{error}</div> : null}
         </div>
       </div>

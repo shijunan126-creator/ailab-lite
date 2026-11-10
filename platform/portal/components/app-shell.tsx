@@ -144,10 +144,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const key = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        if (window.innerWidth < 760) setCollapsed(true);
         setSearching((open) => !open);
       }
     };
-    const open = () => setSearching(true);
+    const open = () => {
+      // The search dialog is portaled above the page; on a phone the open drawer would otherwise stay visible behind it.
+      if (window.innerWidth < 760) setCollapsed(true);
+      setSearching(true);
+    };
     window.addEventListener("keydown", key);
     window.addEventListener(OPEN_SEARCH, open);
     return () => {
