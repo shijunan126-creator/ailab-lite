@@ -35,6 +35,7 @@
 - Python 全套用 pytest-xdist 并行（CI `-n auto --dist worksteal`）。`tests/conftest.py` 在导入时按 `PYTEST_XDIST_WORKER` 把 `AILAB_TEST_DATABASE_URL`/`AILAB_TEST_POSTGRES_URL` 改成 `<库>_gwN`（不存在则建）、Redis db 从给定号往下移；新增读这些变量的测试照常读环境变量即可，不要自己缓存模块级 URL。共享全局状态（固定端口、固定文件路径、整库计数）的新测试会在并行下互相干扰。
 - 本机 macOS 若开了系统代理，httpx（`trust_env=True`）连 `127.0.0.1` 也走代理，每次请求多 0.2–0.5 秒：`test_prefix_cache` 本机 3 分多钟、CI 只要 87 秒。conftest 已把回环地址加进 `NO_PROXY`。本机测试比 CI 慢很多时先查这个。
 - `ThreadingHTTPServer.shutdown()` 要等 `serve_forever` 下一次轮询（默认 0.5 秒）。测试服务器统一 `serve_forever(poll_interval=0.01)`；`AILAB_LLM_RETRY_BACKOFF_SECONDS` 在测试里默认 1ms，测退避节奏的测试自己设置。
+- 不要在单元测试里断言绝对墙钟延迟（例如 p95 < 150ms）：共享 runner 加上 xdist 并行时，测到的是相邻 worker 的负载。要验证“有界”，就数加载的行数或执行的语句数，延迟只打印；绝对预算在目标机上测。
 - `scripts/lock_deps.sh --check` 的旧正则 `[...\[\]-]` 在 POSIX 括号表达式里提前闭合，匹配 0 行，检查恒通过。改正则后先确认它能对旧 constraints 报错，再信它的“consistent”。
 
 ## 2026-11-09 全套测试只在 CI 跑；autouse fixture 拖垮 PG 时限
