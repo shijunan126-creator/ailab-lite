@@ -32,7 +32,7 @@
 
 ## 旧数据整理
 
-成功的 cron/manual 批次在 `report.prompt_version` 记录 `PROMPT_VERSION`。`claim_due` 只读比较最近一次成功整理的版本；过期且存在非受保护行时，即使没有新对话也建链，并先按新标准整理每个作用域一次。这次整理没有对话可引，只依据文档本身：非受保护行可以 update（F）、merge（G）、transition（E，项目结束转为经历），也可以 delete（H 重复 / O 一次性 / K 已完成的单次任务 / W 外部知识）；受保护行不动，不新增行。日常整理的 delete 仍只接受 H/I。版本不写入 `user.settings` 或 `MemoryDreamSettings`。
+成功的 cron/manual 批次在 `report.prompt_version` 记录 `PROMPT_VERSION`。`claim_due` 只读比较最近一次成功整理的版本；过期且存在非受保护行时，即使没有新对话也建链，并先按新标准整理每个作用域一次。这次整理没有对话可引，只依据文档本身：非受保护行可以 update（F）、merge（G）、transition（E，项目结束转为经历），也可以 delete（H 重复 / O 一次性 / K 已完成的单次任务 / W 外部知识）；受保护行不动，不新增行。日常整理的 delete 仍只接受 H/I。「立即整理」同样先做这次整理；每个作用域整理完在 report 记 `resorted`，批数用完时剩下的作用域留给下一次，全部完成的那一批才写 `prompt_version`。版本不写入 `user.settings` 或 `MemoryDreamSettings`。
 
 ## 后果
 

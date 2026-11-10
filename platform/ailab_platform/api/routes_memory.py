@@ -399,7 +399,7 @@ def run_dream_now(
     project_id: str | None = Query(default=None, min_length=1, max_length=40),
 ):
     from ..config import settings
-    from ..memory_dream.service import _new_runs, process_dream_chain
+    from ..memory_dream.service import _cleanup_scopes, _new_runs, process_dream_chain
     from ..memory_dream.settings import dream_settings
 
     with user_critical_section(db, user.id):
@@ -424,7 +424,9 @@ def run_dream_now(
         from ..memory_recall.document import maintenance_needed
 
         over_cap = maintenance_needed([e for e in memory["entries"] if e.get("project_id") == project_id], user)
-        if not pending and not over_cap:
+        # A new standard re-sorts every scope once, as the nightly chain would; the version is recorded only after all of them.
+        cleanup = _cleanup_scopes(db, user.id, memory["entries"])
+        if not pending and not over_cap and not cleanup:
             db.commit()
             return {"id": None, "status": "nothing", "reused": False, "pending_runs": 0}
         zone_name = ds.timezone or settings.memory_dream_default_timezone
@@ -439,6 +441,7 @@ def run_dream_now(
             project_id=project_id,
             input_run_ids=[],
             token_usage={},
+            report={"cleanup": cleanup} if cleanup else {},
         )
         db.add(run)
         db.commit()
