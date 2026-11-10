@@ -5,6 +5,7 @@ import {
   MessageCircleQuestion, MessageSquare, MoreHorizontal, PanelLeft, PanelRight, Pencil, Pin, PinOff, Plus, Presentation, Printer, RotateCcw,
   Pause, Play, Eye, Quote, ScanText,
   Search, Send, ImageUp, Settings, Share2, Shield, Sheet, Sparkles, Square, SquarePen, Star, BarChart3, Terminal, Trash2, Upload, Users, X,
+  Bookmark, Compass, SlidersHorizontal, Target, User,
   type LucideIcon,
 } from "lucide-react";
 
@@ -85,3 +86,9 @@ export const IconPause = icon(Pause);
 export const IconPlay = icon(Play);
 export const IconEye = icon(Eye);
 export const IconQuote = icon(Quote);
+// memory kinds (components/memory/memory-view.tsx)
+export const IconUser = icon(User);
+export const IconSliders = icon(SlidersHorizontal);
+export const IconTarget = icon(Target);
+export const IconCompass = icon(Compass);
+export const IconBookmark = icon(Bookmark);

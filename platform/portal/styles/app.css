@@ -527,14 +527,21 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .memory-organize { display: inline-flex; align-items: center; gap: 6px; }
 .memory-organize .draft-spin { width: 13px; height: 13px; border-width: 1.5px; }
 .memory-note { margin-top: -12px; font-size: var(--text-sm); color: var(--muted-foreground); }
-.memory-body { display: flex; flex-direction: column; gap: 28px; transition: opacity var(--t); }
+.memory-body { display: flex; flex-direction: column; gap: 14px; transition: opacity var(--t); }
 .memory-body.working { opacity: .55; }
 .memory-empty { padding: 48px 0; text-align: center; color: var(--muted-foreground); font-size: var(--text-sm); }
-.memory-count { margin-left: 6px; font-size: var(--text-xs); font-weight: 400; color: var(--faint-foreground); font-variant-numeric: tabular-nums; }
+.memory-count { font-size: var(--text-sm); font-weight: 500; color: var(--faint-foreground); font-variant-numeric: tabular-nums; }
 .memory-review { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 14px; border-radius: var(--radius); background: var(--subtle); font-size: var(--text-sm); line-height: 1.6; }
 .memory-review-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.memory-review + .memory-review { margin-top: -20px; }
-.memory-section h3 { margin-bottom: 2px; font-size: var(--text-ui); font-weight: 600; color: var(--muted-foreground); }
+.memory-review + .memory-review { margin-top: -6px; }
+/* one card per kind; an empty kind is a quiet filled card without a border */
+.memory-section { padding: 14px 18px 6px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--background); }
+.memory-section.empty { padding-bottom: 12px; border-color: transparent; background: var(--subtle); }
+.memory-section-title { display: flex; align-items: center; gap: 10px; min-height: 30px; margin: 0 0 4px; font-size: var(--text-lg); font-weight: 600; }
+.memory-section-title svg { flex: none; color: var(--primary); }
+.memory-section.empty .memory-section-title { color: var(--muted-foreground); }
+.memory-section.empty .memory-section-title svg { color: var(--faint-foreground); }
+.memory-none { padding: 2px 0 0 28px; color: var(--faint-foreground); font-size: var(--text-ui); }
 .memory-items { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .memory-item { display: flex; align-items: baseline; gap: 10px; min-height: 42px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .memory-item:last-child { border-bottom: 0; }
@@ -555,6 +562,7 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
   .memory-item:not(.editing) { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; }
   .memory-item:not(.editing) .row-more { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
   .memory-meta { grid-column: 1; max-width: none; }
+  .memory-section { padding-inline: 14px; }
 }
 .memory-thread { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
 .memory-turn { max-width: 85%; font-size: var(--text-sm); line-height: 1.6; overflow-wrap: anywhere; }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, MemoryItem, MemoryView } from "../../lib/api";
 import { confirmDialog } from "../../lib/dialog";
-import { IconArrowUp, IconPencil, IconRetry, IconTrash } from "../icons";
+import { IconArrowUp, IconBookmark, IconCompass, IconPencil, IconRetry, IconSliders, IconTarget, IconTrash, IconUser } from "../icons";
 import RowMenu from "../row-menu";
 
 const POLL_MS = 1500;
@@ -20,6 +20,13 @@ export const KIND_TITLE: Record<MemoryItem["kind"], string> = {
   project: "在做的事",
   interest: "关注的话题",
   reference: "资料",
+};
+const KIND_ICON: Record<MemoryItem["kind"], typeof IconUser> = {
+  fact: IconUser,
+  preference: IconSliders,
+  project: IconTarget,
+  interest: IconCompass,
+  reference: IconBookmark,
 };
 
 type Run = {
@@ -402,10 +409,9 @@ export function MemoryPanel({
   const act: Act = { change, remove, busy: blocked };
   // newest first inside a kind; the API's order is only stable, not meaningful to a reader
   const time = (item: MemoryItem) => Date.parse(item.observed_at || item.updated_at) || 0;
-  const sections = (view?.sections || [])
-    .filter((s) => s.items.length)
-    .map((s) => ({ ...s, items: [...s.items].sort((a, b) => time(b) - time(a) || a.id.localeCompare(b.id)) }));
-  const empty = !!view && !sections.length && !view.review.length;
+  // every kind is shown, in the API's order, so the page reads as the same profile whether or not a kind has lines yet
+  const sections = (view?.sections || []).map((s) => ({ ...s, items: [...s.items].sort((a, b) => time(b) - time(a) || a.id.localeCompare(b.id)) }));
+  const empty = !!view && !sections.some((s) => s.items.length) && !view.review.length;
   const full = !!view && view.max_chars > 0 && view.used_chars >= view.max_chars * NEARLY_FULL;
   return (
     <div className={`memory-panel ${view && !view.enabled ? "off" : ""}`}>
@@ -441,21 +447,27 @@ export function MemoryPanel({
               ) : null}
             </div>
           ))}
-          {sections.map((s) => (
-            <section key={s.kind} className="memory-section">
-              <h3>
-                {KIND_TITLE[s.kind]} <span className="memory-count">{s.items.length}</span>
-              </h3>
-              <ul className="memory-items">
-                {s.items.map((item) => (
-                  <ItemRow key={item.id} item={item} act={act} editable={editable} />
-                ))}
-              </ul>
-            </section>
-          ))}
-          {empty ? (
-            <div className="memory-empty">{working ? "正在整理…" : "还没有记忆。说一句“记住……”，或让 AI 在对话中和每晚整理时记下。"}</div>
-          ) : null}
+          {sections.map((s) => {
+            const Icon = KIND_ICON[s.kind];
+            return (
+              <section key={s.kind} className={`memory-section${s.items.length ? "" : " empty"}`}>
+                <h3 className="memory-section-title">
+                  <Icon size={18} />
+                  {KIND_TITLE[s.kind]}
+                  {s.items.length ? <span className="memory-count">{s.items.length}</span> : null}
+                </h3>
+                {s.items.length ? (
+                  <ul className="memory-items">
+                    {s.items.map((item) => (
+                      <ItemRow key={item.id} item={item} act={act} editable={editable} />
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="memory-none">暂无</div>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
 

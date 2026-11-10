@@ -39,9 +39,9 @@ test("shows the whole document by kind, each line with its source conversation, 
   vi.mocked(api).mockResolvedValue(view);
   render(<MemoryPanel projectId={null} title="记忆" />);
   await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
-  for (const title of ["偏好", "在做的事", "关注的话题"]) assert.ok(screen.getByText(title));
   assert.ok(screen.getByText("关注乐信季度业绩"));
-  assert.equal(screen.queryByText("关于你"), null); // an empty kind is not shown
+  // the sections the API sends, in its order; a kind without lines is a quiet card that only says so
+  assert.deepEqual([...document.querySelectorAll(".memory-section-title")].map((h) => h.textContent), ["偏好1", "在做的事1", "关注的话题1"]);
   assert.equal(screen.getAllByText("周报")[0].closest("a")?.getAttribute("href"), "/c/conv_1");
   assert.deepEqual(vi.mocked(api).mock.calls.map(([path]) => path), ["/v1/memory/view"]);
   assert.equal(screen.queryByText(/快满了/), null);
@@ -57,10 +57,14 @@ test("lines of a kind are listed newest first", async () => {
   assert.deepEqual([...document.querySelectorAll(".memory-item-text")].map((n) => n.textContent), ["新的", "旧的"]);
 });
 
-test("nothing at all says where memory comes from; a nearly full document says it will be condensed", async () => {
-  vi.mocked(api).mockResolvedValue({ ...view, sections: [] });
+test("every kind shows even when empty; a nearly full document says it will be condensed", async () => {
+  const kinds = ["fact", "preference", "project", "interest", "reference"] as const;
+  vi.mocked(api).mockResolvedValue({ ...view, sections: kinds.map((kind) => ({ kind, items: [] })) });
   const first = render(<MemoryPanel projectId={null} title="记忆" />);
-  await waitFor(() => assert.ok(screen.getByText(/每晚整理时记下/)));
+  await waitFor(() => assert.equal(screen.getAllByText("暂无").length, 5));
+  assert.deepEqual([...document.querySelectorAll(".memory-section.empty .memory-section-title")].map((h) => h.textContent), ["关于你", "偏好", "在做的事", "关注的话题", "资料"]);
+  assert.equal(document.querySelectorAll(".memory-count").length, 0);
+  assert.equal(document.querySelectorAll(".memory-section-title svg").length, 5);
   first.unmount();
   vi.mocked(api).mockResolvedValue({ ...view, used_chars: 5200 });
   render(<MemoryPanel projectId={null} title="记忆" />);
