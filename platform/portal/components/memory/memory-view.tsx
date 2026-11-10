@@ -112,7 +112,7 @@ export function organizeNote(run: Run): string {
   return added > 0 ? `看了 ${seen} 段对话，新增 ${added} 条` : `看了 ${seen} 段对话，没有需要长期记住的内容`;
 }
 
-type Change = { content?: string; origin?: "explicit"; status?: "active" };
+type Change = { content: string };
 type Act = { change: (item: MemoryItem, c: Change) => Promise<boolean>; remove: (item: MemoryItem) => void; busy: boolean };
 
 /** Where a line came from: the conversation it was learned in (a link), how many more, and when. */
@@ -123,8 +123,6 @@ function Provenance({ item }: { item: MemoryItem }) {
     <span className="memory-meta">
       {first ? (
         <Link href={`/c/${first.conversation_id}`} title="打开来源对话">{first.conversation_title || "对话"}</Link>
-      ) : item.origin === "edited" && !item.sources.length ? (
-        <span>你添加的</span>
       ) : null}
       {others > 0 ? <span>{first ? `等 ${others + 1} 段对话` : `${others} 段对话`}</span> : null}
       <span>{shortDate(item.observed_at || item.updated_at)}</span>
@@ -136,7 +134,6 @@ function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable
   const [draft, setDraft] = useState<string | null>(null); // the text being edited in place
   const actions = [
     { label: "编辑", icon: <IconPencil size={15} />, onSelect: () => setDraft(item.content) },
-    ...(item.origin === "inferred" ? [{ label: "确认无误", onSelect: () => act.change(item, { origin: "explicit" }) }] : []),
     "sep" as const,
     { label: "删除", icon: <IconTrash size={15} />, danger: true, onSelect: () => act.remove(item) },
   ];
@@ -183,7 +180,6 @@ function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable
     <li className="memory-item">
       <div className="memory-item-text">
         {item.content}
-        {item.origin === "inferred" ? <span className="memory-tag" title="AI 从对话中归纳的">推断</span> : null}
       </div>
       <Provenance item={item} />
       {editable ? <RowMenu label={item.content} actions={actions} disabled={act.busy} /> : null}
@@ -195,7 +191,7 @@ type Turn = { key: number; role: "user" | "ai"; text: string; run?: string; stat
 
 /**
  * Everything one scope remembers. It is one bounded document the AI reads at the start of every conversation, so the
- * page shows all of it, by kind, with what waits for the user's confirmation first. The API is the only writer.
+ * page shows all of it, by kind. The API is the only writer.
  */
 export function MemoryPanel({
   projectId,
@@ -411,7 +407,7 @@ export function MemoryPanel({
   const time = (item: MemoryItem) => Date.parse(item.observed_at || item.updated_at) || 0;
   // every kind is shown, in the API's order, so the page reads as the same profile whether or not a kind has lines yet
   const sections = (view?.sections || []).map((s) => ({ ...s, items: [...s.items].sort((a, b) => time(b) - time(a) || a.id.localeCompare(b.id)) }));
-  const empty = !!view && !sections.some((s) => s.items.length) && !view.review.length;
+  const empty = !!view && !sections.some((s) => s.items.length);
   const full = !!view && view.max_chars > 0 && view.used_chars >= view.max_chars * NEARLY_FULL;
   return (
     <div className={`memory-panel ${view && !view.enabled ? "off" : ""}`}>
@@ -436,17 +432,6 @@ export function MemoryPanel({
         shownError ? null : <div className="memory-empty">加载中…</div>
       ) : (
         <div className={`memory-body ${working ? "working" : ""}`} aria-busy={working}>
-          {view.review.map((item) => (
-            <div key={item.id} className="memory-review">
-              <span className="memory-review-text">“{item.content}” 涉及敏感信息，确认后 AI 才会使用</span>
-              {editable ? (
-                <>
-                  <button className="secondary sm" disabled={blocked} onClick={() => change(item, { status: "active" })}>确认</button>
-                  <button className="secondary sm" disabled={blocked} onClick={() => remove(item)}>删除</button>
-                </>
-              ) : null}
-            </div>
-          ))}
           {sections.map((s) => {
             const Icon = KIND_ICON[s.kind];
             return (

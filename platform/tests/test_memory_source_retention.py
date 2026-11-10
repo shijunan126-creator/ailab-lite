@@ -62,7 +62,7 @@ def test_deleting_the_only_source_conversation_keeps_the_line_without_a_source()
         assert _view_item(c, me, current)["sources"][0]["conversation_id"] == conv
         assert c.delete(f"/v1/conversations/{conv}", headers=me).status_code == 204
         item = _view_item(c, me, current)
-        assert item["content"] == "用户在一家券商做量化研究" and item["sources"] == [] and item["origin"] == "inferred"
+        assert item["content"] == "用户在一家券商做量化研究" and item["sources"] == []
         with SessionLocal() as db:
             row = db.get(MemoryItem, current)
             assert row.status == "active" and row.source_run_ids == [] and row.source_quote == ""

@@ -257,15 +257,16 @@ def test_merge_outcomes_and_failure_atomicity(api, monkeypatch, failure):
     }
 
 
-def test_sensitive_agent_inference_rejected_but_explicit_saved(api):
+def test_personal_facts_save_without_explicit_and_id_numbers_never_do(api):
     c, me, _uid_value = api
     rid = _running(c, me)
     headers = attempt_headers(c, rid)
+    url = f"/internal/runs/{rid}/memory"
     body = {"action": "add", "content": "用户患有慢性病", "expected_revision": 0}
-    assert c.post(f"/internal/runs/{rid}/memory", headers={**headers, "X-Delivery-Id": rid + ":sensitive"}, json=body).status_code == 422
-    body["explicit"] = True
-    assert c.post(f"/internal/runs/{rid}/memory", headers={**headers, "X-Delivery-Id": rid + ":explicit"}, json=body).status_code == 200
-    assert model_view(c.get("/v1/memory", headers=me).json())["entries"]
+    assert c.post(url, headers={**headers, "X-Delivery-Id": rid + ":health"}, json=body).status_code == 200
+    body = {"action": "add", "content": "身份证 11010519491231002X", "explicit": True}
+    assert c.post(url, headers={**headers, "X-Delivery-Id": rid + ":id"}, json=body).status_code == 422
+    assert [e["content"] for e in model_view(c.get("/v1/memory", headers=me).json())["entries"]] == ["用户患有慢性病"]
 
 
 def test_items_ownership_delete_cascade_and_edit_disabled(api):
@@ -789,8 +790,8 @@ def post_edit(c, headers, body):
 
 
 @pytest.mark.parametrize("change_scope", [False, True])
-def test_cached_candidates_respect_new_isolation_and_sensitive_guard_is_consumed(api, monkeypatch, change_scope):
-    """Re-read raw evidence under the current scope; no cached candidate can bypass the final fence."""
+def test_cached_candidates_respect_new_isolation_and_personal_facts_are_kept(api, monkeypatch, change_scope):
+    """Re-read raw evidence under the current scope; a personal fact the user said is kept like any other (ADR 0037)."""
     from ailab_platform.models import MemoryWorkItem
 
     c, me, uid = api
@@ -819,7 +820,7 @@ def test_cached_candidates_respect_new_isolation_and_sensitive_guard_is_consumed
         assert c.get("/v1/memory", headers=me).json()["entries"] == []
         c.post("/v1/memory/dream/run", headers=me, params={"project_id": pid})
     current = c.get("/v1/memory", headers=me).json()["entries"]
-    assert len(current) == 1 and current[0]["status"] == "review"
+    assert [e["content"] for e in current] == ["用户患有慢性病"]
     assert current[0]["project_id"] == (pid if change_scope else None)
     c.post("/v1/memory/dream/run", headers=me, params={"project_id": pid})
     assert len(calls) == (2 if change_scope else 1)

@@ -1,4 +1,4 @@
-"""Single-call document planning and deterministic evidence/protection guards."""
+"""Single-call document planning and deterministic evidence guards."""
 
 import copy
 import json
@@ -6,7 +6,6 @@ import json
 from ..config import settings
 from ..memory_recall.document import active, kind, render, used_chars
 from ..memory_recall.guard import reject_reason
-from ..memory_recall.policy import review_required
 from ..memory_recall.store import stamp
 from ..memory_recall.tombstones import blocked_by_tombstone, fact_hash, tombstones_of
 from ..models import new_id, utcnow
@@ -27,13 +26,9 @@ def messages(episodes, entries, *, cleanup=False):
     ]
 
 
-def protected(entry):
-    return entry.get("origin") in {"explicit", "edited", "manual"}
-
-
 # Reason codes the model attaches to every op and ignored run. They explain, they never authorize: an unknown
 # code is counted as "?" in the batch report. Only delete reads its code, because I (wrong) needs the user's words
-# and the one-time re-sort may also drop an unprotected line as one-off (O), a finished task (K) or outside knowledge (W).
+# and the one-time re-sort may also drop any line as one-off (O), a finished task (K) or outside knowledge (W).
 CODES = {
     "add": set("ABCD"),
     "transition": {"E"},
@@ -53,9 +48,9 @@ def code(value, allowed):
 def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=None, *, cleanup=False):
     """`label` is the project this batch's conversations belong to; a new line carries it as origin_project_id.
 
-    `cleanup`: the one-time re-sort under a new standard. There is no conversation to quote, so an unprotected line may be
-    rewritten (update/merge/transition) or dropped (H/O/K/W) without a quote; protected lines still need a newer quote,
-    which a re-sort never has, so they stay as they are. Nothing new is added.
+    `cleanup`: the one-time re-sort under a new standard. There is no conversation to quote, so any line may be rewritten
+    (update/merge/transition) or dropped (H/O/K/W) without a quote, and a line mixing two kinds may be split: an add that
+    names the line it comes from (`from`) and inherits its sources. Nothing else is added.
     """
     from html import unescape
 
@@ -89,14 +84,13 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=
             and not blocked_by_tombstone(tombstones, content, [episode.run_id] if episode else [])
         )
 
-    def line(content, section, origin, created_by, episode, quote, runs, tag):
+    def line(content, section, created_by, episode, quote, runs, tag):
         return {
             "id": new_id("mem"),
             "kind": section,
             "content": content.strip(),
             "project_id": scope,
-            "origin": origin,
-            "status": "review" if review_required(content) else "active",
+            "status": "active",
             "observed_at": stamp(episode.observed_at).isoformat() if episode else now,
             "valid_from": now,
             "updated_at": now,
@@ -120,8 +114,6 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=
         if not isinstance(ids, list) or any(i not in allowed or i in touched for i in ids):
             continue
         targets = [by_id[i] for i in ids]
-        if action in {"merge", "delete"} and any(protected(e) for e in targets):
-            continue
         if action == "merge" and len(ids) < 2:
             continue
         if action == "delete" and reason == "?":
@@ -131,14 +123,17 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=
         if isinstance(quote, str):
             quote = unescape(quote)
         quoted = bool(episode) and isinstance(quote, str) and bool(quote.strip()) and quote in _user_part(episode.digest)
-        if cleanup and action in {"update", "transition"} and not any(protected(e) for e in targets):
-            episode, quote = None, ""  # a re-sort rewrites an unprotected line from the document itself, never from a quote
+        split = []
+        if cleanup and action == "add":
+            # a re-sort adds only by splitting a line that mixes two kinds; the new line keeps that line's sources
+            split = op.get("from") if isinstance(op.get("from"), list) else []
+            if not split or any(i not in allowed for i in split):
+                continue
+            episode, quote = None, ""
+        elif cleanup and action in {"update", "transition"}:
+            episode, quote = None, ""  # a re-sort rewrites a line from the document itself, never from a quote
         elif action in {"add", "update", "transition"} or (action == "delete" and reason == "I"):
             if not quoted:
-                continue
-            if action in {"update", "transition"} and any(
-                protected(e) and stamp(e.get("updated_at") or e.get("observed_at")) >= stamp(episode.observed_at) for e in targets
-            ):
                 continue
         if action == "transition":
             target = targets[0]
@@ -149,13 +144,13 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=
             runs = list(dict.fromkeys([*target.get("evidence_run_ids", []), *([episode.run_id] if episode else [])]))[-50:]
             # the old line is corrected by its past tense, so open conversations get the existing correction notice
             tag = target.get("origin_project_id")
-            was = line(past, past_kind, target.get("origin", "inferred"), "transition", episode, quote, runs, tag)
+            was = line(past, past_kind, "transition", episode, quote, runs, tag)
             entries.append(was)
             fresh_ids = [was["id"]]
             present = isinstance(current, str) and current.strip() and acceptable(current, quote, episode)
             if present and not duplicate(kind(target), current, ids):
                 # the present is a plain addition: no notice; a clash with an active line or a tombstone keeps only the past
-                entries.append(line(current, kind(target), "inferred", "addition", episode, quote, runs, tag))
+                entries.append(line(current, kind(target), "addition", episode, quote, runs, tag))
                 fresh_ids.append(entries[-1]["id"])
             target.update(superseded_reason="correction", invalid_at=now, updated_at=now, superseded_by=was["id"])
             touched.update([*ids, *fresh_ids])
@@ -168,19 +163,19 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=
             section = kind(targets[0]) if targets else op.get("kind")
             if section not in KINDS or duplicate(section, content, ids):
                 continue
+            origins = targets or [by_id[i] for i in split]
             fresh = line(
                 content,
                 section,
-                targets[0].get("origin", "inferred") if action == "update" else "inferred",
                 "correction" if action == "update" else "condense" if action == "merge" else "addition",
                 episode,
                 quote,
                 # an update keeps the line's earlier sources; deleting one source must not orphan what others support
                 list(dict.fromkeys([*(targets[0].get("evidence_run_ids", []) if action == "update" else []), episode.run_id]))[-50:]
                 if episode
-                else sorted({rid for e in targets for rid in e.get("evidence_run_ids", [])})[:50],
-                # update keeps its line's project; merge keeps one only when every line agrees
-                label if not targets else tags.pop() if len(tags := {e.get("origin_project_id") for e in targets}) == 1 else None,
+                else sorted({rid for e in origins for rid in e.get("evidence_run_ids", [])})[:50],
+                # update keeps its line's project; merge (and a split) keeps one only when every line agrees
+                label if not origins else tags.pop() if len(tags := {e.get("origin_project_id") for e in origins}) == 1 else None,
             )
             entries.append(fresh)
         for target in targets:
@@ -196,7 +191,7 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope, codes=None, label=
         return [e for e in entries if e.get("project_id") == scope]
 
     candidates = sorted(
-        (e for e in active(scoped()) if e.get("origin") == "inferred"),
+        active(scoped()),
         key=lambda e: (str(e.get("reinforced_at") or e.get("observed_at") or ""), len(e.get("evidence_run_ids", [])), e["id"]),
     )
     for entry in candidates:

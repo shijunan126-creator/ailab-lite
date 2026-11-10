@@ -52,14 +52,14 @@ def test_static_rules_and_silent_save_live_in_first_system_message():
     assert MEMORY_RULES not in memory_prompt({"entries": []})
 
 
-def test_unknown_ids_bad_quotes_protected_lines_and_tombstones():
+def test_unknown_ids_bad_quotes_and_tombstones():
     from ailab_platform.memory_recall.tombstones import fact_hash
 
     user = SimpleNamespace(settings={"memory": {"tombstones": [{"hash": fact_hash("被删除的事实")}]}})
-    shown = [entry("mem_a", origin="explicit"), entry("mem_b", origin="edited"), entry("mem_c")]
+    shown = [entry("mem_a"), entry("mem_b"), entry("mem_c")]
     ops = [
-        {"op": "delete", "id": "mem_a", "r": "I", "quote": "我住在上海", "run": "run_one"},
-        {"op": "merge", "ids": ["mem_a", "mem_c"], "content": "合并"},
+        {"op": "delete", "id": "mem_a", "r": "I", "quote": "助手编造", "run": "run_one"},
+        {"op": "merge", "ids": ["mem_a", "missing"], "content": "合并"},
         {"op": "update", "id": "mem_b", "content": "新信息", "run": "run_one", "quote": "助手编造"},
         {"op": "delete", "id": "unknown", "r": "H"},
         {"op": "add", "kind": "fact", "content": "被删除的事实", "run": "run_one", "quote": "我住在上海"},
@@ -68,15 +68,16 @@ def test_unknown_ids_bad_quotes_protected_lines_and_tombstones():
     assert result == shown and audit == []
 
 
-def test_update_is_append_only_and_newer_evidence_required():
-    shown = [entry(origin="explicit")]
+def test_update_is_append_only_and_any_line_can_change():
+    # one kind of line (ADR 0037): a line the user typed is condensed and corrected like any other
+    shown = [entry()]
     op = {"op": "update", "id": "mem_a", "content": "住在上海", "quote": "我住在上海", "run": "run_one"}
     result, audit = apply_ops(shown, shown, [episode()], [op], SimpleNamespace(settings={}), None)
     assert len(result) == 2 and result[0]["superseded_by"] == result[1]["id"]
-    assert result[0]["invalid_at"] and result[1]["origin"] == "explicit" and len(audit) == 1
-    newer = [entry(origin="explicit", content="新事实")]
+    assert result[0]["invalid_at"] and "origin" not in result[1] and len(audit) == 1
+    newer = [entry(content="新事实")]
     newer[0]["updated_at"] = "2027-01-01T00:00:00+00:00"
-    assert apply_ops(newer, newer, [episode()], [op], SimpleNamespace(settings={}), None)[1] == []
+    assert len(apply_ops(newer, newer, [episode()], [op], SimpleNamespace(settings={}), None)[1]) == 1
 
 
 def test_condense_same_call_and_oldest_inferred_eviction(monkeypatch):
@@ -178,11 +179,10 @@ def test_add_without_revision_is_deduplicated_and_enforces_hard_ceiling(monkeypa
             "active",
             "used_chars",
             "max_chars",
-            "review",
             "sections",
         }
         item = view["sections"][0]["items"][0]
-        fields = {"id", "project_id", "kind", "origin", "created_by", "content", "status", "observed_at", "updated_at", "sources"}
+        fields = {"id", "project_id", "kind", "created_by", "content", "observed_at", "updated_at", "sources"}
         assert set(item) == fields
         assert (
             client.post(

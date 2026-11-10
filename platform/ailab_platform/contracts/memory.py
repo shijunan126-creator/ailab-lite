@@ -29,7 +29,8 @@ class MemoryEntryInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory", "preference", "fact", "interest", "project", "reference"] = "memory"
-    origin: Literal["explicit", "inferred", "chat", "manual", "edited"] | None = None
+    # One kind of line (ADR 0037). Older clients and rows still send these values; they carry no meaning.
+    origin: Literal["memory", "explicit", "inferred", "chat", "manual", "edited"] | None = None
     created_by: Literal["addition", "correction", "condense", "transition"] | None = None
     superseded_reason: Literal["correction", "condense", "evicted", "deleted"] | None = None
     reinforced_at: datetime | None = None
@@ -46,7 +47,7 @@ class MemoryEntryInput(BaseModel):
     invalid_at: datetime | None = None
     superseded_by: str | None = Field(default=None, max_length=40)
     last_used_at: datetime | None = None
-    # "Pause": kept and visible to the user, never shown to the model. Not the same as deleting.
+    # Legacy "pause" and "review" states: every line is now simply active (ADR 0037).
     suppressed: bool | None = None
     project_id: str | None = Field(default=None, max_length=40)
     origin_project_id: str | None = Field(default=None, max_length=40)  # the project the line was learned in
@@ -54,8 +55,8 @@ class MemoryEntryInput(BaseModel):
 
     @model_validator(mode="after")
     def legacy_suppression(self):
-        if self.suppressed or self.status == "suppressed":
-            self.status, self.suppressed = "review", False
+        if self.suppressed or self.status in {"suppressed", "review"}:
+            self.status, self.suppressed = "active", False
         return self
 
     @field_validator("content")
@@ -94,7 +95,7 @@ class MemoryUpdate(BaseModel):
                 re.sub(r"[\W_]+", " ", e.content.casefold()).strip(),
             )
             for e in self.entries
-            if not e.invalid_at and not e.suppressed and e.status != "review"
+            if not e.invalid_at
         ]
         if len(active) != len(set(active)):
             raise ValueError("duplicate active memory content")
@@ -238,10 +239,8 @@ class MemoryItem(BaseModel):
     id: str
     project_id: str | None
     kind: Literal["preference", "fact", "interest", "project", "reference"]
-    origin: Literal["explicit", "inferred", "chat", "manual", "edited"]
     created_by: Literal["addition", "correction", "condense", "transition"] = "addition"
     content: str
-    status: Literal["active", "review", "suppressed", "closed"]
     observed_at: datetime
     updated_at: datetime
     sources: list[MemorySource] = Field(default_factory=list)
@@ -250,9 +249,7 @@ class MemoryItem(BaseModel):
 class MemoryItemPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=0)
-    content: str | None = Field(default=None, min_length=1, max_length=200)
-    origin: Literal["explicit"] | None = None
-    status: Literal["active"] | None = None
+    content: str = Field(min_length=1, max_length=200)
 
 
 class MemoryEdit(BaseModel):
@@ -282,7 +279,6 @@ class MemoryView(BaseModel):
     active: MemoryActive | None
     used_chars: int
     max_chars: int
-    review: list[MemoryItem]
     sections: list[MemorySection]
 
 

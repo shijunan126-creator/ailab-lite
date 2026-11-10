@@ -27,7 +27,7 @@ from ..deps import current_user, get_db
 from ..locks import user_critical_section
 from ..memory_dream.service import active_job
 from ..memory_recall import guard
-from ..memory_recall.policy import history_pool_reader, model_view, project_mode, review_required, run_permissions, run_project
+from ..memory_recall.policy import history_pool_reader, model_view, project_mode, run_permissions, run_project
 from ..memory_recall.search import delivered_files
 from ..memory_recall.tombstones import blocked_by_tombstone, fact_hash, tombstones_of
 from ..metrics import MEMORY_GUARD_REJECTED, MEMORY_RECALL
@@ -48,7 +48,6 @@ def _entry(entry: dict) -> dict:
     out.setdefault("invalid_at", None)
     out.setdefault("superseded_by", None)
     out.setdefault("last_used_at", None)
-    out.setdefault("suppressed", False)
     out.setdefault("evidence_deleted", False)
     out.setdefault("project_id", None)
     out.setdefault("origin_project_id", None)
@@ -105,7 +104,7 @@ def _refuse_unsafe(content: str, source: str) -> None:
     reason = guard.reject_reason(content, untrusted=source != "user")
     if reason:
         MEMORY_GUARD_REJECTED.labels(reason, source).inc()
-        said = "这条内容看起来包含密钥或口令" if reason == guard.SECRET else "这条内容像是对助手的指令"
+        said = "这条内容包含密钥、口令、证件号或卡号" if reason == guard.SECRET else "这条内容像是对助手的指令"
         raise HTTPException(422, f"{said}，不能保存为记忆")
 
 
@@ -166,8 +165,6 @@ def write_memory(
                 raise HTTPException(422, "记忆来源已删除或不可访问")
         if prior is None or prior["content"] != entry.content:
             _refuse_unsafe(entry.content, source)
-            if source != "user" and not explicit and review_required(entry.content) and entry.status != "review":
-                raise HTTPException(422, "敏感个人信息需要用户明确要求才能保存")
         if prior is None:
             if source != "user" and not explicit and blocked_by_tombstone(tombstones, entry.content, entry.evidence_run_ids):
                 raise HTTPException(422, "用户已删除这条记忆")
@@ -184,7 +181,6 @@ def write_memory(
 
             changed = prior["content"] != entry.content or canonical_kind(prior) != canonical_kind(entry.model_dump())
             for field in (
-                "origin",
                 "created_by",
                 "superseded_reason",
                 "observed_at",
@@ -198,7 +194,6 @@ def write_memory(
                 "invalid_at",
                 "superseded_by",
                 "last_used_at",
-                "suppressed",
                 "project_id",
                 "origin_project_id",
                 "status",
@@ -301,7 +296,6 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
     return {
         "id": entry.id or new_id("mem"),
         "kind": entry.kind,
-        "origin": entry.origin,
         "created_by": entry.created_by or "addition",
         "superseded_reason": entry.superseded_reason,
         "reinforced_at": entry.reinforced_at.isoformat() if entry.reinforced_at else now.isoformat(),
@@ -318,7 +312,6 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
         "invalid_at": entry.invalid_at.isoformat() if entry.invalid_at else None,
         "superseded_by": entry.superseded_by,
         "last_used_at": entry.last_used_at.isoformat() if entry.last_used_at else None,
-        "suppressed": bool(entry.suppressed),
         "project_id": entry.project_id,
         "origin_project_id": entry.origin_project_id,
         "status": entry.status or "active",
@@ -540,7 +533,7 @@ def revert_dream_run(run_id: str, user: User = Depends(current_user), db: Sessio
         entries = []
         for raw in visible_memory_entries(db, user.id, restored):
             try:
-                # The snapshot is restored verbatim: invalid_at/suppressed included, so a fact the
+                # The snapshot is restored verbatim, invalid_at included, so a fact the
                 # dream invalidated becomes visible again instead of staying hidden after a revert.
                 entries.append(MemoryEntryInput.model_validate({k: v for k, v in raw.items() if k in MemoryEntryInput.model_fields}))
             except (KeyError, TypeError, ValueError):
@@ -591,7 +584,7 @@ def run_memory(
             from ..memory_recall.document import render
 
             visible = model_view(current, project_id, mode=project_mode(db, project_id))
-            fields = ("id", "project_id", "kind", "origin", "content", "observed_at", "updated_at", "created_by", "superseded_reason")
+            fields = ("id", "project_id", "kind", "content", "observed_at", "updated_at", "created_by", "superseded_reason")
             return {
                 "memory_list": True,
                 "revision": current["revision"],
@@ -613,7 +606,6 @@ def run_memory(
             # the run is the evidence, so deleting the conversation can later find and redact this fact
             item = MemoryEntryInput(
                 kind=body.kind,
-                origin="explicit" if body.explicit else "chat",
                 content=body.content,
                 evidence_run_ids=[run.id],
                 project_id=write_scope,
@@ -630,24 +622,7 @@ def run_memory(
                 and canonical_kind(e.model_dump()) == canonical_kind(item.model_dump())
                 and fact_hash(e.content) == fact_hash(item.content)
             ]
-            duplicate = any(e.status == "active" for e in matching)
-            review = next((e for e in matching if e.status == "review"), None) if not duplicate else None
-            if review is not None:
-                if body.explicit:
-                    review.status, review.suppressed, review.origin = "active", False, "explicit"
-                else:
-                    from ..memory_recall.document import write_result
-
-                    visible = model_view(current, project_id, mode=project_mode(db, project_id))
-                    result = {
-                        **write_result(visible, visible),
-                        "awaiting_confirmation": True,
-                        "notice": "该记忆待用户确认，尚未保存为活动记忆",
-                    }
-                    db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
-                    db.commit()
-                    return result
-            if duplicate:
+            if matching:
                 from ..memory_recall.document import write_result
 
                 visible = model_view(current, project_id, mode=project_mode(db, project_id))
@@ -655,8 +630,7 @@ def run_memory(
                 db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
                 db.commit()
                 return result
-            if review is None:
-                entries.append(item)
+            entries.append(item)
         else:
             match = next((i for i, e in enumerate(entries) if e.id == body.id), None)
             if (
@@ -677,12 +651,7 @@ def run_memory(
                 entries.pop(match)
             else:
                 replacement_kind = body.kind if "kind" in body.model_fields_set else entries[match].kind
-                replacement_origin = "explicit" if body.explicit else entries[match].origin
-                if (
-                    body.content.strip() == entries[match].content
-                    and replacement_kind == entries[match].kind
-                    and replacement_origin == entries[match].origin
-                ):
+                if body.content.strip() == entries[match].content and replacement_kind == entries[match].kind:
                     from ..memory_recall.document import write_result
 
                     visible = model_view(current, project_id, mode=project_mode(db, project_id))
@@ -693,7 +662,6 @@ def run_memory(
                 corrected = MemoryEntryInput(
                     id=new_id("mem"),
                     kind=replacement_kind,
-                    origin=replacement_origin,
                     created_by="correction",
                     content=body.content,
                     evidence_run_ids=[run.id],
@@ -955,15 +923,12 @@ def _item_out(db, user, row, sources=None):
                 "id",
                 "project_id",
                 "kind",
-                "origin",
                 "created_by",
                 "content",
-                "status",
                 "observed_at",
                 "updated_at",
             )
         },
-        "origin": "edited" if row.origin == "manual" else row.origin,
         "sources": [sources[rid] for rid in row.source_run_ids[:50] if rid in sources],
     }
 
@@ -996,7 +961,7 @@ def memory_view(
         query = select(MemoryItem).where(
             MemoryItem.user_id == user.id, or_(MemoryItem.project_id.is_(None), MemoryItem.project_id == project_id)
         )
-    rows = list(db.scalars(query.where(MemoryItem.status.in_(("active", "review"))).order_by(MemoryItem.id)))
+    rows = list(db.scalars(query.where(MemoryItem.status == "active").order_by(MemoryItem.id)))
     rows = [r for r in rows if not r.valid_to and not r.superseded_by]
     job = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, active_job()).limit(1))
     document = memory_for(user)
@@ -1010,10 +975,7 @@ def memory_view(
         "active": {"id": job.id, "status": job.status, "trigger": job.trigger} if job else None,
         "used_chars": used_chars([legacy(r) for r in rows]),
         "max_chars": settings.memory_doc_max_chars,
-        "review": [_item_out(db, user, r, sources) for r in rows if r.status == "review"],
-        "sections": [
-            {"kind": k, "items": [_item_out(db, user, r, sources) for r in rows if r.kind == k and r.status == "active"]} for k in SECTIONS
-        ],
+        "sections": [{"kind": k, "items": [_item_out(db, user, r, sources) for r in rows if r.kind == k]} for k in SECTIONS],
     }
 
 
@@ -1031,7 +993,6 @@ def patch_memory_item(item_id: str, body: MemoryItemPatch, user: User = Depends(
             raise HTTPException(409, "记忆已更新，请重新读取")
         entries = current["entries"]
         target = next(e for e in entries if e["id"] == item_id)
-        target["origin"] = "edited"
         target.update(body.model_dump(exclude_none=True, exclude={"expected_revision"}))
         if body.content is not None:
             target.update(source_quote="", evidence_run_ids=[], evidence_episode_ids=[])

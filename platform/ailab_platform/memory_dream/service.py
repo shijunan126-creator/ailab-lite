@@ -137,7 +137,6 @@ def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
 
 def _cleanup_scopes(db: Session, user_id: str, entries: list[dict]) -> list:
     """Scopes to re-sort once under a new standard. Read-only: the version lives in the last batch report, not in settings."""
-    from .document import protected
     from .prompts import PROMPT_VERSION
 
     version = db.scalar(
@@ -165,7 +164,7 @@ def _cleanup_scopes(db: Session, user_id: str, entries: list[dict]) -> list:
             .limit(100)
         )
     )
-    scopes = {e.get("project_id") for e in _active(entries) if not protected(e)} - done
+    scopes = {e.get("project_id") for e in _active(entries)} - done
     return sorted(scopes, key=lambda pid: (pid is not None, pid or ""))  # the account first
 
 
@@ -643,7 +642,7 @@ async def process_dream(run_id: str) -> None:
                     return ("edit",)
                 cleanup = list(clock.get("cleanup") or []) if job.trigger in {"cron", "manual"} else []
                 if cleanup:
-                    # Re-sort one scope under the current standard before any new conversation; protected lines stay.
+                    # Re-sort one scope under the current standard before any new conversation.
                     pid = cleanup[0]
                     mode = project_mode(db, pid)
                     scope = pid if mode == "isolated" else None

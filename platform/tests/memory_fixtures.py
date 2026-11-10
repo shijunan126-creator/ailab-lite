@@ -26,9 +26,12 @@ def install_plan_builder(monkeypatch, builder):
     from datetime import datetime
 
     from ailab_platform.memory_dream import service
+    from ailab_platform.memory_dream.prompts import CLEANUP
     from ailab_platform.models import MemoryEpisode
 
     async def chat(messages, model, user):
+        if messages[1]["content"] == CLEANUP:
+            return '{"ops":[]}', {}  # the one-time re-sort of lines already in the document: nothing to change here
         episodes = [
             MemoryEpisode(
                 id=e["id"],

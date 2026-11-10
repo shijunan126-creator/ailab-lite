@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-SECRET = "secret"
+SECRET = "secret"  # credentials, keys, id numbers and card numbers: never stored, from any source
 INJECTION = "injection"
 
 _SECRET_PATTERNS = [
@@ -27,6 +27,9 @@ _SECRET_PATTERNS = [
         # "password: hunter2", "token=abc123...", "密码是 xxx"
         r"(?:password|passwd|pwd|secret|api[_\- ]?key|access[_\- ]?token|token)\s*(?:is|are|[:=：])\s*\S{6,}",
         r"(?:密码|口令|密钥|令牌)\s*(?:是|为|[:=：])\s*\S{4,}",
+        # identity and payment numbers are never remembered: a resident id number, a 16-19 digit card number
+        r"(?<![0-9])[0-9]{17}[0-9x](?![0-9a-z])",
+        r"(?<![0-9])[0-9](?:[ \-]?[0-9]){15,18}(?![0-9])",
     )
 ]
 # a long unbroken run that mixes letters and digits is a token, not prose

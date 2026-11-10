@@ -1154,10 +1154,10 @@ def test_memory_document_repairs_shared_scopes_and_paused_rows(engine):
             ),
         )
     _upgrade_to(engine, "0066")
-    _upgrade_to(engine, "head")  # the ORM below describes the latest schema; later revisions keep these rows as 0066 left them
+    _upgrade_to(engine, "head")  # the ORM below describes the latest schema
     with Session(engine) as db:
         row = db.get(MemoryItem, "repair-memory")
-        assert row.status == "review"
+        assert (row.status, row.origin) == ("active", "memory")  # 0066 made it review; 0069 has one kind of active line
         assert db.get(Project, "repair-project").memory_merge_requested_at
         from ailab_platform.memory_dream.maintenance import merge_pending_projects
 
@@ -1319,4 +1319,69 @@ def test_nightly_lines_lose_protection_only_when_the_user_never_asked(engine):
     before = state()
     assert {mid: origin for mid, (origin, _) in before.items()} == {mid: line[0] for mid, line in lines.items()}
     assert all("origin_before" not in meta for _, meta in before.values())
+    _upgrade_to(engine, "head")
+
+
+def test_every_line_becomes_one_kind_and_waiting_lines_become_active(engine):
+    """0069: origin collapses to "memory"; review/paused lines become active unless they hold an id/card/credential
+    (closed as deleted) or duplicate an active line (closed as condensed). The downgrade restores exactly those rows."""
+    import sqlalchemy as sa
+
+    _upgrade_to(engine, "0068")
+    lines = {
+        # id: (origin, status, content, content_hash)
+        "kept": ("explicit", "active", "回答先给结论", "h_kept"),
+        "waiting": ("inferred", "review", "患有慢性病", "h_waiting"),
+        "paused": ("inferred", "suppressed", "住在上海", "h_paused"),
+        "id_number": ("inferred", "review", "身份证 11010519491231002X", "h_id"),
+        "duplicate": ("inferred", "review", "回答先给结论", "h_kept"),
+        "history": ("edited", "closed", "旧版本", "h_history"),
+    }
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        items = sa.Table("memory_items", sa.MetaData(), autoload_with=conn)
+        for mid, (origin, status, content, content_hash) in lines.items():
+            conn.execute(
+                items.insert(),
+                dict(
+                    id=mid,
+                    user_id="u1",
+                    kind="preference",
+                    origin=origin,
+                    content=content,
+                    source_run_ids=[],
+                    source_quote="",
+                    observed_at=datetime(2026, 1, 1),
+                    valid_from=datetime(2026, 1, 1),
+                    valid_to=datetime(2026, 1, 2) if status == "closed" else None,
+                    status=status,
+                    confidence=1,
+                    reinforced_at=datetime(2026, 1, 1),
+                    content_hash=content_hash,
+                    created_at=datetime(2026, 1, 1),
+                    updated_at=datetime(2026, 1, 1),
+                    metadata={"source": "nightly"},
+                    created_by="addition",
+                    superseded_reason="correction" if status == "closed" else None,
+                ),
+            )
+
+    def state():
+        with engine.connect() as conn:
+            rows = conn.execute(sa.text("SELECT id, origin, status, superseded_reason FROM memory_items")).all()
+        return {mid: (origin, status, reason) for mid, origin, status, reason in rows}
+
+    _upgrade_to(engine, "0069")
+    after = state()
+    assert {mid for mid, (origin, _, _) in after.items() if origin != "memory"} == {"history"}  # closed history is left as written
+    assert {mid: (status, reason) for mid, (_, status, reason) in after.items()} == {
+        "kept": ("active", None),
+        "waiting": ("active", None),
+        "paused": ("active", None),
+        "id_number": ("closed", "deleted"),
+        "duplicate": ("closed", "condense"),
+        "history": ("closed", "correction"),
+    }
+    _downgrade_to(engine, "0068")
+    assert state() == {mid: (origin, status, "correction" if status == "closed" else None) for mid, (origin, status, _, _) in lines.items()}
     _upgrade_to(engine, "head")

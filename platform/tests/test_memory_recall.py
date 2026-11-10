@@ -261,7 +261,7 @@ def test_a_deleted_fact_is_not_resurrected_by_the_dream_unless_restated() -> Non
             assert __import__("ailab_platform.memory_recall.tombstones", fromlist=["tombstones_of"]).tombstones_of(db.get(User, uid)) == []
 
 
-def test_suppressed_memory_stays_visible_to_the_user_but_not_the_model() -> None:
+def test_a_legacy_paused_line_is_active_for_the_user_and_the_model() -> None:
     with TestClient(app) as c:
         me = _user(c)
         saved = c.put(
@@ -275,12 +275,12 @@ def test_suppressed_memory_stays_visible_to_the_user_but_not_the_model() -> None
             },
         ).json()
         entries = [{"id": e["id"], "kind": e["kind"], "content": e["content"]} for e in saved["entries"]]
-        entries[1]["suppressed"] = True
+        entries[1]["suppressed"] = True  # an old client's pause flag: one kind of line now (ADR 0037)
         c.put("/v1/memory", headers=me, json={"expected_revision": 1, "enabled": True, "auto_save": True, "entries": entries})
-        assert [e["status"] for e in c.get("/v1/memory", headers=me).json()["entries"]] == ["active", "review"]
+        assert [e["status"] for e in c.get("/v1/memory", headers=me).json()["entries"]] == ["active", "active"]
         run = _running(c, me)
         seen = [e["content"] for e in c.get(f"/internal/runs/{run}/model-input", headers=SERVICE).json()["memory"]["entries"]]
-        assert seen == ["喜欢简洁中文"]
+        assert seen == ["喜欢简洁中文", "用 Neovim"]
         assert "tombstones" not in c.get("/v1/memory", headers=me).json()
 
 
