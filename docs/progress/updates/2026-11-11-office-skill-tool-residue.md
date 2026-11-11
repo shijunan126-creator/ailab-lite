@@ -37,7 +37,7 @@ python -m pytest tests/test_office_suite_resources.py tests/test_office_skill_ch
 
 ## 未覆盖与风险
 
-- 同一来源的另一类残留没动：`platform.*/env_setup/setup.md`（4 份，共 835 行）和 pptx `resources/SKILL.md` 的 `## Dependencies` 仍留着国内镜像地址与 `sudo dpkg`/`hdiutil`/`msiexec` 安装命令，与"依赖预装"契约冲突；`setup*.sh` 已被补丁改成 `exit 1`，但 `.md` 里的命令模型仍能读到。要不要清、清到什么程度待定。
-- visual-judge 的 frontmatter 仍保留上游的 `color: yellow` 和 `tools: [view_workspace_file]`；AILab 不解析资源文件的 frontmatter，没有功能影响，本轮未动。
-- 生成的 `images/sbx-office/skills/index.json` 变了，而 Agent 会用它和租约沙箱的索引做一致性校验（`skill_verification.py`）：先上 Agent 代码再重建 sbx-office 镜像的话，`load_skill` 会以"技能清单与沙箱镜像不一致"被拒。部署时必须同时重建镜像。
+- 完整工具清单、v1/v2 覆盖关系、未修残留 R1–R6、与 Pi 四工具的对照都记在[工具面与残留清单](../../reviews/2026-11-11-office-skill-tool-inventory.md)；本节不重复。
+- visual-judge 那句是判断、不是事实修正，而且写错了：`run_subtasks` 是 2–4 个子任务，一句「交给一个子任务」不成立；平台默认的视觉门禁是常驻的 `review_artifact`，不是子任务。待确认后改成「先自己用 `review_artifact`/`view_workspace_file` 逐页判定，长成品再拆 2–4 个子任务」。
+- 生成的 `images/sbx-office/skills/index.json` 变了，而 Agent 会用它和租约沙箱的索引做一致性校验（`skill_verification.py`）：先上 Agent 代码再重建 sbx-office 镜像的话，`load_skill` 会以“技能清单与沙箱镜像不一致”被拒。部署时必须同时重建镜像。
 - 未跑完整套件、Portal、E2E 和真模型；本轮只改技能正文文本，未改请求构造。
