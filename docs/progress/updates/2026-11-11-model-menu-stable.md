@@ -20,9 +20,10 @@
 - Portal：`npm test` 47 个文件 282 项通过（`model-menu` 三条改为「悬停不变、点模型后右栏更新、点档位不收菜单、无档位模型点一下收起」）；`npx tsc --noEmit` 通过。
 - Python：`ruff check` / `format --check` 对被改的 `e2e/` 通过（未改产品代码）。
 - 浏览器（本机 Playwright 无头 Chromium，`next dev` + 临时页面渲染真实 `ModelMenu`，真实 `globals.css`）：900×700 与 375×760 各一遍，脚本断言指针扫过两个模型前后弹层 rect、模型行 rect、按钮文字逐项相同；点「离线演示」后右栏变「—」而弹层尺寸不变（桌面 150px、手机 161px）；再点回 DeepSeek Flash 和「最高」后菜单仍开着、按钮变成「DeepSeek Flash最高」；点空白处关闭。截图只在 `/tmp`，未入库。临时页面与 dev server 已删除。
+- E2E（本机隔离栈：四个真实服务 + Redis 16379/14 + Portal 生产构建，Chromium；`AILAB_VIEWER_READER_PATH` 指向占位文件代替缺失的 office runtime）：`e2e -k "thinking_strength or workbench_offers"` 2 项通过，`e2e/test_genui_layout.py` 5 项通过（含 320/390 宽浅/深色真对话页与 composer 截图）。真实对话页里点模型后右栏更新、点档位后菜单仍开、点输入框才收起均通过。临时 Redis 已关闭，截图在 `/tmp` 未入库。
 
 ## 没覆盖到 / 风险
 
-- 桌面和手机的浏览器检查用的是临时页面，真实对话页的组合由 CI 的 E2E 覆盖；本地未跑 E2E（缺 `vendor/office-suite/runtime` 构建产物）。
+- 本机只跑了上述两项和 genui 布局的 E2E，未跑完整 E2E 与双库全套，其余交 CI。
 - 未跑 Portal 生产构建与双库全套，交 CI。
 - 有档位的模型里选一个没有档位的模型后菜单仍开着，右栏只有「—」；用户需要点别处关闭。这是有意的（保持一次访问里可以继续换模型），但与改动前「选完就收起」不同。
