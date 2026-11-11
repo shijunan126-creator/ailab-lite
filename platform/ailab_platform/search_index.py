@@ -19,7 +19,7 @@ import time
 import unicodedata
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, event, func, literal_column, or_, select, text, tuple_
+from sqlalchemy import and_, event, exists, func, literal_column, or_, select, text, tuple_
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -280,6 +280,11 @@ def matching_run_query(conversation_id: str, segments: list[str], dialect: str, 
     return query.limit(limit) if limit else query
 
 
+def run_presence_query(conversation_ids: list[str]):
+    has_runs = exists().where(Run.conversation_id == Conversation.id)
+    return select(Conversation.id, has_runs.label("has_runs")).where(Conversation.id.in_(conversation_ids))
+
+
 def _index_row(db: Session, conversation: Conversation) -> ConversationSearch:
     # autoflush is off, so a row added earlier in this transaction is not visible to a SELECT yet.
     for pending in db.new:
@@ -399,12 +404,17 @@ def _indexed_search(db: Session, user_id: str, segments: list[str], chosen: list
         rows = db.execute(candidate_query(user_id, chosen, dialect, after=after, limit=CANDIDATE_PAGE)).all()
         if not rows:
             break
+        # The term union can nominate title-only conversations whose bigrams do not form the requested phrase.
+        # Probe run existence once per candidate page instead of making a round trip for every empty conversation.
+        title_matches = {row.id for row in rows if contains(row.title or "", segments)}
+        body_candidates = [row.id for row in rows if row.id not in title_matches]
+        with_runs = {row.id for row in db.execute(run_presence_query(body_candidates)) if row.has_runs} if body_candidates else set()
         for conversation in rows:
             _check_deadline(deadline)
             title = conversation.title or ""
-            if contains(title, segments):
+            if conversation.id in title_matches:
                 title_hits.append(_item(conversation, "title", None, title, segments))
-            else:
+            elif conversation.id in with_runs:
                 found = _matching_run(db, conversation.id, segments, dialect, deadline)
                 if found:
                     run_id, match, text = found

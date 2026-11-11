@@ -2,13 +2,14 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, event, select
 
 from ailab_platform.api.main import app
-from ailab_platform.db import SessionLocal
+from ailab_platform.db import SessionLocal, engine
 from ailab_platform.models import Conversation, ConversationSearch, Run, SearchIndexState
 from ailab_platform.search_index import index_conversation, index_pending
 from tests.test_chat_fork_retry import create
@@ -270,7 +271,23 @@ def test_search_scans_past_false_positive_candidate_pages(monkeypatch):
             # The same bigrams, but the literal phrase never appears. More than the old 2,000-candidate cutoff.
             db.add_all([Conversation(user_id=user_id, title="目标 标词 词组") for _ in range(2001)])
             db.commit()
-        assert search(c, "目标词组")[0]["conversation_id"] == true_conv["id"]
+        run_queries = []
+        clock = SimpleNamespace(now=0.0)
+        monkeypatch.setattr(search_index, "time", SimpleNamespace(monotonic=lambda: clock.now))
+
+        def count_run_queries(_conn, _cursor, statement, *_args):
+            if "FROM runs" in statement:
+                run_queries.append(statement)
+                # Model 5ms per database round trip deterministically. Do not sleep, extend the product deadline,
+                # or rely on the local database being as fast as an unloaded laptop.
+                clock.now += 0.005
+
+        event.listen(engine, "before_cursor_execute", count_run_queries)
+        try:
+            assert search(c, "目标词组")[0]["conversation_id"] == true_conv["id"]
+        finally:
+            event.remove(engine, "before_cursor_execute", count_run_queries)
+        assert len(run_queries) <= 42  # 41 candidate pages and one real conversation's matching-run query.
 
 
 def test_search_scans_past_hidden_run_matches():

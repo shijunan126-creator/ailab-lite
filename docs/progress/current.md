@@ -3,7 +3,7 @@
 - 用户授权：保留 PR #181 的索引方案，修复 bug、更正错误记录；已追加授权提 PR、最终 CI 通过后合并并增量部署最新版。分支 `fix/search-correctness`，base `origin/main@fc7d540b`，当前唯一工作树为仓库根；原 PR #181 已合并，原分支/工作树记录已过期。
 - 已修复：Unicode 归一化预筛选漏搜、隐藏 OpenUI 源码误报、拉丁词边界误报、新会话与 Run 同 flush 漏索引、并发词项覆盖，以及固定会话/Run 截断漏搜。分页保留，5 秒协作式期限超时返回明确 503。未改索引结构或 Portal。
 - 错误记录：已撤回“9 倍”；基准按 UTF-8 原文字节、逻辑主库页、搜索专用页与 WAL/SHM 分列。SQLite 与 PostgreSQL 的增量不能混用，数字及原始口径纠正统一见[搜索记录](updates/2026-11-11-search-index.md)。
-- 验证与边界：[本轮复核](updates/2026-11-11-search-correctness.md)。本地搜索与关联模块定向双库检查、Ruff、压测已执行；全套与 CI 尚未运行，不沿用 PR #181 的历史 CI 作为当前修复验收。
+- 验证与边界：[本轮复核](updates/2026-11-11-search-correctness.md)。首轮 CI `83af582` 仅 PG 搜索空会话误候选回归因 N+1 往返超时失败，其他作业通过；已按页批量 EXISTS 探测修复，不放宽期限，待新 head CI。
 - 发布：[PR #182](https://github.com/shijunan126-creator/ailab-lite/pull/182) 已创建，等待最终 head 的 CI；通过后合并，按本机实际运行版本增量部署，不备份、不重复功能验收。
 
 ---

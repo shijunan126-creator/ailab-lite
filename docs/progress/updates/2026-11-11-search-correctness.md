@@ -10,6 +10,7 @@
 - 词项并集直接读取 ORM 缓存后覆盖，两个事务会丢掉对方新增的词。先幂等建行，再写锁内刷新并合并；SQLite 在读取前通过 INSERT 获取单写锁，PG 使用行锁；每事务只锁一次并在事务结束释放缓存。新会话尚未 flush 时从 session.new 查找，避免漏掉同事务 Run。
 - 固定 2000 会话 / 200 Run 截断会跳过排在误候选或隐藏源码之后的真实命中。保留 50 会话 / 20 Run 分页，找到前 limit 个真实命中或候选耗尽才成功；5 秒协作式期限超时返回 503，禁止以空列表冒充完成。混合标题/正文凑足 limit 后即停止扫描。
 - 基准脚本原来将物理主库与 WAL/SHM 相加，还把回答字符数称作 MB。现在分别输出 UTF-8 字节、逻辑页、搜索表/索引页、WAL/SHM 和前后增量；默认临时库/数据目录在退出时清理。
+- CI 暴露空会话候选的 N+1：2001 个只有标题的误候选原来逐个查询 Run，在并行负载下耗尽期限。现在每页先用相关 EXISTS 和 Run 索引批量探测，跳过空会话的正文查询；标题已命中时免探测。该场景涉及 Run 的 SQL 不超过 42 次（41 页探测 + 1 个真实会话），代替两千多次往返。
 - ADR、原搜索记录、HANDOFF 和 PR #181 描述已更正；不保留关闭词位置的实施计划。GitHub 连接器写描述返回 403，已通过本机 GitHub CLI 完成更新，未发送讨论消息。
 
 ## 验证
@@ -20,6 +21,13 @@
 - 关联 `test_conversations.py test_chat_fork_retry.py test_run_state.py test_conversation_tree_migration.py`：SQLite 37 passed / 2 skipped（未设 PG URL），PG 配置下 39 passed。包含双库升级/降级、FTS/GIN 和 Run 索引的 EXPLAIN。
 - 基准：`PYTHONPATH=. python scripts/bench_search.py --conversations 5000 --runs-per-conversation 20 --iterations 3`（SQLite）；临时 PG 为 2000 会话 / 10 Run，3 次查询取中位数。SQLite 回填 77.24s，稀有词 6.8ms、常用词 9.0ms、多词 14.1ms、deploy 19.9ms、标题 5.8ms；PG 回填 15.42s，对应 6.7 / 7.4 / 13.0 / 15.4 / 5.6ms。没有将新旧多关键词语义不同的结果当作召回一致。
 - 默认小基准另验 UTF-8/索引专用统计与临时目录清理。存储数字仅维护在[搜索记录](2026-11-11-search-index.md)。
+
+### 首轮 CI 与性能回归修复
+
+- `83af582` 的 [CI run](https://github.com/shijunan126-creator/ailab-lite/actions/runs/42954188041)：PG 1 failed / 2938 passed / 86 skipped，唯一失败为上述 2001 空会话回归，搜索返回 503（5031ms）；汇总 CI 因该失败失败。SQLite、quality、3 个 E2E 分片及其他作业通过，不将这一轮记为全绿。
+- 查询次数回归额外模拟每次数据库往返消耗 5ms，以独立单调时钟推进，不实际 sleep，也不修改产品的 5 秒期限。对旧 `_indexed_search` 实现确定性复现 503；修复后仍要求找回最旧真实命中且 Run SQL ≤42 次。
+- 新增生产 EXISTS 查询的双库 EXPLAIN 断言，要求使用 Run 的 conversation 索引。最终检查结果以本 PR 最新 head 为准，未重跑本地全套。
+- 修复后 `pytest tests/test_search.py tests/test_conversation_tree_migration.py -o addopts='' -q`：SQLite 26 passed / 2 skipped，临时 PG16 配置下 28 passed；Ruff check/format 通过。包含不放宽期限的确定性往返回归及新增 EXISTS 查询计划检查。
 
 ## 成本与未测边界
 
