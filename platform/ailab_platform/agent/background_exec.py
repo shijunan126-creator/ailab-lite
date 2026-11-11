@@ -157,7 +157,12 @@ def _final(response: dict, action: str, output: _BoundedOutput) -> dict:
     for key in ("duration_ms", "idle_seconds", "elapsed_seconds", "total_bytes", "truncated", "log_path"):
         if response.get(key) not in (None, ""):
             final[key] = response[key]
-    if killed_by == "deadline":
+    if response.get("lost"):
+        # The sandbox has no exit record and the process is gone: no result exists, and the model must
+        # check the workspace instead of trusting an exit code -1.
+        final["lost"] = True
+        final["error"] = response.get("error") or "后台进程退出状态丢失，请先检查文件"
+    elif killed_by == "deadline":
         final["killed_by"] = "deadline"
         final["remaining_seconds"] = 0
         final["error"] = "命令超过平台期限，已被终止（这不是等待窗口结束，也不是命令自己退出）"
@@ -176,7 +181,8 @@ def _running(response: dict, output: _BoundedOutput, window: int, offset: int) -
         "handle": response["handle"],
         "running": True,
         "exit_code": None,
-        "stdout": output.text(),
+        # Not stdout: while the command runs, the log holds both streams interleaved.
+        "output": output.text(),
         "total_bytes": offset,
         "truncated": bool(response.get("truncated")),
         "idle_seconds": response.get("idle_seconds"),
@@ -249,8 +255,10 @@ async def background_exec(name, args, lease_id, broker, *, max_seconds=None, han
         if not isinstance(total, int):  # a response without a byte counter: take its delta as new
             output.add(delta)
         elif total > offset:
-            # The helper caps one response's delta; say so rather than stitching a gap away.
-            gap = total - offset - len(delta.encode())
+            # The helper caps one response's delta; say so rather than stitching a gap away. Its read
+            # start is exact; the byte count of the decoded tail is only a fallback for an older helper.
+            start = response.get("from")
+            gap = start - offset if isinstance(start, int) else total - offset - len(delta.encode())
             if gap > 0:
                 output.add(f"\n...[elided {gap} bytes]...\n")
             output.add(delta)

@@ -28,6 +28,11 @@ REDUCED_V1 = frozenset(
         "recall_history",
         "ask_user",
         "update_plan",
+        # The file tools are in the reduced catalog too: the platform rules tell a small-context model
+        # not to use cat/sed in place of read/edit, and that rule has to be satisfiable.
+        "read",
+        "write",
+        "edit",
         "bash",
         "bash_wait",
         "deliver_file",

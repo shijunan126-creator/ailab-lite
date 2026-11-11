@@ -63,7 +63,7 @@ def test_the_window_end_is_a_checkpoint_not_a_failure(monkeypatch):
     )
     result = asyncio.run(background_exec("bash", {"cmd": "make", "wait_seconds": 1}, "lease", broker))
     assert result["ok"] is True and result["running"] is True and result["exit_code"] is None
-    assert result["stdout"] == "first" and result["total_bytes"] == 5
+    assert result["output"] == "first" and result["total_bytes"] == 5
     assert (result["elapsed_seconds"], result["remaining_seconds"], result["wait_seconds"]) == (1.0, 99.0, 1)
     assert "不是失败" in result["hint"] and "bash_kill" in result["hint"]
 
@@ -119,8 +119,8 @@ def test_output_stays_bounded_across_chunks(monkeypatch):
     )
     result = asyncio.run(background_exec("bash_wait", {"handle": "a" * 32, "wait_seconds": 1}, "lease", broker))
     assert result["running"]
-    assert len(result["stdout"]) <= 9200  # head + tail, never the sum of every chunk
-    assert result["stdout"].startswith("x") and result["stdout"].endswith("x")
+    assert len(result["output"]) <= 9200  # head + tail, never the sum of every chunk
+    assert result["output"].startswith("x") and result["output"].endswith("x")
 
 
 def test_a_rejected_control_call_does_not_claim_a_result():
@@ -193,9 +193,9 @@ def test_resume_waits_on_the_same_command_instead_of_starting_it(monkeypatch):
     loop._states["r"]["tool_log"]["2:0"] = {"name": "bash", "started": True, "handle": "b" * 32}
     seen = {}
 
-    async def fake_run_tool(turn, run_id, call, step, invocation="", event_name=None):
+    async def fake_run_tool(turn, run_id, call, step, invocation="", event_name=None, announce=True):
         seen.update(name=call.name, arguments=call.arguments, invocation=invocation)
-        return {"ok": True, "running": True, "handle": call.arguments["handle"], "wait_seconds": 1}
+        return {"ok": True, "running": True, "exit_code": None, "handle": call.arguments["handle"], "wait_seconds": 1}
 
     monkeypatch.setattr(loop, "_run_tool", fake_run_tool)
     result = asyncio.run(loop._durable_tool(_Turn({"options": {}}), "r", ToolCall("c", "bash", {"cmd": "make"}), 2, "2:0"))
@@ -208,8 +208,13 @@ def test_resume_reports_a_lost_command_without_running_it_again(monkeypatch):
     loop._states["r"] = fresh_state()
     loop._states["r"]["tool_log"]["2:0"] = {"name": "bash", "started": True, "handle": "b" * 32}
 
-    async def gone(turn, run_id, call, step, invocation="", event_name=None):
-        return {"ok": False, "running": False, "lost": True, "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}
+    async def gone(turn, run_id, call, step, invocation="", event_name=None, announce=True):
+        return {
+            "ok": False,
+            "running": False,
+            "lost": True,
+            "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动",
+        }
 
     monkeypatch.setattr(loop, "_run_tool", gone)
     result = asyncio.run(loop._durable_tool(_Turn({"options": {}}), "r", ToolCall("c", "bash", {"cmd": "make"}), 2, "2:0"))
@@ -223,7 +228,7 @@ def test_a_finished_failing_command_keeps_its_result_across_a_restart(monkeypatc
     loop._states["r"] = fresh_state()
     loop._states["r"]["tool_log"]["2:0"] = {"name": "bash", "started": True, "handle": "b" * 32}
 
-    async def finished(turn, run_id, call, step, invocation="", event_name=None):
+    async def finished(turn, run_id, call, step, invocation="", event_name=None, announce=True):
         return {"ok": False, "exit_code": 1, "running": False, "stdout": "", "stderr": "boom\n", "error": "Command exited with code 1"}
 
     monkeypatch.setattr(loop, "_run_tool", finished)
@@ -237,8 +242,16 @@ def test_a_command_whose_state_was_lost_stays_uncertain(monkeypatch):
     loop._states["r"] = fresh_state()
     loop._states["r"]["tool_log"]["2:0"] = {"name": "bash", "started": True, "handle": "b" * 32}
 
-    async def state_lost(turn, run_id, call, step, invocation="", event_name=None):
-        return {"ok": False, "exit_code": -1, "running": False, "stdout": "", "stderr": "", "error": "后台进程退出状态丢失，请先检查文件"}
+    async def state_lost(turn, run_id, call, step, invocation="", event_name=None, announce=True):
+        return {
+            "ok": False,
+            "lost": True,
+            "exit_code": -1,
+            "running": False,
+            "stdout": "",
+            "stderr": "",
+            "error": "后台进程退出状态丢失，请先检查文件",
+        }
 
     monkeypatch.setattr(loop, "_run_tool", state_lost)
     result = asyncio.run(loop._durable_tool(_Turn({"options": {}}), "r", ToolCall("c", "bash", {"command": "make"}), 2, "2:0"))
@@ -252,20 +265,20 @@ def test_a_resumed_wait_keeps_the_original_tool_name_for_the_ui(monkeypatch):
     loop._states["r"]["tool_log"]["2:0"] = {"name": "bash", "started": True, "handle": "b" * 32}
     seen = {}
 
-    async def fake_run_tool(turn, run_id, call, step, invocation="", event_name=None):
-        seen.update(call=call.name, event_name=event_name)
-        return {"ok": True, "running": True, "handle": call.arguments["handle"]}
+    async def fake_run_tool(turn, run_id, call, step, invocation="", event_name=None, announce=True):
+        seen.update(call=call.name, event_name=event_name, announce=announce)
+        return {"ok": True, "running": True, "exit_code": None, "handle": call.arguments["handle"]}
 
     monkeypatch.setattr(loop, "_run_tool", fake_run_tool)
     asyncio.run(loop._durable_tool(_Turn({"options": {}}), "r", ToolCall("c", "bash", {"command": "make"}), 2, "2:0"))
-    assert seen == {"call": "bash_wait", "event_name": "bash"}
+    assert seen == {"call": "bash_wait", "event_name": "bash", "announce": False}
 
 
 def test_a_started_command_records_its_handle_for_a_resumed_run(monkeypatch):
     loop = AgentLoop(FakePlatform(), LoopBroker())
     loop._states["r"] = fresh_state()
 
-    async def started(turn, run_id, call, step, invocation="", event_name=None):
+    async def started(turn, run_id, call, step, invocation="", event_name=None, announce=True):
         return {"ok": True, "running": True, "handle": "pending", "hint": "…"}
 
     monkeypatch.setattr(loop, "_run_tool", started)
@@ -327,7 +340,15 @@ def test_a_gap_between_what_was_read_and_what_arrived_is_marked(monkeypatch):
     monkeypatch.setattr(module, "WAIT_CHUNK_SECONDS", 0.1)
     broker = ScriptedBroker([running(total_bytes=9000, output_tail="tail")] * 40)
     result = asyncio.run(background_exec("bash_wait", {"handle": "a" * 32, "wait_seconds": 1}, "lease", broker))
-    assert result["running"] and "...[elided 8996 bytes]..." in result["stdout"] and result["stdout"].endswith("tail")
+    assert result["running"] and "...[elided 8996 bytes]..." in result["output"] and result["output"].endswith("tail")
+
+
+def test_the_gap_uses_the_helpers_read_start_not_a_redecoded_length(monkeypatch):
+    """Invalid UTF-8 becomes one replacement character (3 bytes), so a byte-length gap can come out wrong."""
+    monkeypatch.setattr(module, "WAIT_CHUNK_SECONDS", 0.1)
+    broker = ScriptedBroker([running(total_bytes=9000, output_tail="\ufffd", **{"from": 8999})] * 40)
+    result = asyncio.run(background_exec("bash_wait", {"handle": "a" * 32, "wait_seconds": 1}, "lease", broker))
+    assert "...[elided 8999 bytes]..." in result["output"]
 
 
 def test_the_command_may_be_named_command_or_cmd():
@@ -335,3 +356,54 @@ def test_the_command_may_be_named_command_or_cmd():
         broker = ScriptedBroker([{"ok": True, "running": False, "exit_code": 0, "stdout": ""}])
         asyncio.run(background_exec("bash", {**arguments, "wait_seconds": 1}, "lease", broker))
         assert b'"cmd": "make"' in broker.files[-1]
+
+
+def test_a_resumed_command_does_not_open_a_second_ui_step(monkeypatch):
+    """The crash announced the call; announcing again would open a step the result never closes."""
+    from ailab_platform.agent import loop as loop_module
+    from ailab_platform.agent.budgets import WorkBudget
+    from ailab_platform.api import process_view
+
+    loop = AgentLoop(FakePlatform(), LoopBroker())
+    loop._states["r"] = fresh_state()
+    loop._states["r"]["tool_log"]["2:0"] = {"name": "bash", "started": True, "handle": "b" * 32}
+    loop._budgets["r"] = WorkBudget(loop._states["r"], "job")
+
+    async def still_running(name, args, lease, broker, ctx):
+        return {"ok": True, "running": True, "exit_code": None, "handle": "b" * 32, "output": ""}
+
+    monkeypatch.setattr(loop_module, "execute_tool", still_running)
+    crash = [("agent.tool_call", {"step": 2, "name": "bash", "arguments": {"command": "make"}})]
+    asyncio.run(loop._durable_tool(_Turn({"options": {}}), "r", ToolCall("c", "bash", {"command": "make"}), 2, "2:0"))
+
+    items: list[dict] = []
+    for type_, payload in [*crash, *loop.platform.events]:
+        process_view.reduce_event(items, type_, payload)
+    steps = [step for item in items if item["kind"] == "steps" for step in item["steps"] if step["name"] == "bash"]
+    assert len(steps) == 1
+    assert steps[0]["status"] == "note"  # still running, and the step the crash opened is the one updated
+
+
+def test_a_lost_exit_state_keeps_the_sandbox_message_and_says_lost():
+    """A SIGHUP-killed command also reports -1, so -1 alone must not mean "no result"."""
+    broker = ScriptedBroker(
+        [
+            {
+                "ok": False,
+                "running": False,
+                "handle": "a" * 32,
+                "exit_code": -1,
+                "lost": True,
+                "error": "后台进程退出状态丢失，请先检查文件",
+            }
+        ]
+    )
+    result = asyncio.run(background_exec("bash_wait", {"handle": "a" * 32, "wait_seconds": 0}, "lease", broker))
+    assert result["running"] is False and result["exit_code"] == -1
+    assert result["lost"] is True and result["error"] == "后台进程退出状态丢失，请先检查文件"
+
+
+def test_a_killed_by_signal_command_is_not_reported_as_lost():
+    broker = ScriptedBroker([{"ok": False, "running": False, "handle": "a" * 32, "exit_code": -1, "killed_by": "deadline"}])
+    result = asyncio.run(background_exec("bash_wait", {"handle": "a" * 32, "wait_seconds": 0}, "lease", broker))
+    assert not result.get("lost") and result["killed_by"] == "deadline"

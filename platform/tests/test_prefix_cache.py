@@ -2902,3 +2902,52 @@ def test_line_moved_out_of_scope_is_announced_without_a_boundary():
     assert "已删除" not in blocks[0]["content"]
     assert requests[0]["messages"][:2] == requests[-1]["messages"][:2]
     assert not any(kind == "agent.context_boundary" for kind, _ in platform.events)
+
+
+@pytest.mark.parametrize("mode", ["work", "chat"])
+def test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary(mode):
+    """A run paused across a deploy would otherwise keep offering tools this Agent no longer executes."""
+    from ailab_platform.agent.tools import RETIRED_TOOLS
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": mode}}
+
+    platform = Platform()
+    state = fresh_state()
+    retired = sorted(RETIRED_TOOLS)[0]
+    legacy_tools = [{"type": "function", "function": {"name": name, "description": "old", "parameters": {}}} for name in (retired,)]
+    state["messages"] = [
+        {"role": "system", "content": system_prompt_for(mode)},
+        {"role": "system", "content": ""},
+        {"role": "user", "content": "continue"},
+    ]
+    state["tool_catalog_v1"] = legacy_tools
+    state["user_message_index"] = 2
+    platform.checkpoint = {"step": 1, "state": state}
+    with scripted_server([{"content": "done"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="resume"))
+    offered = {tool["function"]["name"] for tool in requests[0]["tools"]}
+    assert retired not in offered
+    if mode == "work":
+        assert {"read", "write", "edit", "bash"} <= offered
+    else:  # Chat never had workspace tools; its checkpoint is rebuilt the same way and offers none
+        assert not {"read", "write", "edit", "bash", "exec"} & offered
+    # The tool half of the request changed, and the rules did not: that is a recorded catalog boundary.
+    assert ("agent.context_boundary", {"reason": "tool_catalog_changed"}) in platform.events
+    assert requests[0]["messages"][:2] == state["messages"][:2]  # earlier messages are kept byte for byte
+
+
+def test_the_reduced_catalog_still_fits_the_smallest_model_budget():
+    """Small-context models get the reduced catalog; the file rules must be satisfiable there."""
+    from ailab_platform.agent.discovery import SEARCH
+    from ailab_platform.catalog import ModelSpec
+    from ailab_platform.model_policy import ModelPolicy
+    from ailab_platform.model_policy import estimator as token_estimator
+
+    small = ModelSpec(id="small", name="small", provider="mock", context_tokens=32768, capabilities=["tools"])
+    budget = min(ModelPolicy.input_budget(small), max(800, int(ModelPolicy.input_budget(small) * 0.15)))
+    reduced = catalog_for_budget([SEARCH, *tools_for_turn()], budget)
+    names = {tool["function"]["name"] for tool in reduced}
+    assert {"read", "write", "edit", "bash"} <= names
+    assert token_estimator.raw(reduced) <= budget

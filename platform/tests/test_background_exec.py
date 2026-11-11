@@ -77,11 +77,11 @@ def test_background_tools_start_wait_kill_and_cap(tmp_path, monkeypatch):
             full = await execute_tool("bash", {"cmd": "true", "background": True}, "lease", broker)
             assert not full["ok"] and "上限" in full["error"]
             waited = await execute_tool("bash_wait", {"handle": start["handle"], "seconds": 1}, "lease", broker)
-            assert waited["running"] and waited["stdout"] == "first"
+            assert waited["running"] and waited["output"] == "first"
             again = await execute_tool(
                 "bash_wait", {"handle": start["handle"], "seconds": 0, "offset": waited["total_bytes"]}, "lease", broker
             )
-            assert again["stdout"] == ""
+            assert again["output"] == ""
         finally:
             killed = await execute_tool("bash_kill", {"handle": start["handle"]}, "lease", broker)
         assert not killed["running"] and killed["exit_code"] == -9
@@ -147,7 +147,7 @@ def test_unified_exec_yields_waits_and_reports_idle(tmp_path):
     async def scenario():
         result = await execute_tool("bash", {"cmd": "printf first; sleep 2; printf last", "yield_seconds": 1}, "lease", broker)
         assert len(broker.commands) == 1 and result["running"]
-        assert result["stdout"] == "first" and result["total_bytes"] == 5
+        assert result["output"] == "first" and result["total_bytes"] == 5
         assert result["idle_seconds"] >= 0.5
         again = await execute_tool("bash_wait", {"handle": result["handle"], "seconds": 0}, "lease", broker)
         assert again["idle_seconds"] >= result["idle_seconds"]

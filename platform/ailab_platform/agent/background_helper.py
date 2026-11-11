@@ -279,8 +279,9 @@ def control(payload):
     code = completed.get("exit_code")
     running = code is None and alive(meta)
     if code is None and not running:
+        # ``lost`` says "no result exists"; -1 alone would also match a signal-killed command.
         code = -1
-        completed = {"exit_code": code, "error": "后台进程退出状态丢失，请先检查文件"}
+        completed = {"exit_code": code, "lost": True, "error": "后台进程退出状态丢失，请先检查文件"}
         put(directory / "exit", completed)
     if payload.get("initial") and code is not None:
         return {"ok": code == 0, **completed}
@@ -291,6 +292,9 @@ def control(payload):
         "running": running,
         "exit_code": code,
         "output_tail": output.decode(errors="replace"),
+        # Where reading started in this job's byte stream: the Agent reports a gap from this, exactly,
+        # even when a multibyte sequence made the tail shorter than the bytes it stands for.
+        "from": start,
         "idle_seconds": round(max(0, time.time() - last_output_at), 3),
         "hint": "命令仍在运行；用 bash_wait 等待并检查输出进展。" if running else "",
         "total_bytes": total,

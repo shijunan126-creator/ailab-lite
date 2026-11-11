@@ -37,7 +37,9 @@ def test_mock_ppt_sequence() -> None:
     messages.append({"role": "tool", "tool_call_id": first.tool_calls[0].id, "content": "{}"})
     second = _call(messages, "帮我做一个 PPT")
     assert second.tool_calls[0].name == "bash"
-    assert "build.py --example" in second.tool_calls[0].arguments["cmd"]
+    # The mock follows the schema the model sees: the primary parameter is ``command``.
+    assert "build.py --example" in second.tool_calls[0].arguments["command"]
+    assert "cmd" not in second.tool_calls[0].arguments
 
 
 def test_mock_chat_answers_without_tools() -> None:

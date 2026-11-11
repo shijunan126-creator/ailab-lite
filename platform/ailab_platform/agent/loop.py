@@ -64,7 +64,17 @@ from .skill_modules import ModuleVisibility, read_module
 from .skill_modules import identity as module_identity
 from .skill_verification import verify_sandbox_skills
 from .stuck import STUCK_ERROR, STUCK_NOTE, compact_log, detect_loop, observation
-from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn, ui_components
+from .tools import (
+    SANDBOX_TOOLS,
+    ToolContext,
+    ToolError,
+    execute_tool,
+    has_retired_tools,
+    tool_result_message,
+    tools_for_chat,
+    tools_for_turn,
+    ui_components,
+)
 
 log = logging.getLogger("ailab.agent")
 
@@ -1099,7 +1109,7 @@ class AgentLoop:
                 await self._event(run_id, "agent.budget", {"kind": "nudge", "reason": f"监督检查：{reason}"})
         await self._checkpoint(run_id, turn)
 
-    async def _subtasks(self, turn: _Turn, run_id: str, call, step: int) -> dict:
+    async def _subtasks(self, turn: _Turn, run_id: str, call, step: int, invocation: str = "") -> dict:
         try:
             tasks = subtasks.validate(call.arguments)
         except ValueError as exc:
@@ -1118,7 +1128,8 @@ class AgentLoop:
         lease_id = await self._ensure_lease(turn, run_id)
         llm = self.llm or llm_for(turn.run.get("model") or "")
         children = [
-            asyncio.create_task(self._subtask(turn, run_id, llm, base, lease_id, index, task, step)) for index, task in enumerate(tasks)
+            asyncio.create_task(self._subtask(turn, run_id, llm, base, lease_id, index, task, step, invocation))
+            for index, task in enumerate(tasks)
         ]
         try:
             results = await asyncio.gather(*children)
@@ -1129,7 +1140,9 @@ class AgentLoop:
             raise
         return {"ok": all(r["status"] == "done" for r in results), "results": results}
 
-    async def _subtask(self, turn: _Turn, run_id: str, llm, base: list[dict], lease_id: str, index: int, task: dict, step: int) -> dict:
+    async def _subtask(
+        self, turn: _Turn, run_id: str, llm, base: list[dict], lease_id: str, index: int, task: dict, step: int, invocation: str = ""
+    ) -> dict:
         run, model, offered = turn.run, turn.run.get("model") or "", turn.offered
         messages = [*base, {"role": "user", "content": subtasks.BRIEF.format(**task)}]
         await self._event(run_id, "agent.subtask", {"index": index, "title": task["title"], "status": "started"})
@@ -1161,9 +1174,9 @@ class AgentLoop:
                 if version == 2:
                     available = available and c.name in {t["function"]["name"] for t in offered}
                 if available:
-                    # The parent step is part of the invocation: the same command in the same slot of a
+                    # The parent call is part of the invocation: the same command in the same slot of a
                     # second run_subtasks is a different execution, not a retry of the first one.
-                    result = await self._subtask_tool(turn, run_id, lease_id, c, messages, f"step{step}:sub{index}:{used}:{ordinal}")
+                    result = await self._subtask_tool(turn, run_id, lease_id, c, messages, f"{invocation}/sub{index}:{used}:{ordinal}")
                 else:
                     result = {"ok": False, "error": subtasks.REFUSED.format(name=c.name)}
                 child_images.extend(result.pop("_child_images", []))
@@ -1372,10 +1385,26 @@ class AgentLoop:
                 }
             )
 
-    async def _run_tool(self, turn: _Turn, run_id: str, call, step: int, invocation: str = "", event_name: str | None = None) -> dict:
+    async def _run_tool(
+        self,
+        turn: _Turn,
+        run_id: str,
+        call,
+        step: int,
+        invocation: str = "",
+        event_name: str | None = None,
+        announce: bool = True,
+    ) -> dict:
+        """Run one tool call and record its events.
+
+        ``announce=False`` is for a resumed call: the crash already announced it, and a second
+        ``tool_call`` would open a new UI step that the result then closes, leaving the first
+        step spinning forever.
+        """
         image_start = len(self._states[run_id].get("pending_image_inputs", []))
         shown_name = event_name or call.name
-        await self._event(run_id, "agent.tool_call", {"step": step, "name": shown_name, "arguments": _clip_arguments(call.arguments)})
+        if announce:
+            await self._event(run_id, "agent.tool_call", {"step": step, "name": shown_name, "arguments": _clip_arguments(call.arguments)})
         tool = metrics.tool_label(call.name)
         tool_started = time.perf_counter()
         wanted = None
@@ -1593,7 +1622,7 @@ class AgentLoop:
                 raise ToolError(f"技能 {wanted or ''} 不存在或已不可用")
             elif call.name == "run_subtasks":
                 with span("agent.tool", tool=tool):
-                    result = await self._subtasks(turn, run_id, call, step)
+                    result = await self._subtasks(turn, run_id, call, step, invocation)
             else:
                 needs_sandbox = call.name in SANDBOX_TOOLS or (call.name == "save_skill" and call.arguments.get("path"))
                 lease_id = await self._ensure_lease(turn, run_id) if needs_sandbox else (turn.lease_id or "")
@@ -1722,7 +1751,7 @@ class AgentLoop:
                 "name": shown_name,
                 "ok": bool(result.get("ok")),
                 "exit_code": result.get("exit_code"),
-                "stdout": (result.get("stdout") or (f"已读取技能说明（{len(shown)} 字）" if shown else ""))[:2000],
+                "stdout": (result.get("stdout") or result.get("output") or (f"已读取技能说明（{len(shown)} 字）" if shown else ""))[:2000],
                 **(
                     {
                         "running": bool(result.get("running")),
@@ -1899,12 +1928,12 @@ class AgentLoop:
             # If the sandbox lost it, the helper says so and nothing is started again.
             # The event keeps the original tool name so the UI closes the step it opened before the restart.
             resumed = await self._run_tool(
-                turn, run_id, ToolCall(call.id, "bash_wait", {"handle": handle}), step, invocation, event_name=call.name
+                turn, run_id, ToolCall(call.id, "bash_wait", {"handle": handle}), step, invocation, event_name=call.name, announce=False
             )
             # No observable result at all (lost execution, an unrecoverable exit state, or the wait itself
             # failed): the model must re-check the workspace, not re-run. A finished command, even with a
             # non-zero exit code, is a real result and passes through untouched.
-            unobserved = resumed.get("exit_code") in (None, -1) and not resumed.get("running")
+            unobserved = "exit_code" not in resumed
             if resumed.get("lost") or unobserved:
                 return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True, "handle": handle}
             return {**resumed, "resumed": True}
@@ -2257,6 +2286,11 @@ class AgentLoop:
             mode, skill = options.get("mode", "work"), options.get("skill")
             if "tool_catalog_v1" not in state:
                 state["tool_catalog_v1"] = _tools_for_run(run)
+            elif has_retired_tools(state["tool_catalog_v1"]):
+                # The frozen catalog of a run paused across a deploy names tools this Agent no longer
+                # executes. Rebuild it once and record the boundary (ADR 0030); earlier messages are kept.
+                state["tool_catalog_v1"] = _tools_for_run(run)
+                await self._event(run_id, "agent.context_boundary", {"reason": "tool_catalog_changed"})
             run["_fixed_catalog"] = state["tool_catalog_v1"]
             turn.disabled_skills = frozenset(run.get("disabled_skills") or [])
             turn.personal = {s["name"]: s for s in run.get("personal_skills") or []}

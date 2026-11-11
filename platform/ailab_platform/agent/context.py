@@ -845,11 +845,15 @@ class ContextManager:
                     state["memory_update_turn"] = [run_id, len(state["messages"]) - 1]
             else:
                 if previous:
-                    run["context_boundary"] = (
-                        "rebuilt"
-                        if options.get("document_tools_version") == 2 and previous.get("tools") != state["tool_catalog_v1"]
-                        else "model_changed"
-                    )
+                    tools_changed = previous.get("tools") != state["tool_catalog_v1"]
+                    prompt_changed = previous.get("messages", [{}])[0] != messages[0]
+                    if options.get("document_tools_version") == 2 and tools_changed:
+                        run["context_boundary"] = "rebuilt"
+                    elif tools_changed and not prompt_changed:
+                        # Same rules, same model, different tool list: the catalog is what changed.
+                        run["context_boundary"] = "tool_catalog_changed"
+                    else:
+                        run.setdefault("context_boundary", "model_changed")
                 elif not run.get("context_boundary") and (run.get("parent_run_id") or run.get("history")):
                     run["context_boundary"] = "rebuilt"
                 state["memory_observed"] = boundary_memory
