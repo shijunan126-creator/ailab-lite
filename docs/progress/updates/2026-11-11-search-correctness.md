@@ -1,7 +1,7 @@
 # 搜索正确性复核（2026-11-11）
 
 - 授权：保留现有会话级 FTS5 / tsvector + GIN 方案，修复 bug、更正存储记录；已追加授权提 PR、CI 通过后合并并增量部署。
-- 代码基线：`fc7d540b` 加 `fix/search-correctness` 的本报告所述代码差异。PR #181 已合并，其历史验收不覆盖本轮；本轮最终提交与 CI 以关联 PR 为准。
+- 代码基线：`fc7d540b` 加 `fix/search-correctness` 的本报告所述代码差异。PR #181 已合并，其历史验收不覆盖本轮；本轮最终提交与 CI 见 [PR #182](https://github.com/shijunan126-creator/ailab-lite/pull/182)。
 
 ## 根因与修复
 
