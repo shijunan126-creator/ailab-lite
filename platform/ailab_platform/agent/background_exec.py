@@ -132,17 +132,31 @@ def _final(response: dict, action: str, output: _BoundedOutput) -> dict:
     """The command finished, or the request never started one: hand back what the model needs, unchanged."""
     if "exit_code" not in response:
         return response  # capacity limit, lost handle, sandbox refusal
-    if action == "start" and not output.total:
-        return response  # the helper's own short-command form keeps its stream split
     final = {"ok": response["exit_code"] == 0, "exit_code": response["exit_code"]}
-    for key in ("duration_ms", "stdout", "stderr", "error", "idle_seconds", "total_bytes", "truncated", "elapsed_seconds", "log_path"):
+    for key in (
+        "duration_ms",
+        "stdout",
+        "stderr",
+        "error",
+        "killed_by",
+        "idle_seconds",
+        "total_bytes",
+        "truncated",
+        "elapsed_seconds",
+        "log_path",
+    ):
         if response.get(key) not in (None, ""):
             final[key] = response[key]
-    if response["exit_code"] != 0 and not final.get("error"):
-        final["error"] = f"Command exited with code {response['exit_code']}"
     if response.get("killed_by") == "deadline":
         final["remaining_seconds"] = 0
         final["error"] = "命令超过平台期限，已被终止（这不是等待窗口结束，也不是命令自己退出）"
+    elif response.get("killed_by") == "caller":
+        final["error"] = "命令已被终止"
+    elif response["exit_code"] != 0 and not final.get("error"):
+        final["error"] = f"Command exited with code {response['exit_code']}"
+    if action == "start" and not output.total:
+        # The helper's short-command form already split stdout/stderr; keep its shape, add the verdict.
+        return {**response, "ok": final["ok"], **({"error": final["error"]} if "error" in final else {})}
     # ``output_tail`` stays for callers that read the delta form; the accumulated text is the fallback.
     if not final.get("output_tail"):
         final["output_tail"] = response.get("output_tail") or output.text()

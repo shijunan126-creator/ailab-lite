@@ -128,7 +128,14 @@ def test_short_exec_single_roundtrip_preserves_streams_and_exit(tmp_path):
     broker = LocalBroker(tmp_path)
     result = asyncio.run(execute_tool("bash", {"cmd": "printf out; printf err >&2; exit 7"}, "lease", broker))
     assert len(broker.commands) == 1
-    assert result == {"ok": False, "exit_code": 7, "stdout": "out", "stderr": "err", "duration_ms": result["duration_ms"]}
+    assert result == {
+        "ok": False,
+        "exit_code": 7,
+        "stdout": "out",
+        "stderr": "err",
+        "duration_ms": result["duration_ms"],
+        "error": "Command exited with code 7",
+    }
 
 
 def test_unified_exec_yields_waits_and_reports_idle(tmp_path):

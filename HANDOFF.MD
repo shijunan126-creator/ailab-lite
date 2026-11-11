@@ -1608,3 +1608,7 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 模型习惯在命令尾部加 `echo $?` 看退出码，那会把真实的失败变成 `ok: true`；工具描述里要说明结果自带 `exit_code`。
 - 改 Work 提示词会打到 `tests/test_prefix_cache.py` 里按文案写的锚点断言（`assert "保留真实退出码" in system` 这类），一起改。
 - 提示词 tokens 直接看真实调用的 `usage.prompt_tokens`（system + "hi"），不要用字符数估算。
+- 容器里 `fd-find` 装出来的可执行名是 `fdfind`，`fd` 不存在；沙箱程序必须先探 `fd` 再探 `fdfind`，只用 `which fd` 会在真实镜像里失败。
+- 用 `docker exec` 造 broker 时写文件要加 `-i`（否则 stdin 不进去，文件是空的，`edit` 会报"找不到原文"）；colima 默认只挂家目录，`/tmp` 不共享。
+- helper 的工作目录取自它自己的 `__file__` 的父目录（生产里是 `/tmp/ailab-background`）；手动测试时必须把它放在那里，否则会在只读目录里建 `lock`。
+- `bash` 的短命令（helper short-command 形态）走 `_final` 的提前返回，任何加到最终结果里的判定都要在提前返回之前算好，否则失败命令只剩 `ok:false`。
