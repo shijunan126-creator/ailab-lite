@@ -10,7 +10,7 @@ from tests.test_migrations import engine as engine
 
 def test_integrated_feature_chain_up_down_reup(engine):
     scripts = ScriptDirectory.from_config(alembic_config())
-    assert scripts.get_heads() == ["0070"]
+    assert scripts.get_heads() == ["0071"]
     revisions = (
         "0022",
         "0023",

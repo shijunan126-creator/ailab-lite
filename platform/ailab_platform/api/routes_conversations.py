@@ -284,6 +284,9 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
             .values(state="canceled", updated_at=utcnow())
         )
         conv.deleted_at = utcnow()
+        from .routes_schedules import drop_for_conversations
+
+        drop_for_conversations(db, user.id, [conv.id])
         db.flush()
         from .derived_assets import invalidate_workspace_ocr
 

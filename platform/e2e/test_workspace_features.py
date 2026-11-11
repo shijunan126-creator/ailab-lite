@@ -255,7 +255,6 @@ def test_inbox_schedule_badge_click_and_read_all(logged_in, stack):
     body = {
         "title": "通知验收-" + uuid.uuid4().hex[:8],
         "prompt": "工作区说明通知",
-        "mode": "chat",
         "timezone": "UTC",
         "schedule": {"kind": "daily", "time": "09:00"},
     }

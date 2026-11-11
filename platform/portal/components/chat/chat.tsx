@@ -29,6 +29,7 @@ import PreviewPane, { previewTabKey, type PanePreview, type PaneSources } from "
 import { SourcesSheet } from "./sources";
 import type { PaneReader } from "./preview-pane";
 import QueueStrip from "./queue-strip";
+import ScheduleStrip from "./schedule-strip";
 import QuotaBanner from "./quota-banner";
 import Turn, { ForkMode, Item, reduceEvent } from "./turn";
 import { GenUIHostProvider, type GenUIHost } from "../genui/host";
@@ -644,6 +645,15 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const projectId = id ? detail?.project_id || null : project?.id || null;
   const crumb = id && projectId ? projects?.find((p) => p.id === projectId) : null;
   const running = turns.some((t) => !isTerminal(t.status, !!t.result?.file_wait));
+  const streamingId = useRef(streaming);
+  streamingId.current = streaming;
+  // a scheduled task here just started its turn: show it, and follow it like one sent from this page
+  const pickUp = useCallback(() => {
+    void loadDetail().then((d) => {
+      const last = d?.turns[d.turns.length - 1];
+      if (last && !isTerminal(last.status, !!last.result?.file_wait) && streamingId.current !== last.id) follow(last);
+    });
+  }, [loadDetail, follow]);
   // a question the agent is waiting on: the composer answers it instead of starting a new turn
   const waiting = turns.find((t) => t.status === "waiting_user" || t.status === "interrupted");
   const question = waiting
@@ -1167,6 +1177,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                 <IconArrowDown size={18} />
               </button>
               {error ? <div className="alert error">{error}</div> : null}
+              <ScheduleStrip conversationId={id} refreshKey={`${turns.length}:${running}`} running={running} onArrived={pickUp} />
               <QueueStrip
                 queue={detail?.queue || []}
                 paused={!!detail?.queue_paused}

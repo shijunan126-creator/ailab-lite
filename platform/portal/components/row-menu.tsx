@@ -12,8 +12,21 @@ export type RowAction =
 
 const ITEM_H = 36;
 
-/** "⋯" at the end of a list row on the management pages: the row's secondary actions, so the row itself stays quiet. */
-export default function RowMenu({ label, actions, disabled }: { label: string; actions: RowAction[]; disabled?: boolean }) {
+/** "⋯" at the end of a list row on the management pages: the row's secondary actions, so the row itself stays quiet.
+ * With `children` the trigger is that content instead of "⋯" (a pill that opens its own actions). */
+export default function RowMenu({
+  label,
+  actions,
+  disabled,
+  children,
+  className,
+}: {
+  label: string;
+  actions: RowAction[];
+  disabled?: boolean;
+  children?: ReactNode;
+  className?: string;
+}) {
   const [at, setAt] = useState<React.CSSProperties | null>(null);
   const button = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
@@ -55,8 +68,8 @@ export default function RowMenu({ label, actions, disabled }: { label: string; a
     <>
       <button
         ref={button}
-        className={`icon-btn row-more ${at ? "open" : ""}`}
-        aria-label={`更多操作 ${label}`}
+        className={`${children ? className || "" : "icon-btn row-more"} ${at ? "open" : ""}`}
+        aria-label={children ? undefined : `更多操作 ${label}`}
         aria-haspopup="menu"
         aria-expanded={!!at}
         disabled={disabled}
@@ -65,7 +78,7 @@ export default function RowMenu({ label, actions, disabled }: { label: string; a
           setAt(at ? null : placeMenu(button.current!.getBoundingClientRect(), 184, height));
         }}
       >
-        <IconMore size={16} />
+        {children ?? <IconMore size={16} />}
       </button>
       {at
         ? createPortal(

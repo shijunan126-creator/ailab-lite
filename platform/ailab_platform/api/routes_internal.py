@@ -161,6 +161,7 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     invalid = invalid_history(db, [turn.id for turn in earlier] + [run.id])
     history = []
     from ..contracts.document_view import text_block
+    from ..contracts.schedules import scheduled_prompt
     from .document_view import output as document_refs
 
     for turn in earlier[-HISTORY_TURNS:]:
@@ -184,7 +185,8 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         history.append(
             {
                 **({"steers": steers} if steers else {}),
-                "prompt": turn.prompt + text_block(document_refs(db, "run_prompt", turn.id)),
+                "prompt": scheduled_prompt(turn.prompt, (turn.options or {}).get("schedule"))
+                + text_block(document_refs(db, "run_prompt", turn.id)),
                 "skills": (turn.options or {}).get("skills")
                 or (
                     [{"name": (turn.options or {}).get("skill"), "title": (turn.options or {}).get("skill_title")}]

@@ -417,7 +417,8 @@ def test_live_redis_flush_is_rebuilt_by_background_reconciliation(env, monkeypat
     manager.start_cleanup_thread()
     flush()
     assert not manager.is_ready()
-    deadline = time.monotonic() + 2
+    # The owner heartbeat notices the flush within ttl/3, then reclaims and reconciles; the loop exits once ready.
+    deadline = time.monotonic() + settings.broker_lock_ttl_seconds * 2
     while time.monotonic() < deadline and not manager.is_ready():
         time.sleep(0.01)
     assert manager.is_ready()

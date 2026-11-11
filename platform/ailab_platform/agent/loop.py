@@ -1234,8 +1234,9 @@ class AgentLoop:
 
     async def _user_content(self, run_id, run, model):
         from ..contracts.document_view import text_block
+        from ..contracts.schedules import scheduled_prompt
 
-        prompt = run["prompt"] + text_block(run.get("doc_refs"))
+        prompt = scheduled_prompt(run["prompt"], (run.get("options") or {}).get("schedule")) + text_block(run.get("doc_refs"))
         prompt_options = (
             {"mode": (run.get("options") or {}).get("mode", "work"), "document_tools_version": 2}
             if catalog_version(run.get("options")) == 2

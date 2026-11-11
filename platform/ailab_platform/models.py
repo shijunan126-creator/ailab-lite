@@ -942,6 +942,7 @@ class ScheduledTask(Base):
         Index("ix_scheduled_tasks_due", "enabled", "next_run_at"),
         Index("ix_scheduled_tasks_user", "user_id"),
         Index("ix_scheduled_tasks_project", "project_id"),
+        Index("ix_scheduled_tasks_conversation", "conversation_id"),
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("sch"))
@@ -952,6 +953,10 @@ class ScheduledTask(Base):
     skill: Mapped[str | None] = mapped_column(String(120), nullable=True)
     model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    # every occurrence replies in this conversation; set by the first occurrence of a task made on the schedules page
+    conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # an occurrence waiting for its busy conversation to become idle
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     schedule: Mapped[dict] = mapped_column(JSON)
     timezone: Mapped[str] = mapped_column(String(100))
     ends_on: Mapped[date | None] = mapped_column(Date, nullable=True)

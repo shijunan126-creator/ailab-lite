@@ -182,6 +182,9 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
         from ..memory_recall.lineage import clear_memory_scope_copies
 
         clear_memory_scope_copies(db, user.id, project.id)
+        from .routes_schedules import drop_for_conversations
+
+        drop_for_conversations(db, user.id, db.scalars(select(Conversation.id).where(Conversation.project_id == project.id)).all())
         # Retain the soft-deleted threads and their run history without a dangling project FK.
         db.execute(update(Conversation).where(Conversation.project_id == project.id).values(project_id=None, deleted_at=utcnow()))
         while lineages := list(

@@ -72,8 +72,12 @@ def test_asset_gc_grace_live_registry_orphan_and_batch_bound(api, monkeypatch):
         assert db.get(FileObject, file_id(retired)).purged_at is None
         monkeypatch.setattr(settings, "gc_batch_size", 1)
         future = now + timedelta(seconds=settings.reaper_grace_seconds + 1)
-        assert purge_unused_assets(db, future) <= 1
-        purge_unused_assets(db, future)
+        # The sweep is global and oldest first: other tests in this worker may leave older unused assets ahead of ours.
+        for _ in range(100):
+            removed = purge_unused_assets(db, future)
+            assert removed <= 1
+            if not removed:
+                break
         db.expire_all()
         assert db.get(FileObject, oid).purged_at is not None
         assert db.get(FileObject, file_id(retired)).purged_at is not None

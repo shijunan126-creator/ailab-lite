@@ -389,6 +389,44 @@ MEMORY = {
 }
 
 
+SCHEDULE = {
+    "type": "function",
+    "function": {
+        "name": "schedule",
+        "description": "管理本会话的定时任务：到点后平台在本会话追加一轮，由你按prompt执行并回复。"
+        "用户要求定时、每天/每周做某事、到某时提醒时使用。"
+        "时间是用户本地时间，结果里的now是当前时间。prompt写给到点时的你：要做什么、交付什么，写清楚，不要写成提醒你自己去问用户。"
+        "建好后告诉用户下次时间。update/delete只用于本会话的任务，id先从list或之前的结果取。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["list", "create", "update", "delete"]},
+                "id": {"type": "string"},
+                "title": {"type": "string", "maxLength": 60, "description": "简短名称，如“每日新闻摘要”"},
+                "prompt": {"type": "string", "maxLength": 4000},
+                "schedule": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"type": "string", "enum": ["daily", "weekdays", "weekly", "once"]},
+                        "time": {"type": "string", "description": "HH:MM，24小时制"},
+                        "days": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 0, "maximum": 6},
+                            "description": "weekly用，0=周一",
+                        },
+                        "date": {"type": "string", "description": "once用，YYYY-MM-DD；省略表示接下来最近的这个时刻"},
+                    },
+                    "required": ["kind", "time"],
+                },
+                "ends_on": {"type": "string", "description": "YYYY-MM-DD，最后一天；不填表示一直执行"},
+                "enabled": {"type": "boolean"},
+            },
+            "required": ["action"],
+        },
+    },
+}
+
+
 RECALL = {
     "type": "function",
     "function": {
@@ -556,6 +594,7 @@ def tools_for_turn(document_tools_version=1) -> list[dict]:
         RUN_JS,
         MEMORY,
         RECALL,
+        SCHEDULE,
         *LIBRARY_TOOLS,
         VIEW_ATTACHMENT,
         COPY_LIBRARY,
@@ -599,6 +638,7 @@ def tools_for_chat(document_tools_version=1) -> list[dict]:
         RUN_JS,
         MEMORY,
         RECALL,
+        SCHEDULE,
         *LIBRARY_TOOLS,
         VIEW_ATTACHMENT,
         LOAD_SKILL,
@@ -740,6 +780,8 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             return {"ok": False, "error": "path须在/workspace/inputs/下；省略path时使用原文件名，需要改写时再复制到work"}
     if name == "memory":
         return {"ok": True, **await ctx.platform.memory(ctx.run_id, args)}
+    if name == "schedule":
+        return await ctx.platform.schedules(ctx.run_id, args)
     if name == "recall_history":
         query = str(args.get("query") or "").strip()
         if not args.get("query") and not args.get("run_id") and not (args.get("before") or args.get("after")):

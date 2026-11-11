@@ -135,19 +135,19 @@ def test_fixed_mode_empty_legacy_and_index_plan(api):  # noqa: F811
             assert not any("TEMP B-TREE" in str(row) for row in plan), plan
 
 
-@pytest.mark.parametrize("mode,other", [("chat", "work"), ("work", "chat")])
-def test_schedule_conversation_uses_configured_mode_then_is_fixed(api, mode, other):  # noqa: F811
+def test_schedule_conversation_is_work_and_keeps_its_mode(api):  # noqa: F811
     from tests.test_schedules_citations import body
 
-    task = api.post("/v1/schedules", headers=AUTH, json=body(mode=mode)).json()
+    # the schedules page makes Work tasks; a task's mode is its conversation's, never an input
+    task = api.post("/v1/schedules", headers=AUTH, json=body(mode="chat")).json()
     try:
+        assert task["mode"] == "work"
         first = api.post(f"/v1/schedules/{task['id']}/run", headers=AUTH).json()
         _finish(api, first["run_id"], "done")
-        conflict(send(api, first["conversation_id"], mode=other))
-        assert api.patch(f"/v1/schedules/{task['id']}", headers=AUTH, json={"mode": other}).status_code == 200
+        conflict(send(api, first["conversation_id"], mode="chat"))
         second = api.post(f"/v1/schedules/{task['id']}/run", headers=AUTH).json()
-        assert second["conversation_id"] != first["conversation_id"]
-        assert api.get(f"/v1/runs/{second['run_id']}", headers=AUTH).json()["options"]["mode"] == other
+        assert second["conversation_id"] == first["conversation_id"]
+        assert api.get(f"/v1/runs/{second['run_id']}", headers=AUTH).json()["options"]["mode"] == "work"
     finally:
         api.delete(f"/v1/schedules/{task['id']}", headers=AUTH)
 

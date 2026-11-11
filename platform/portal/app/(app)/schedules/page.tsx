@@ -1,27 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { IconClock, IconPencil, IconPlus, IconSend, IconTrash } from "../../../components/icons";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { IconClock, IconMessage, IconPencil, IconPlus, IconSend, IconTrash } from "../../../components/icons";
 import RowMenu from "../../../components/row-menu";
 import Switch from "../../../components/switch";
 import Modal from "../../../components/library/modal";
 import { api, errorMessage, Schedule, Skill } from "../../../lib/api";
-import { formatDate, statusLabel } from "../../../lib/format";
+import { statusLabel } from "../../../lib/format";
 import { useProjects } from "../../../lib/projects";
 import { confirmDialog } from "../../../lib/dialog";
+import { DAYS, MODE_LABEL, SCHEDULE_LIMIT as LIMIT, dayText, stateText, when } from "../../../lib/schedules";
 import Select, { TimeSelect } from "../../../components/select";
 
-const LIMIT = 5; // the API enforces the same
-const DAYS = ["一", "二", "三", "四", "五", "六", "日"];
 type Kind = Schedule["schedule"]["kind"];
-type Draft = Pick<Schedule, "title" | "prompt" | "mode" | "skill" | "project_id" | "ends_on"> & { kind: Kind; time: string; days: number[] };
-// the platform also pauses a task whose results go unread or that keeps failing
-const PAUSED: Record<NonNullable<Schedule["paused_reason"]>, string> = {
-  ended: "已到结束日期",
-  unread: "结果一直没人看，已暂停",
-  failures: "连续失败，已暂停",
-};
+type Draft = Pick<Schedule, "title" | "prompt" | "skill" | "project_id" | "ends_on"> & { kind: Kind; time: string; days: number[]; date: string };
 
 /** YYYY-MM-DD of the local day `days` from today. */
 function fromToday(days: number): string {
@@ -29,41 +23,22 @@ function fromToday(days: number): string {
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-const dayText = (value: string) => {
-  const [y, m, d] = value.split("-").map(Number);
-  return `${y === new Date().getFullYear() ? "" : `${y}年`}${m}月${d}日`;
-};
-
-function when(s: Schedule["schedule"]): string {
-  if (s.kind === "daily") return `每天 ${s.time}`;
-  if (s.kind === "weekdays") return `工作日 ${s.time}`;
-  const days = [...(s.days || [])].sort().map((d) => DAYS[d]).join("、");
-  return `每周${days || "—"} ${s.time}`;
-}
-
-/** "今天 09:00" / "明天 09:00" / the date for anything later. */
-function nextText(value: string | null): string {
-  if (!value) return "";
-  const at = new Date(value);
-  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const diff = Math.round((day(at) - day(new Date())) / 86_400_000);
-  const time = at.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
-  return diff === 0 ? `今天 ${time}` : diff === 1 ? `明天 ${time}` : formatDate(value).replace(/:\d{2}$/, "");
-}
 
 function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | null; skills: Skill[]; onClose: () => void; onSaved: (s: Schedule) => void }) {
   const projects = useProjects();
   const [d, setD] = useState<Draft>(() => ({
     title: initial?.title || "",
     prompt: initial?.prompt || "",
-    mode: initial?.mode || "work",
     skill: initial?.skill || null,
     project_id: initial?.project_id || null,
     kind: initial?.schedule.kind || "weekdays",
     time: initial?.schedule.time || "09:00",
     days: initial?.schedule.days || [0],
+    date: initial?.schedule.date || fromToday(1),
     ends_on: initial?.ends_on || null,
   }));
+  // a task that already has its conversation lives in that conversation's project
+  const bound = !!initial?.conversation_id;
   const ends = [
     { value: "", label: "不结束" },
     ...(d.ends_on ? [{ value: d.ends_on, label: dayText(d.ends_on) }] : []),
@@ -75,7 +50,9 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
-  const valid = d.title.trim() && d.prompt.trim() && /^\d{2}:\d{2}$/.test(d.time) && (d.kind !== "weekly" || d.days.length);
+  const once = d.kind === "once";
+  const valid =
+    d.title.trim() && d.prompt.trim() && /^\d{2}:\d{2}$/.test(d.time) && (d.kind !== "weekly" || d.days.length) && (!once || d.date >= fromToday(0));
 
   async function save() {
     setBusy(true);
@@ -83,11 +60,10 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
     const body = {
       title: d.title.trim(),
       prompt: d.prompt.trim(),
-      mode: d.mode,
       skill: d.skill,
-      project_id: d.project_id,
-      schedule: { kind: d.kind, time: d.time, ...(d.kind === "weekly" ? { days: [...d.days].sort() } : {}) },
-      ends_on: d.ends_on,
+      ...(bound ? {} : { project_id: d.project_id }),
+      schedule: { kind: d.kind, time: d.time, ...(d.kind === "weekly" ? { days: [...d.days].sort() } : {}), ...(once ? { date: d.date } : {}) },
+      ends_on: once ? null : d.ends_on,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
     try {
@@ -121,12 +97,19 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
         <span>时间</span>
         <div className="schedule-when">
           <div className="segmented" role="radiogroup" aria-label="频率">
-            {([["daily", "每天"], ["weekdays", "工作日"], ["weekly", "每周"]] as [Kind, string][]).map(([k, label]) => (
+            {([["daily", "每天"], ["weekdays", "工作日"], ["weekly", "每周"], ["once", "一次"]] as [Kind, string][]).map(([k, label]) => (
               <button key={k} type="button" role="radio" aria-checked={d.kind === k} className={d.kind === k ? "on" : ""} onClick={() => set({ kind: k })}>{label}</button>
             ))}
           </div>
           <TimeSelect value={d.time} onChange={(time) => set({ time })} aria-label="时刻" />
-          <Select aria-label="结束" value={d.ends_on || ""} options={ends} onChange={(v) => set({ ends_on: v || null })} />
+          {once ? null : <Select aria-label="结束" value={d.ends_on || ""} options={ends} onChange={(v) => set({ ends_on: v || null })} />}
+        </div>
+        <div className="collapse" data-open={once} inert={!once}>
+          <div>
+            <div className="schedule-on">
+              <input type="date" className="schedule-date" aria-label="日期" value={d.date} min={fromToday(0)} onChange={(e) => set({ date: e.target.value })} />
+            </div>
+          </div>
         </div>
         <div className="collapse" data-open={d.kind === "weekly"} inert={d.kind !== "weekly"}>
           <div>
@@ -141,15 +124,6 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
       </div>
       <div className="schedule-row">
         <label className="field">
-          <span>模式</span>
-          <Select
-            aria-label="模式"
-            value={d.mode}
-            options={[{ value: "chat", label: "对话" }, { value: "work", label: "工作" }]}
-            onChange={(v) => set({ mode: v as "chat" | "work" })}
-          />
-        </label>
-        <label className="field">
           <span>技能</span>
           <Select
             aria-label="技能"
@@ -158,21 +132,34 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
             onChange={(v) => set({ skill: v || null })}
           />
         </label>
-        <label className="field">
-          <span>项目</span>
-          <Select
-            aria-label="项目"
-            value={d.project_id || ""}
-            options={[{ value: "", label: "不放进项目" }, ...(projects || []).map((p) => ({ value: p.id, label: p.name }))]}
-            onChange={(v) => set({ project_id: v || null })}
-          />
-        </label>
+        {bound ? null : (
+          <label className="field">
+            <span>项目</span>
+            <Select
+              aria-label="项目"
+              value={d.project_id || ""}
+              options={[{ value: "", label: "不放进项目" }, ...(projects || []).map((p) => ({ value: p.id, label: p.name }))]}
+              onChange={(v) => set({ project_id: v || null })}
+            />
+          </label>
+        )}
       </div>
     </Modal>
   );
 }
 
 export default function SchedulesPage() {
+  // useSearchParams needs a Suspense boundary for the static build
+  return (
+    <Suspense>
+      <Schedules />
+    </Suspense>
+  );
+}
+
+function Schedules() {
+  const router = useRouter();
+  const editParam = useSearchParams().get("edit");
   const [list, setList] = useState<Schedule[] | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [editing, setEditing] = useState<Schedule | "new" | null>(null);
@@ -184,9 +171,16 @@ export default function SchedulesPage() {
     load();
     api<Skill[]>("/v1/skills").then((all) => setSkills(all.filter((s) => (s.enabled || s.kind === "base") && !s.implicit))).catch(() => undefined);
   }, [load]);
-  // a task that is running now: its status settles on its own
+  // "编辑" from a conversation lands here with the task open
   useEffect(() => {
-    if (!list?.some((s) => s.last_status === "queued" || s.last_status === "running")) return;
+    if (!editParam || !list) return;
+    const task = list.find((s) => s.id === editParam);
+    if (task) setEditing(task);
+    router.replace("/schedules");
+  }, [editParam, list, router]);
+  // a task that is running or waiting for its conversation: its status settles on its own
+  useEffect(() => {
+    if (!list?.some((s) => s.last_status === "queued" || s.last_status === "running" || s.due_at)) return;
     const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
   }, [list, load]);
@@ -219,25 +213,28 @@ export default function SchedulesPage() {
         {list === null ? (
           <div className="mlist-empty">加载中…</div>
         ) : list.length === 0 ? (
-          <div className="mlist-empty">还没有定时任务</div>
+          <div className="mlist-empty">还没有定时任务，也可以在对话里直接让助手定时去做</div>
         ) : (
           list.map((s) => (
             <div key={s.id} className={`mrow ${s.enabled ? "" : "off"}`}>
               <span className="mrow-icon"><IconClock size={17} /></span>
               <button className="mrow-main" onClick={() => setEditing(s)} aria-label={`编辑 ${s.title}`}>
-                <span className="mrow-title"><span>{s.title}</span></span>
+                <span className="mrow-title">
+                  <span>{s.title}</span>
+                  <span className={`sched-mode ${s.mode}`}>{MODE_LABEL[s.mode]}</span>
+                </span>
                 <span className="mrow-desc">
-                  {[
-                    when(s.schedule),
-                    s.paused_reason && !s.enabled ? PAUSED[s.paused_reason] : s.enabled && s.next_run_at ? `下次 ${nextText(s.next_run_at)}` : "",
-                    s.ends_on && s.enabled ? `${dayText(s.ends_on)}结束` : "",
-                  ].filter(Boolean).join(" · ")}
+                  {[when(s.schedule), stateText(s), s.ends_on && s.enabled ? `${dayText(s.ends_on)}结束` : ""].filter(Boolean).join(" · ")}
                 </span>
               </button>
               <div className="mrow-trail">
-                {s.last_conversation_id ? (
-                  <Link href={`/c/${s.last_conversation_id}`} className={`state ${s.last_status === "failed" ? "failed" : ""}`} title={s.last_error || undefined}>
-                    {statusLabel(s.last_status || "")}
+                {s.conversation_id ? (
+                  <Link
+                    href={`/c/${s.conversation_id}${s.last_run_id ? `?run=${s.last_run_id}` : ""}`}
+                    className={`state ${s.last_status === "failed" ? "failed" : ""}`}
+                    title={s.last_error || s.conversation_title || undefined}
+                  >
+                    {s.last_status === "waiting" ? "等待会话" : s.last_status ? statusLabel(s.last_status) : "打开会话"}
                   </Link>
                 ) : s.last_status === "failed" ? <span className="state failed" title={s.last_error || undefined}>失败</span> : null}
                 <Switch
@@ -251,6 +248,7 @@ export default function SchedulesPage() {
                   disabled={busy === s.id}
                   actions={[
                     { label: "立即运行", icon: <IconSend size={15} />, onSelect: () => act(s, () => api(`/v1/schedules/${s.id}/run`, { method: "POST" })) },
+                    ...(s.conversation_id ? [{ label: "打开会话", icon: <IconMessage size={15} />, onSelect: () => router.push(`/c/${s.conversation_id}`) }] : []),
                     { label: "编辑", icon: <IconPencil size={15} />, onSelect: () => setEditing(s) },
                     "sep",
                     {

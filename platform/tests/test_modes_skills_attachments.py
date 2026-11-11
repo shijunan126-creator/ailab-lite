@@ -122,6 +122,7 @@ def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
             "document_view",
             "memory",
             "recall_history",
+            "schedule",
             "extract_text",
             "resolve_attachment",
             "search_library",

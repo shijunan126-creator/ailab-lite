@@ -14,6 +14,7 @@ export const SKILL_TITLES: Record<string, string> = {
   "auto-skill": "提取技能",
 };
 const SKILL_LABEL = SKILL_TITLES;
+const SCHEDULE_LABEL: Record<string, string> = { list: "查看定时任务", create: "设置定时任务", update: "修改定时任务", delete: "删除定时任务" };
 const LOOP_REASON: Record<string, string> = {
   identical_call_result: "同一操作重复得到相同结果",
   repeated_call_error: "同一操作反复出错",
@@ -64,6 +65,8 @@ function describeTool(name: string, args: any): { label: string; detail?: string
       return { label: "复制到工作区", detail: args?.path || args?.filename || args?.file_id };
     case "memory":
       return { label: "更新记忆" };
+    case "schedule":
+      return { label: SCHEDULE_LABEL[args?.action] || "定时任务", detail: args?.title };
     case "recall_history":
       return { label: "回忆历史对话", detail: args?.query };
     case "update_plan":

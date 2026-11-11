@@ -1,3 +1,5 @@
+2026-11-11 定时任务绑定会话（ADR0040，`feat/schedule-in-conversation`）：每个任务一个会话，到点在原会话追加一轮；对话内 `schedule` 工具、页面新建为 Work、会话忙时顺延、一次性任务（迁移0071）。定向测试与真实模型（定时轮缓存 93–95%）通过，PR CI 验收中，未部署。见[记录](../progress/updates/2026-11-11-schedule-conversation.md)。
+
 2026-11-11 搜索正确性复核已随 [PR #182](https://github.com/shijunan126-creator/ailab-lite/pull/182) 合并为 `main@b8fe90b2`：保留 ADR0039 索引结构，修复并发词项覆盖、同 flush 漏索引、归一化漏搜、隐藏源码/词边界误报、固定截断漏搜，以及 CI 暴露的 mock 沙箱取消竞态；纠正存储倍率。最终 `cf4567a` 的 11 项 CI 全绿，合并树一致；准确验收和未测边界见[复核](../progress/updates/2026-11-11-search-correctness.md)。本机部署不作为能力状态。[原 PR #181 记录](../progress/updates/2026-11-11-search-index.md)保留其历史证据。
 
 2026-11-11 思考强度（ADR0038，`feat/reasoning-effort`）：模型按 `reasoning.toml` 档位组提供思考强度，DeepSeek 低/高/最高、默认低，按模型记住上次选择；档位写入 `run.options` 并在整次回答内固定（同档位续轮缓存 96–97%，换档那一轮冷）。技能页基础技能收成一行。PR CI 验收中。见[记录](../progress/updates/2026-11-11-reasoning-effort.md)。

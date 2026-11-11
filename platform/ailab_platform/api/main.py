@@ -57,6 +57,7 @@ from .routes_projects import router as projects_router
 from .routes_reader import router as reader_router
 from .routes_runs import router as runs_router
 from .routes_runtime import router as runtime_router
+from .routes_schedules import internal_router as schedules_internal_router
 from .routes_schedules import router as schedules_router
 from .routes_schedules import schedules_forever
 from .routes_search import router as search_router
@@ -203,6 +204,7 @@ app.include_router(projects_router)
 app.include_router(reader_router)
 app.include_router(web_images_router)
 app.include_router(internal_router)
+app.include_router(schedules_internal_router)
 app.include_router(ocr_router)
 app.include_router(extraction_router)
 app.include_router(preparation_router)

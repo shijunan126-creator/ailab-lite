@@ -36,7 +36,9 @@ def test_schedule_crud_limit_ownership_and_validation():
         for bad in [
             {"timezone": "not/a/zone"},
             {"title": "x" * 61},
-            {"mode": "invalid"},
+            {"schedule": {"kind": "once", "time": "09:00", "date": "2000-01-01"}},
+            {"schedule": {"kind": "once", "time": "09:00"}},
+            {"schedule": {"kind": "daily", "time": "09:00", "date": "2030-01-01"}},
             {"schedule": {"kind": "weekly", "time": "09:00", "days": []}},
             {"model": "missing"},
             {"skill": "missing"},
@@ -75,14 +77,14 @@ def test_schedule_run_now_preserves_next_and_tracks_terminal():
         run = result.json()
         with SessionLocal() as db:
             conv = db.get(Conversation, run["conversation_id"])
-            assert conv.project_id == project["id"] and conv.title.startswith("每日摘要 · ")
+            assert conv.project_id == project["id"] and conv.title == "每日摘要"
             assert db.scalar(select(func.count()).select_from(OutboxMessage).where(OutboxMessage.id == run["run_id"])) == 1
         _finish(c, run["run_id"], "finished")
         listed = c.get("/v1/schedules", headers=auth).json()[0]
         assert listed["last_status"] == "succeeded" and listed["next_run_at"] == task["next_run_at"]
         assert c.delete("/v1/projects/" + project["id"], headers=auth).status_code == 204
-        listed = c.get("/v1/schedules", headers=auth).json()[0]
-        assert listed["project_id"] is None and not listed["enabled"]
+        # deleting the project deletes its conversations, and a task has nowhere to reply without one
+        assert c.get("/v1/schedules", headers=auth).json() == []
 
 
 def test_due_claim_coalesces_with_two_dispatchers_and_records_failures():
@@ -252,7 +254,7 @@ def test_schedule_checks_quota_capacity_and_current_skill_state(monkeypatch):
         skill = "pptx"
         assert skill in skills()
         task = c.post("/v1/schedules", headers=auth, json=body(skill=skill, mode="chat")).json()
-        assert task["mode"] == "chat"
+        assert task["mode"] == "work"  # made on the schedules page
         with SessionLocal() as db:
             user = db.get(User, task["user_id"])
             user.settings = {**(user.settings or {}), "disabled_skills": [skill]}
@@ -338,8 +340,8 @@ def due(task_id, now):
     dispatch_schedules(now)
 
 
-@pytest.mark.parametrize("status", ["queued", "running", "waiting_user", "interrupted"])
-def test_dispatch_does_not_overlap_and_advances(guardrail_task, status):
+@pytest.mark.parametrize("status", ["waiting_user", "interrupted"])
+def test_dispatch_skips_a_conversation_waiting_for_the_user(guardrail_task, status):
     c, auth, task = guardrail_task
     first = c.post(f"/v1/schedules/{task['id']}/run", headers=auth).json()
     with SessionLocal() as db:
@@ -350,8 +352,8 @@ def test_dispatch_does_not_overlap_and_advances(guardrail_task, status):
     with SessionLocal() as db:
         row = db.get(ScheduledTask, task["id"])
         assert row.last_run_id == first["run_id"] and row.failure_streak == 0
-        assert row.last_status == "skipped" and row.last_error == "上一次还未结束"
-        assert as_utc(row.next_run_at) > now
+        assert row.last_status == "skipped" and row.last_error == "会话在等你回复" and row.due_at is None
+        assert as_utc(row.next_run_at) > now + timedelta(hours=1)
         assert row.recent_run_ids == [first["run_id"]]
     assert c.get("/v1/schedules", headers=auth).json()[0]["last_status"] == "skipped"
 

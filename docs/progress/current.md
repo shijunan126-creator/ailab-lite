@@ -1,9 +1,18 @@
+# 定时任务绑定会话（2026-11-11）
+
+- 用户要求：检查定时任务逻辑与用例；每个任务绑定一个会话，到点在原会话后接着回复；Chat/Work 按创建来源标注，页面新建为 Work；真实模型测试；UI/UX 做到最好。分支 `feat/schedule-in-conversation`，base `origin/main@81d24699`（已合入 `70e04e57`）；未授权部署；[PR #184](https://github.com/shijunan126-creator/ailab-lite/pull/184)。
+- 已完成：迁移 0071、对话内 `schedule` 工具、会话忙时顺延、一次性任务、到点轮的平台头与 Portal 时间标记/会话条/列表标签。决定见 [ADR 0040](../architecture/adr/0040-schedule-in-conversation.md)，验证与真实模型数字见[记录](updates/2026-11-11-schedule-conversation.md)。
+- CI：`c27af02a` 11 项全绿（双库、三片 E2E 等）。此前失败与根因（测试未随改动更新、三个既有时序/顺序依赖用例）见记录。
+- 下一步：合并与部署由用户决定（部署需当次明确要求）。
+
+---
+
 # 模型菜单不再随悬停跳动（2026-11-11）
 
 - 用户反馈：模型菜单里指针移到「离线演示」这类没有档位的模型时，弹层高度变化把行顶走，选择在两个模型之间反复横跳。用户指定解法：悬停不更新右栏，点进去再更新；选完档位不自动收起，点别处关闭；手机端同样检查。分支 `fix/model-menu-height`，base `origin/main@81d24699`，工作树 `/Users/michael/Developer/ailab-lite-wt/fix-model-menu-height`。
 - 已完成：右栏只跟已选中模型；点和档位都不收起；右栏按最高档位列表补等高占位，弹层尺寸恒定。Portal 单测 282 通过、`tsc` 干净，900/375 宽浏览器检查通过（临时页面，已删），本机 E2E 思考强度+模型列表 2 项与 genui 布局 5 项通过。E2E 用例已按新交互更新。细节与边界见[本轮记录](updates/2026-11-11-model-menu-stable.md)。
 - 已合并：PR #183 squash 为 `73e919a5`，提交树与该提交一致。CI 首次 `python (postgres)` 因 `tests/faults/test_job_heartbeat.py::test_ownership_loss_or_renew_deadline_stops_work_before_expiry[outage]` 的实时钟断言（work 在 0.343s 才被取消，界限是 0.3s 租约）失败，与本改动无关；重跑后 11 项全绿（双库、三片 E2E、quality、crawler、shell、storage-contracts）。工作树与分支已删除，`/tmp` 截图、dev server、临时 Redis 已清理。
-- 下一步：无待实现项；部署由用户决定（只换 Portal 产物）。该 heartbeat 用例的实时钟界限偏紧，下次进这块时顺手放宽或改成同一事件循环时钟。
+- 下一步：无待实现项；部署由用户决定（只换 Portal 产物）。该 heartbeat 用例的实时钟界限偏紧（已在 PR #184 改为虚拟时钟事件循环）。
 
 ---
 
