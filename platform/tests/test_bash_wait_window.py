@@ -97,6 +97,18 @@ def test_completion_during_a_later_chunk_returns_the_final_result(monkeypatch):
     assert len(broker.commands) == 2  # completed during the second chunk, no extra waiting
 
 
+def test_a_truncated_result_points_at_the_ring_buffer():
+    broker = ScriptedBroker([running(total_bytes=4000, output_tail="tail", truncated=True, log_path="/tmp/ailab-background/x/log")] * 20)
+    result = asyncio.run(background_exec("bash_wait", {"handle": "a" * 32, "wait_seconds": 0}, "lease", broker))
+    assert result["truncated"] is True and result["log_path"] == "/tmp/ailab-background/x/log"
+
+
+def test_an_untruncated_result_carries_no_path():
+    broker = ScriptedBroker([running(total_bytes=4, output_tail="tail")])
+    result = asyncio.run(background_exec("bash_wait", {"handle": "a" * 32, "wait_seconds": 0}, "lease", broker))
+    assert "log_path" not in result
+
+
 def test_output_stays_bounded_across_chunks(monkeypatch):
     monkeypatch.setattr(module, "WAIT_CHUNK_SECONDS", 0.1)
     chunk = "x" * 8000

@@ -293,6 +293,8 @@ def control(payload):
         "hint": "命令仍在运行；用 bash_wait 等待并检查输出进展。" if running else "",
         "total_bytes": total,
         "truncated": start > payload["offset"],
+        # The ring buffer of recent output, for a model that wants to inspect more than the returned tail.
+        **({"log_path": str(directory / "log")} if start > payload["offset"] else {}),
         **timing,
         # The supervisor keeps each stream separately; hand them over when the job is done.
         **(

@@ -9,9 +9,10 @@
 
 - `read`：`offset` 是 1 起算的**行号**，`limit` 是行数；2000 行 / 50KB 头部截断，续读提示写在正文里；首行超 50KB 时给 `sed -n 'Np' … | head -c 51200`；二进制文件拒绝并指向 `view_workspace_file`。
 - `write`：整份覆盖，父目录由 Broker 的 `mkdir -p` 建。
-- `edit`：`{path, edits:[{oldText,newText}]}`，全部 `oldText` 对同一份原文匹配；先精确、失败后 NFKC + 去行尾空格 + 弯引号 + Unicode 破折号 + 特殊空格归一化再匹配；唯一性、重叠、空 `oldText`、无变化都按 Pi 的报错原文；CRLF/BOM 与"裸 CR 不吞 LF"的接缝规则逐条移植（含 3000 轮随机混合行尾不变量）；同文件写入按 `(lease, path)` FIFO 串行。
+- `edit`：`{path, edits:[{oldText,newText}]}`，也接受模型实际会发的三种形态（`edits` 是 JSON 字符串、单个对象、或顶层 `oldText`/`newText`，GLM 会发字符串）；全部 `oldText` 对同一份原文匹配；先精确、失败后 NFKC + 去行尾空格 + 弯引号 + Unicode 破折号 + 特殊空格归一化再匹配；唯一性、重叠、空 `oldText`、无变化都按 Pi 的报错原文；CRLF/BOM 与"裸 CR 不吞 LF"的接缝规则逐条移植（含 3000 轮随机混合行尾不变量）；同文件写入按 `(lease, path)` FIFO 串行。
 - `ls`：一层、字母序、目录带 `/`、含点文件、上限 500。
 - `grep`/`find`：沙箱内跑 `rg --json` / `fd`（`fd` 缺失回退 `fdfind`），达到 100 条 / 1000 条即杀子进程，单行 500 字符、总量 50KB 封顶。
+- 输出被跳过时返回环形缓冲路径 `log_path`（命令输出最近 `log_bytes`），模型想自查更多输出时可用 `bash` 读它。
 - 前端：Portal 的步骤名与图标补齐新名字；旧名字保留为历史事件的显示兜底。
 
 **bash 的等待与期限（临时调整，覆盖原设计）**
@@ -40,6 +41,7 @@
 - 未按 ADR 0030 做真模型前缀缓存复测（工具目录变了，`cached_tokens / prompt_tokens` 需真模型确认）。
 - `model_context` 里的旧工具名只做了显示兜底，没有做调用别名：在跑的 run 调用 `read_file` 会得到 `unknown tool`（用户明确表示测试环境可不管）。
 - `edit` 的展示 diff 与 patch 没有接线（用户决定不进上下文、暂不渲染），`domain/text_edit.py` 只实现匹配与写回；32 行窗口 diff 未实现。
+- `read` 是整份读入（受 `max_sandbox_read_bytes=10MB` 约束）后切行窗口，不是 Pi 的流式只保留展示部分；`bash` 输出保留的是既有环形缓冲 + 头 1000/尾 8000，不是 Pi 的 2000 行/50KB 尾部截断加完整输出临时文件。这两处是刻意保留的既有边界，不是遗漏。
 
 ## 下一步
 

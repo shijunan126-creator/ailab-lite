@@ -801,6 +801,31 @@ def _looks_binary(data: bytes) -> bool:
     return False
 
 
+def _edit_pairs(args: dict) -> list[tuple[str, str]]:
+    """The shapes models really send for ``edits``: an array, a JSON string of one, a single object, or top-level fields.
+
+    Pi carries the same tolerance because Opus and GLM both send a JSON string where the schema says array.
+    """
+    edits = args.get("edits")
+    if isinstance(edits, str):
+        try:
+            edits = json.loads(edits)
+        except ValueError:
+            edits = None
+    if isinstance(edits, dict):
+        edits = [edits]
+    if edits is None and isinstance(args.get("oldText"), str) and isinstance(args.get("newText"), str):
+        edits = [{"oldText": args["oldText"], "newText": args["newText"]}]
+    if not isinstance(edits, list) or not edits:
+        raise ToolError("edit 需要至少一项 edits")
+    pairs: list[tuple[str, str]] = []
+    for item in edits:
+        if not isinstance(item, dict) or not isinstance(item.get("oldText"), str) or not isinstance(item.get("newText"), str):
+            raise ToolError("每项 edits 都要有字符串 oldText 和 newText")
+        pairs.append((item["oldText"], item["newText"]))
+    return pairs
+
+
 async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: AsyncBrokerClient, ctx: ToolContext | None = None) -> dict:
     if INVALID_ARGUMENTS_KEY in args:
         raise ToolError("tool arguments were not valid JSON; resend the call with a well-formed JSON object")
@@ -940,14 +965,7 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
 
     if name == "edit":
         path = _workspace_path(str(args.get("path") or ""))
-        edits = args.get("edits")
-        if not isinstance(edits, list) or not edits:
-            raise ToolError("edit 需要至少一项 edits")
-        pairs: list[tuple[str, str]] = []
-        for item in edits:
-            if not isinstance(item, dict) or not isinstance(item.get("oldText"), str) or not isinstance(item.get("newText"), str):
-                raise ToolError("每项 edits 都要有字符串 oldText 和 newText")
-            pairs.append((item["oldText"], item["newText"]))
+        pairs = _edit_pairs(args)
         async with with_file_mutation_queue(f"{lease_id}:{path}"):
             try:
                 data = await broker.get_file(lease_id, path)

@@ -135,7 +135,7 @@ def _final(response: dict, action: str, output: _BoundedOutput) -> dict:
     if action == "start" and not output.total:
         return response  # the helper's own short-command form keeps its stream split
     final = {"ok": response["exit_code"] == 0, "exit_code": response["exit_code"]}
-    for key in ("duration_ms", "stdout", "stderr", "error", "idle_seconds", "total_bytes", "truncated", "elapsed_seconds"):
+    for key in ("duration_ms", "stdout", "stderr", "error", "idle_seconds", "total_bytes", "truncated", "elapsed_seconds", "log_path"):
         if response.get(key) not in (None, ""):
             final[key] = response[key]
     if response.get("killed_by") == "deadline":
@@ -158,11 +158,13 @@ def _running(response: dict, output: _BoundedOutput, window: int, offset: int) -
         "exit_code": None,
         "output_tail": output.text(),
         "total_bytes": offset,
+        "truncated": bool(response.get("truncated")),
         "idle_seconds": response.get("idle_seconds"),
         "elapsed_seconds": response.get("elapsed_seconds"),
         "remaining_seconds": response.get("remaining_seconds"),
         "wait_seconds": window,
         "hint": RUNNING_HINT,
+        **({"log_path": response["log_path"]} if response.get("log_path") else {}),
     }
 
 

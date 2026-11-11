@@ -100,6 +100,35 @@ def test_edit_keeps_crlf_and_reports_a_refused_edit():
         )
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"edits": '[{"oldText": "a", "newText": "A"}]'},  # a JSON string where the schema says array (GLM does this)
+        {"edits": {"oldText": "a", "newText": "A"}},  # one object instead of a one-element array
+        {"edits": '[{"oldText": "a", "newText": "A"}, {"oldText": "b", "newText": "B"}]'},
+    ],
+)
+def test_edit_accepts_the_shapes_models_actually_send(arguments):
+    broker = FakeBroker({f"{WORK}/a.txt": b"a\nb\n"})
+    result = call("edit", {"path": f"{WORK}/a.txt", **arguments}, broker)
+    assert result["ok"] is True
+    assert broker.files[f"{WORK}/a.txt"] in {b"A\nb\n", b"A\nB\n"}
+
+
+def test_edit_accepts_legacy_top_level_old_text():
+    broker = FakeBroker({f"{WORK}/a.txt": b"a\n"})
+    result = call("edit", {"path": f"{WORK}/a.txt", "oldText": "a", "newText": "A"}, broker)
+    assert result == {"ok": True, "path": f"{WORK}/a.txt", "replaced": 1}
+    assert broker.files[f"{WORK}/a.txt"] == b"A\n"
+
+
+def test_edit_rejects_a_payload_it_cannot_read():
+    with pytest.raises(ToolError, match="edit 需要至少一项 edits"):
+        call("edit", {"path": f"{WORK}/a.txt", "edits": "not json"}, FakeBroker({f"{WORK}/a.txt": b"a\n"}))
+    with pytest.raises(ToolError, match="字符串 oldText 和 newText"):
+        call("edit", {"path": f"{WORK}/a.txt", "edits": [{"oldText": ["a"]}]}, FakeBroker({f"{WORK}/a.txt": b"a\n"}))
+
+
 def test_edit_reports_a_missing_file_and_a_bad_payload():
     with pytest.raises(ToolError, match=re.escape("Could not edit file: /workspace/work/gone.txt. Error code: ENOENT.")):
         call("edit", {"path": f"{WORK}/gone.txt", "edits": [{"oldText": "a", "newText": "b"}]}, FakeBroker())
