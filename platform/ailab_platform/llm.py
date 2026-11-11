@@ -297,18 +297,21 @@ _PPT = [
     ("load_skill", {"name": "platform.pptx"}),
     (
         "bash",
-        {"cmd": "mkdir -p /workspace/work && python /opt/skills/platform.pptx/scripts/build.py --example > /workspace/work/deck.json"},
+        {"command": "mkdir -p /workspace/work && python /opt/skills/platform.pptx/scripts/build.py --example > /workspace/work/deck.json"},
     ),
-    ("bash", {"cmd": "python /opt/skills/platform.pptx/scripts/build.py /workspace/work/deck.json /workspace/outputs/ailab-demo.pptx"}),
+    ("bash", {"command": "python /opt/skills/platform.pptx/scripts/build.py /workspace/work/deck.json /workspace/outputs/ailab-demo.pptx"}),
     ("deliver_file", {"path": "/workspace/outputs/ailab-demo.pptx", "filename": "ailab-demo.pptx"}),
 ]
 _XLSX = [
     ("load_skill", {"name": "platform.xlsx"}),
     (
         "bash",
-        {"cmd": "mkdir -p /workspace/work && python /opt/skills/platform.xlsx/scripts/build_xlsx.py --example > /workspace/work/book.json"},
+        {
+            "command": "mkdir -p /workspace/work && "
+            "python /opt/skills/platform.xlsx/scripts/build_xlsx.py --example > /workspace/work/book.json"
+        },
     ),
-    ("bash", {"cmd": "python /opt/skills/platform.xlsx/scripts/build_xlsx.py /workspace/work/book.json /workspace/outputs/sales.xlsx"}),
+    ("bash", {"command": "python /opt/skills/platform.xlsx/scripts/build_xlsx.py /workspace/work/book.json /workspace/outputs/sales.xlsx"}),
     ("deliver_file", {"path": "/workspace/outputs/sales.xlsx", "filename": "sales.xlsx"}),
 ]
 
@@ -461,7 +464,7 @@ class MockLLM(LLMClient):
             ]
             closing = "文件已生成并交付。"
         elif "沙箱" in prompt or "命令" in prompt:
-            script = [("bash", {"cmd": "echo 'hello from ailab sandbox'; pwd; ls -la"})]
+            script = [("bash", {"command": "echo 'hello from ailab sandbox'; pwd; ls -la"})]
             closing = "沙箱命令已执行完成。"
 
         if script is None:  # plain chat: answer directly, no tools

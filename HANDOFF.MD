@@ -1612,3 +1612,14 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 用 `docker exec` 造 broker 时写文件要加 `-i`（否则 stdin 不进去，文件是空的，`edit` 会报"找不到原文"）；colima 默认只挂家目录，`/tmp` 不共享。
 - helper 的工作目录取自它自己的 `__file__` 的父目录（生产里是 `/tmp/ailab-background`）；手动测试时必须把它放在那里，否则会在只读目录里建 `lock`。
 - `bash` 的短命令（helper short-command 形态）走 `_final` 的提前返回，任何加到最终结果里的判定都要在提前返回之前算好，否则失败命令只剩 `ok:false`。
+
+## 工作区工具（2026-11-12 第三轮）
+
+- `edit` 的容错匹配**不能**逐字符建立映射：5 MB 文件会吃掉 400 MiB。做法是把 `oldText` 编译成正则（1:1 折叠字符类 + 行尾空白），直接在原文上搜索；折叠表首次模糊匹配时才建（约 150 ms），不要在模块导入时扫 110 万码位。
+- `oldText` 末尾的空格若在匹配前被裁掉，原文的空格会留在结果里（`say “y” =  1`）。末行原本带尾空白时，正则要一直匹配到原文的空白为止。
+- Broker 的 `get_file` 必须把"文件不存在""超过传输上限""其他"分成 404 / 413 / 400。全都报 400、Agent 再一律当 `ENOENT`，模型会以为 12 MB 的文件不存在并用 `write` 覆盖它。
+- 恢复不能重新发 `agent.tool_call`：Portal 与 `process_view` 都会新建步骤，结果只关掉新的，崩溃前那一步永远转圈。用 `_run_tool(announce=False)`，结果事件沿用原工具名和 step。
+- 冻结在 checkpoint 里的 `tool_catalog_v1` 可能列着已退役的工具名；恢复时用 `tools.RETIRED_TOOLS` 检测并重建，记 `tool_catalog_changed`。不要为此升 `CONTEXT_ABI_VERSION`（Chat 也会白重建一次）。
+- 判断"命令结果丢失"只能看 helper 写的 `lost`，不能看 `exit_code == -1`：被 SIGHUP 杀掉的命令 returncode 也是 -1。
+- bash 输出缺口的字节数用 helper 返回的读取起点 `from` 算；用 `len(delta.encode())` 会在非法 UTF-8 上算错甚至为负。
+- 同一条回复里可能有多个 `run_subtasks`：子任务调用编号必须包含父调用（`{invocation}/sub{index}:…`），只用父 step 会让两批同槽位撞上同一个句柄。

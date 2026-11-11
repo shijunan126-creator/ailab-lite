@@ -198,3 +198,41 @@ Pi 把整份文件归一化后就地替换并整体写回，被碰到的那一�
 - `grep` 的 `glob` 用 `removeprefix("./")`（`lstrip` 会吃掉 `.env`/`.github` 的点），并加 `--no-require-git` 与 `find` 的忽略规则对齐。
 - Portal 的步骤图标新旧工具名都认，历史事件的图标不再退化。
 - 提示词去掉重复表述：system 2657 tokens（含 28 个工具 schema 共 7175），比修正前少 108。
+
+## 第三轮审查后的修正（2026-11-12）
+
+审查指出上一轮的两处修复没到根上，并补了四条。
+
+### `edit` 不再折叠文件，改成把 oldText 编译成正则
+
+上一版为每个字符建一个带原文区间的对象：1 MB 文件 80 MiB / 1.56 s，5 MB 文件 403 MiB / 8.33 s，而 Agent pod 上限 256 Mi、`read`/`edit` 允许 10 MB——一次模糊 edit 就能把整个 Agent OOM 掉；而且 `edit_text` 在 async handler 里同步执行，会把事件循环一起堵住。
+
+现在：`oldText` 编译成一个正则，字符类接受所有折叠到同一字符的源字符（1:1 折叠表首次模糊匹配时建一次，约 150 ms，进程内缓存），直接在原文上搜索。偏移天然是原文偏移，没有第二份副本，也没有映射表；5 MB 中文文件实测 16 ms、峰值 21 MiB（12.7 MB 文件同量级）。组合字符（`e`+U+0301）不再折叠：模型发的是合成形式，为它付逐字符代价不值得，这一点写进了模块 docstring。
+
+顺带修掉尾空格 bug：oldText 末尾带空格时该空格被裁掉、原文的空格留在结果里；现在末行原本带尾空白时，正则会一直匹配到原文的空白为止。`edit` 另有 `max_edit_bytes`（2 MiB）：它至少要同时持有字节、原文字符串、新字符串和编码结果四份，不能吃满 `read` 的 10 MB。执行放到 `asyncio.to_thread`，不再阻塞事件循环。
+
+### 文件错误的 404 / 413 / 400 分开
+
+Broker 过去把 `get_file` 的所有 `SandboxError` 都映射成 400，Agent 又一律当成 `ENOENT`。于是对一个 12 MB 的现有文件调用 `edit`，模型听到"文件不存在"，接着用 `write` 从头覆盖——数据就丢了。
+
+新增 `SandboxFileNotFound`（docker/opensandbox/mock 三个 provider 在路径不存在时抛它）；Broker 映射为 404 / 413（`TransferLimitError`）/ 400；Agent 分别给出 Pi 的 `ENOENT`、"> 10MB 读取上限，用 bash 的 sed -n / head -c 分段查看"、以及原样的 detail（目录 → "用 ls 查看"）。
+
+### 子任务句柄带父调用
+
+`step{step}:...` 只带父 step：同一条回复里两个 `run_subtasks` 的 step 相同，两批的 `sub0:1:0` 算出同一个句柄，第二批拿到上一批的结果。改成 `{invocation}/sub{index}:{used}:{ordinal}`——父调用重放时同一槽位的同一条命令仍接回原执行（想要的幂等），不同的父调用则一定是新执行。
+
+### 恢复不再多发一个 tool_call
+
+恢复时 `_run_tool` 又发了一次 `tool_call`，Portal（`pushStep`）和 `process_view.push_step` 都会新建步骤，结果只关掉新步骤，崩溃前那个永远转圈。`_run_tool` 新增 `announce`，恢复时传 `False`：只发 `tool_result`（名字仍是原工具名、step 沿用原值），关掉的就是原来那一步。
+
+### 跨部署的未完成 run 会重建目录
+
+冻结在 checkpoint 里的 `tool_catalog_v1` 可能还列着 `exec`/`read_file` 这些 Agent 已不执行的名字，恢复后每次调用都是 unknown tool。恢复时若目录含退役名（`tools.RETIRED_TOOLS`），重建一次并记为 `tool_catalog_changed` 边界；消息保持原样。不升 `CONTEXT_ABI_VERSION`：Chat 侧没有任何变化，升了会让所有 Chat 会话白重建一次、丢一次缓存。`context.py` 里"模型没变、只是目录变了"的分支也改记 `tool_catalog_changed`；`PLATFORM_PROMPT_VERSION` 升到 `2026-11-12-workspace-tools`。
+
+### 其余
+
+- `lost` 由 helper 写在 exit 记录里，`_final` 原样透传并保留"请先检查文件"的文案；loop 只看 `lost` 或"根本没有 exit_code"。SIGHUP 被杀的命令 returncode 也是 -1，不能再拿 -1 当"丢失"。
+- 缺口字节数用 helper 返回的读取起点 `from - offset` 算，不再用重新编码后的长度（非法 UTF-8 会算成负数）。
+- 运行中的结果字段叫 `output`：环形日志里 stdout 和 stderr 混在一起，结束时才分开。
+- MockLLM 改用 `command`，E2E 现在走的是 schema 里的主参数。
+- `REDUCED_V1` 补 `read`/`write`/`edit`：提示词禁止用 cat/sed 代替 read，而精简目录原本只给 bash——规则恰好堵死唯一的路。加完后精简目录仍在小上下文模型的预算内。

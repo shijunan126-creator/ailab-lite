@@ -125,6 +125,34 @@
 - 整栈 E2E 重跑（四服务 + Redis + Portal 生产构建 + Chromium，mock 沙箱）：**210 项 / 0 失败 / 15 跳过**，与修正前一致。
 - 真模型（DeepSeek V4.1 Flash / OpenCode Go）重跑 9 个任务：`bash` 已用新参数名 `command`，40 秒脚本按 10 秒窗口分 4 次等待后拿到 `exit_code 0` 与最后一行；`edit`/`write`/`read`/`grep`/`find`/`ls` 按意图使用，未出现退回 `bash cat/sed` 的情况。
 
+## 第三轮审查后的修正（2026-11-12）
+
+审查确认上一轮修对了 10 项，但 `edit` 的实现、子任务句柄、恢复后的界面、`exit_code == -1` 的判定都没到根上。
+
+| 项 | 问题（审查实测） | 处理 | 用例 |
+|---|---|---|---|
+| `edit` 逐字符映射 | 1 MB 文件 1.56 s / 80 MiB，5 MB 8.33 s / 403 MiB；pod 上限 256 Mi、`read`/`edit` 允许 10 MB，一次模糊 edit 就能 OOM 整个 Agent；且同步执行堵住事件循环 | 不折叠文件：`oldText` 编译成正则（1:1 折叠字符类），直接在原文上搜索；折叠表首次模糊匹配时建一次并缓存 | `test_a_five_megabyte_chinese_file_edits_quickly_without_a_second_copy`（<0.5 s、tracemalloc <32 MiB；实测 5 MB 16 ms / 峰值约 8 MiB） |
+| oldText 末尾空格 | 空格被裁掉不进匹配，原文空格留在结果里（`say “y” =  1`） | 末行原本带尾空白时，正则会匹配到原文的空白为止 | `test_quoted_trailing_spaces_are_consumed` |
+| 10 MB edit 的持有量 | 同时要有字节、原文、新文、编码四份 | 新增 `max_edit_bytes`（2 MiB），超限提示用 bash 改；执行放 `asyncio.to_thread` | `test_edit_refuses_a_file_over_its_own_memory_budget` |
+| 所有 400 都当 ENOENT | 12 MB 的现有文件会让模型以为文件不存在，改用 `write` 覆盖 | `SandboxFileNotFound`（docker/opensandbox/mock）→ Broker 404；`TransferLimitError` → 413；其余 400 带 detail；Agent 分别给 ENOENT、">10MB 用 sed -n/head -c"、原样 detail | `test_a_too_large_file_is_not_reported_as_missing`、`test_a_broker_400_hands_the_detail_to_the_model`、`test_file_errors_carry_the_reason_the_agent_needs`（Broker 路由 404/413/400）、`test_a_missing_file_is_its_own_error_on_every_provider`（mock 与 contracts） |
+| 一条回复里两个 `run_subtasks` | `step{step}` 相同，两批同槽位算出同一句柄，第二批拿旧结果 | 编号改 `{invocation}/sub…` | `test_two_batches_in_one_reply_are_four_separate_executions`（去掉修复即失败） |
+| 恢复多发一次 `tool_call` | Portal 新建步骤，结果只关新步骤，崩溃前那个永远转圈 | `_run_tool(announce=False)`：只发结果事件，名字与 step 沿用原调用 | `test_a_resumed_command_does_not_open_a_second_ui_step`（Python 重放）、`tests/work-process-resume.test.ts`（两条：正确的序列一个步骤、多发一次会留下转圈的步骤） |
+| 跨部署的旧目录 | 冻结目录还列着 `exec`/`read_file`，恢复后每次调用都是 unknown tool | 恢复时发现退役名就重建目录并记 `tool_catalog_changed` 边界；不升 `CONTEXT_ABI_VERSION` | `test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary`（work/chat 各一） |
+| `context.py` 的边界标签 | 模型没变、只有目录变时记成 `model_changed` | 工具变、提示词未变 → `tool_catalog_changed` | 同上 + 既有 `test_deploy_prompt_and_tool_changes_preserve_resumed_checkpoint` 仍通过 |
+| `exit_code == -1` 当丢失 | 被 SIGHUP 杀的命令 returncode 也是 -1 | helper 在"退出状态丢失"记录里写 `lost`；`_final` 透传 `lost` 与原文案；loop 只看 `lost` 或没有 `exit_code` | `test_a_lost_exit_state_keeps_the_sandbox_message_and_says_lost`、`test_a_killed_by_signal_command_is_not_reported_as_lost` |
+| 缺口字节数 | 用重新编码后的长度算，非法 UTF-8 会算错 | helper 返回读取起点 `from`，`gap = from - offset` | `test_the_gap_uses_the_helpers_read_start_not_a_redecoded_length` |
+| 运行中叫 `stdout` | 环形日志里两个流混在一起，结束时才分开 | 运行中用 `output`，事件读 `stdout or output` | 既有窗口用例 |
+| MockLLM 还在发 `cmd` | E2E 走的是兼容路径 | 改发 `command`；`cmd` 兼容仍有单测 | `tests/test_llm.py`、`test_the_command_may_be_named_command_or_cmd` |
+| 精简目录与提示词矛盾 | 提示词禁止 cat/sed 代替 read，精简目录却不给 `read` | `REDUCED_V1` 补 `read`/`write`/`edit` | `test_the_reduced_catalog_still_fits_the_smallest_model_budget` |
+| 提示词版本 | Work 规则变了，版本号没变 | `PLATFORM_PROMPT_VERSION = "2026-11-12-workspace-tools"` | `test_prefix_cache.py` 的录制请求断言 |
+
+**验证**（同一工作树，arm64 macOS）：
+
+- `ruff check` / `format --check` 干净（704 文件）。
+- 全量 `pytest tests -q -n auto`：**3181 项 / 16 失败 / 276 跳过**；16 项与未改基线逐条相同（`comm` 比对为 0 新增）。
+- Portal：`tsc --noEmit` 干净、`npm test` **49 文件 / 288 项通过**（新增 2 项）。
+- 真模型多轮（DeepSeek V4.1 Flash / OpenCode Go）：第一轮 21 次请求 `prompt_tokens` 10173 → 14319 单调增；第二轮带 `previous_model_context` 继续，**前缀逐字节保留**、工具列表一致、无多余边界事件，`prompt_tokens` 14699 → 14935 继续增长；两轮都 `succeeded`。网关仍不报 `cached_tokens`，命中率无法在此验收（见上一节）。
+
 ## 没覆盖到 / 风险
 
 - 镜像只在本机 arm64 构建并冒烟，没有做 amd64/双架构构建，也没有导入 k3s/gVisor 跑 `tests/t1_image.sh` 的第 3、4 步。
