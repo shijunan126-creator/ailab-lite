@@ -443,6 +443,7 @@ def view(
                 "ui_state": r.ui_state,
                 "created_at": r.created_at,
                 "mode": (r.options or {}).get("mode", "work"),
+                **({"schedule": (r.options or {})["schedule"]} if (r.options or {}).get("schedule") else {}),
                 "artifacts": artifacts.get(r.id, []),
                 "attachments": [{"filename": names.get(fid, "文件已删除"), "deleted": fid not in names} for fid in r.input_file_ids],
             }

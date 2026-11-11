@@ -41,7 +41,16 @@ export type Run = {
   artifacts?: Artifact[];
   input_files?: { file_id: string; filename: string; deleted?: boolean }[]; // deleted: trashed or purged; a purged one has lost its name
   doc_refs?: SentDocRef[]; // places the user quoted from the side-pane viewer with this message
-  options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string; skills?: SentSkill[]; reasoning?: string };
+  options?: {
+    mode?: "chat" | "work";
+    skill?: string;
+    skill_title?: string;
+    skills?: SentSkill[];
+    reasoning?: string;
+    // a turn the platform started at a scheduled time; `at` is that time in the task's timezone ("2026-11-12 09:00 周四")
+    schedule?: { title: string; rule: string; at: string };
+    schedule_id?: string;
+  };
   template?: { name: string; source: "template" | "file" } | null;
   result?: {
     file_wait?: { action: "extract-text" | "image-reference" };
@@ -243,6 +252,7 @@ export type ShareView = {
     ui_state?: UIState | null;
     created_at: string;
     mode: "chat" | "work";
+    schedule?: { title: string; rule: string; at: string };
     artifacts: ShareFile[];
     attachments: { filename: string; deleted?: boolean }[];
   }[];
@@ -309,11 +319,15 @@ export type Schedule = {
   skill: string | null;
   model: string | null;
   project_id: string | null;
-  schedule: { kind: "daily" | "weekdays" | "weekly"; time: string; days?: number[] };
+  schedule: { kind: "daily" | "weekdays" | "weekly" | "once"; time: string; days?: number[] | null; date?: string | null };
   timezone: string;
   enabled: boolean;
   ends_on: string | null; // YYYY-MM-DD in the task's timezone, the last day it may run
-  paused_reason: "ended" | "unread" | "failures" | null; // why the platform switched it off
+  paused_reason: "ended" | "unread" | "failures" | "done" | null; // why the platform switched it off
+  // every occurrence replies here; null until the first occurrence of a task made on the schedules page
+  conversation_id: string | null;
+  conversation_title: string | null;
+  due_at: string | null; // an occurrence waiting for its conversation to finish the current answer
   next_run_at: string | null;
   last_run_at: string | null;
   last_run_id: string | null;

@@ -29,6 +29,7 @@ SERVICE_SCOPES: dict[str, frozenset[str]] = {
             "skills:save_for_run",
             "memory:write_for_run",
             "memory:recall_for_run",
+            "schedules:write_for_run",
         }
     ),
     "broker": frozenset(

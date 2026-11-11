@@ -64,6 +64,7 @@ LABELS = {
     "recall_history": "回忆历史对话",
     "update_plan": "更新计划",
 }
+SCHEDULE_LABELS = {"list": "查看定时任务", "create": "设置定时任务", "update": "修改定时任务", "delete": "删除定时任务"}
 REASONS = {
     "identical_call_result": "同一操作重复得到相同结果",
     "repeated_call_error": "同一操作反复出错",
@@ -96,6 +97,9 @@ def describe_tool(name, args):
     elif name == "save_skill":
         label = "更新个人技能" if a.get("mode") == "update" else "保存个人技能"
         detail = a.get("name")
+    elif name == "schedule":
+        label = SCHEDULE_LABELS.get(a.get("action"), "定时任务")
+        detail = a.get("title")
     elif name == "read_library_file":
         detail = a.get("filename") or a.get("file_id")
     elif name == "copy_library_file":

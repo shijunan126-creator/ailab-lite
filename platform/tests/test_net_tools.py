@@ -291,6 +291,7 @@ def test_tools_offered_per_mode(monkeypatch) -> None:
         "ui_components",
         "memory",
         "recall_history",
+        "schedule",
         "search_library",
         "read_library_file",
         "extract_text",

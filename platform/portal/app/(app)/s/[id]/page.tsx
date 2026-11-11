@@ -7,6 +7,7 @@ import { formatBytes, formatDate } from "../../../../lib/format";
 import { GenUIHostProvider } from "../../../../components/genui/host";
 import Answer from "../../../../components/chat/answer";
 import { IconDownload, IconFile, IconShare } from "../../../../components/icons";
+import ScheduledMark from "../../../../components/chat/scheduled-mark";
 import { ExtTile } from "../../../../components/library/file-tile";
 import FileViewer, { FileSource, FileSourceContext } from "../../../../components/preview/file-viewer";
 
@@ -122,6 +123,7 @@ export default function SharedPage() {
         <div className="share-turns">
           {view.turns.map((t) => (
             <div key={t.id} className="turn">
+              {t.schedule ? <ScheduledMark schedule={t.schedule} prompt={t.prompt} /> : (
               <div className="msg user">
                 <div className="bubble">{t.prompt}</div>
                 {t.attachments.length ? (
@@ -132,6 +134,7 @@ export default function SharedPage() {
                   </div>
                 ) : null}
               </div>
+              )}
               <div className="msg assistant">
                 <div className="avatar-ai">A</div>
                 <div className="assistant-body">

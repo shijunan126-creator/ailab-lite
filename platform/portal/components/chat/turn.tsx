@@ -12,6 +12,7 @@ import MessageText from "./message-text";
 import RichInput, { type RichInputHandle } from "./rich-input";
 import CopyButton from "../copy-button";
 import { IconBranch, IconCheck, IconChevronRight, IconCornerDownRight, IconDownload, IconFile, IconPencil, IconRetry, IconSparkles, IconTemplate } from "../icons";
+import ScheduledMark from "./scheduled-mark";
 import { ExtTile } from "../library/file-tile";
 import FileMenu from "../library/file-menu";
 import Answer from "./answer";
@@ -280,6 +281,7 @@ export default memo(function Turn({
   return (
     <div ref={viewport.ref} style={viewport.style} data-mounted={viewport.visible} className={`turn ${fresh ? "fresh" : ""}`} id={`turn-${run.id}`}>
       {viewport.visible ? <>
+      {run.options?.schedule ? <ScheduledMark schedule={run.options.schedule} prompt={run.prompt} /> : (
       <div className={`msg user ${editing !== null ? "editing" : ""}`}>
         {editing !== null ? (
           <EditBox initial={promptParts} onCancel={() => setEditing(null)} onSubmit={async (next) => {
@@ -341,6 +343,7 @@ export default memo(function Turn({
           </div>
         ) : null}
       </div>
+      )}
 
       <div className="msg assistant">
         <div className="avatar-ai">A</div>
