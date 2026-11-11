@@ -17,6 +17,26 @@ from ..queue import get_queue, job_topic
 
 log = logging.getLogger("ailab.api.jobs")
 _dispatch_lock = threading.Lock()
+# Idle cadence. A committed job wakes the loop instead of waiting for the next tick; this interval remains the
+# fallback when the wake is missed, comes from another process, or the loop never saw it.
+OUTBOX_POLL_SECONDS = 1.0
+_serving_loop: asyncio.AbstractEventLoop | None = None
+_dispatch_wakeup: asyncio.Event | None = None
+
+
+def wake_dispatch() -> None:
+    """Ask the running dispatcher to read the outbox now; safe from any thread after a commit.
+
+    Only shortens the wait before publication. Without a bound loop (startup, shutdown, a non-API process, a test
+    that drives dispatch itself) this does nothing and the poll remains the delivery path.
+    """
+    loop, wakeup = _serving_loop, _dispatch_wakeup
+    if loop is None or wakeup is None or loop.is_closed():
+        return
+    try:
+        loop.call_soon_threadsafe(wakeup.set)
+    except RuntimeError:
+        pass  # the loop closed between the check and the call (shutdown)
 
 
 def _fair_preview_order(messages, owners):
@@ -151,12 +171,32 @@ def _dispatch_batch(queue, job_id, now):
 
 
 async def dispatch_forever() -> None:
-    while True:
-        try:
-            from .file_dependencies import reconcile
+    global _serving_loop, _dispatch_wakeup
+    loop = asyncio.get_running_loop()
+    wakeup = asyncio.Event()
+    _serving_loop, _dispatch_wakeup = loop, wakeup
+    next_reconcile = 0.0
+    try:
+        while True:
+            # Cleared before dispatching: a commit during this pass leaves the event set and runs another pass
+            # instead of waiting out the poll interval.
+            wakeup.clear()
+            try:
+                now = time.monotonic()
+                if now >= next_reconcile:
+                    next_reconcile = now + OUTBOX_POLL_SECONDS
+                    from .file_dependencies import reconcile
 
-            await asyncio.to_thread(reconcile)
-            await asyncio.to_thread(dispatch_preview_jobs)
-        except Exception:
-            log.exception("outbox dispatch failed")
-        await asyncio.sleep(1)
+                    await asyncio.to_thread(reconcile)
+                await asyncio.to_thread(dispatch_preview_jobs)
+            except Exception:
+                log.exception("outbox dispatch failed")
+            try:
+                await asyncio.wait_for(wakeup.wait(), OUTBOX_POLL_SECONDS)
+            except TimeoutError:
+                pass
+    finally:
+        if _dispatch_wakeup is wakeup:
+            _dispatch_wakeup = None
+        if _serving_loop is loop:
+            _serving_loop = None

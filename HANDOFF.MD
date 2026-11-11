@@ -1,3 +1,8 @@
+## 2026-11-11 Outbox 唤醒
+
+- `Session` 的 `after_commit` 对 savepoint 提交也会触发，那时 outbox 行还没对外提交；用 `session.in_nested_transaction()` 跳过，让外层提交唤醒，否则优化在 `inbox` 等 `begin_nested` 路径上静默失效。
+- 唤醒是进程内 `asyncio.Event`：多副本时靠 1 秒轮询兜底，不要删轮询；`reconcile` 的节拍也不能跟着唤醒变密。
+
 ## 2026-11-11 定时任务绑定会话
 
 - 平台代发的轮次（定时、恢复等）要继承会话叶子轮的 `options.client`：`run_js` 是否进工具列表取决于 `client == "portal"`，缺了它工具列表就变，前缀缓存从 95% 掉到 46–49%。新会话默认 `portal`。

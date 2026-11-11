@@ -1,5 +1,6 @@
 """Summary settings, transactional staging, OCR late text and bounded tool results."""
 
+import asyncio
 import threading
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -70,9 +71,15 @@ def test_slow_summary_does_not_block_preview_consumer(monkeypatch):
 
 
 def test_summary_outbox_dispatches_to_separate_stream(monkeypatch):
+    from ailab_platform.api import main as api_main
     from ailab_platform.api.preview_dispatch import dispatch_preview_jobs
     from ailab_platform.queue import InMemoryQueue, job_topic
 
+    async def idle_dispatch():
+        await asyncio.Event().wait()
+
+    # Publish from this test, not from the background dispatcher that a commit now wakes.
+    monkeypatch.setattr(api_main, "dispatch_forever", idle_dispatch)
     with TestClient(app) as client:
         _, job = summary_file(client)
         queue = InMemoryQueue()

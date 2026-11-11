@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, event, or_, select, update
 from sqlalchemy.orm import Session
 
 from .. import obs
@@ -19,8 +19,38 @@ from ..obs import NO_REQUEST, request_id_var
 from ..ports.service_auth import ServicePrincipal
 from ..queue import job_topic
 from ..service_auth import require_scope
+from .preview_dispatch import wake_dispatch
 
 router = APIRouter(prefix="/internal/jobs", tags=["internal-jobs"])
+
+_OUTBOX_DISPATCH_PENDING = "ailab.outbox_dispatch_pending"
+
+
+def _note_staged_outbox(session: Session, _flush_context) -> None:
+    """Remember that this transaction inserts a durable job, whichever endpoint wrote it."""
+    if any(isinstance(row, OutboxMessage) for row in session.new):
+        session.info[_OUTBOX_DISPATCH_PENDING] = True
+
+
+def _wake_dispatch_after_commit(session: Session) -> None:
+    # Commit hooks also fire when a savepoint inside the transaction closes; the job is not visible to the
+    # dispatcher until the outer transaction commits, so that commit does the waking.
+    if session.in_nested_transaction():
+        return
+    if session.info.pop(_OUTBOX_DISPATCH_PENDING, False):
+        wake_dispatch()
+
+
+def _forget_dispatch_after_rollback(session: Session) -> None:
+    session.info.pop(_OUTBOX_DISPATCH_PENDING, False)
+
+
+# The wake belongs to the commit, not to each caller: one hook covers Run creation, file, preview, OCR and
+# document jobs added directly to the session. Guarded because a module reload re-registers the same names.
+if not event.contains(Session, "after_flush", _note_staged_outbox):
+    event.listen(Session, "after_flush", _note_staged_outbox)
+    event.listen(Session, "after_commit", _wake_dispatch_after_commit)
+    event.listen(Session, "after_rollback", _forget_dispatch_after_rollback)
 
 
 def stage_job(
