@@ -19,7 +19,7 @@
 - `ruff check .`、`ruff format --check .` 通过。
 - 最终 `pytest tests/test_search.py -o addopts='' -q`：SQLite 24 passed；临时 PG16（UTF8、C locale）24 passed。
 - 关联 `test_conversations.py test_chat_fork_retry.py test_run_state.py test_conversation_tree_migration.py`：SQLite 37 passed / 2 skipped（未设 PG URL），PG 配置下 39 passed。包含双库升级/降级、FTS/GIN 和 Run 索引的 EXPLAIN。
-- 基准：`PYTHONPATH=. python scripts/bench_search.py --conversations 5000 --runs-per-conversation 20 --iterations 3`（SQLite）；临时 PG 为 2000 会话 / 10 Run，3 次查询取中位数。SQLite 回填 77.24s，稀有词 6.8ms、常用词 9.0ms、多词 14.1ms、deploy 19.9ms、标题 5.8ms；PG 回填 15.42s，对应 6.7 / 7.4 / 13.0 / 15.4 / 5.6ms。没有将新旧多关键词语义不同的结果当作召回一致。
+- 初轮代码基准（CI 后批量 EXISTS 修复前，不当作最终代码时延）：`PYTHONPATH=. python scripts/bench_search.py --conversations 5000 --runs-per-conversation 20 --iterations 3`（SQLite）；临时 PG 为 2000 会话 / 10 Run，3 次查询取中位数。SQLite 回填 77.24s，稀有词 6.8ms、常用词 9.0ms、多词 14.1ms、deploy 19.9ms、标题 5.8ms；PG 回填 15.42s，对应 6.7 / 7.4 / 13.0 / 15.4 / 5.6ms。没有将新旧多关键词语义不同的结果当作召回一致。
 - 默认小基准另验 UTF-8/索引专用统计与临时目录清理。存储数字仅维护在[搜索记录](2026-11-11-search-index.md)。
 
 ### 首轮 CI 与性能回归修复
@@ -30,6 +30,9 @@
 - 修复后 `pytest tests/test_search.py tests/test_conversation_tree_migration.py -o addopts='' -q`：SQLite 26 passed / 2 skipped，临时 PG16 配置下 28 passed；Ruff check/format 通过。包含不放宽期限的确定性往返回归及新增 EXISTS 查询计划检查。
 - 第二轮 `727cc9e` 的 [PG job](https://github.com/shijunan126-creator/ailab-lite/actions/runs/42955812595/job/130310561122)：搜索实际返回 200 / 275ms，但引擎级计数器把后台任务查询也计入，断言为 44 >42。修正测试采样范围：仅计带请求专用 execution option 的连接，在请求外连接主动查 Run 并断言不会污染计数；保留 ≤42 上限、真实命中和原期限断言，不改产品代码。
 - 采样修复后搜索回归 SQLite / PG 各 24 passed；补上计数必须非零的约束后，该用例双库各 1 passed，避免未采样导致虚假通过。Ruff check/format 通过；未重复产品压测或全套。
+- 第三轮 `023953d` 的 [SQLite job](https://github.com/shijunan126-creator/ailab-lite/actions/runs/42956938030/job/130314206520) 在既有 mock 沙箱取消合同失败：子进程已创建但尚未登记时，cancel 可返回成功而漏杀。新增真实进程门控复现，在 Popen 返回前暂停，旧实现确定性失败；修复为同锁内创建并登记，communicate 期间释放锁。该修复只涉及 dev/test mock provider，无迁移或运行配置变化。
+- 为复核第三轮 CI 失败，本轮例外执行本地完整套件（4 个 xdist worker、真实临时 Redis/PG、构建固定 Office reader、macOS GNU 工具路径）。SQLite 2822 passed / 204 skipped，126.89s；跳过数与 CI 环境不同，不替代最终 CI。最初缺 GNU 工具路径和 reader 的本地启动已中断并补齐环境，不将该次记为产品验收。
+- 同一最终运行代码基线（`023953df` 加本段 mock 取消原子化修复），PostgreSQL 全套 2956 passed / 70 skipped，185.86s；SQLite 和 PG 均覆盖真实进程的新增门控回归及原取消合同。完整套件命令为 `pytest tests -n 4 --dist worksteal -o addopts='' -q --tb=short`，PG 使用专用可清空测试库，Redis 专用端口；临时数据与本轮 reader 构建产物在推送前清理。
 
 ## 成本与未测边界
 
