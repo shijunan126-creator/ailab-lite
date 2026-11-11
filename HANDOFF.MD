@@ -1599,3 +1599,12 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - macOS 上跑 `platform/tests` 必须把 `$(brew --prefix coreutils)/libexec/gnubin` 和 `findutils` 放到 PATH，否则沙箱快照命令的 `stat -c` 直接失败（BSD `stat`），表现为 `test_workspace_previews`/`test_workspace_view` 一片红。
 - `images/sbx-office/skills/**` 与 `office_guides_v2.json` 由 `vendor/office-suite/build.py` 生成；改生成器的文案后必须重跑并带上 `--runtime-output vendor/office-suite/runtime`，同时 `inventory.py` 会因 Dockerfile 变更重算 `capabilities.json` 的 `image_baseline_sha256`。
 - 不要用软链把主工作树的 `node_modules` 接进别的 worktree 跑 `next build`：Turbopack 拒绝工作树外的文件，`vitest` 可以。
+
+## 2026-11-11 真模型验收工具面
+
+- 默认模型是 DeepSeek V4.1 Flash，走 OpenCode Go 网关（`https://opencode.ai/inference/go/openai/v1`），**必须带 `x-opencode-session` 头**，否则 400 `MissingSessionID`；key 在 `~/AILabDisk/local/config/opencode.env`（`AILAB_KEY_OPENCODE`），只读进进程环境。`api.deepseek.com` 直连的那把 key 余额为 0，报 402。
+- 不写工具选择规则，模型会全程用 `bash` + `cat`/`sed`/`python3 - <<EOF`，一次都不用 `read`/`edit`/`write`，还会把改好的源码复制进 `outputs/` 再 `deliver_file`。规则要落到提示词，且明确 bash 只用于执行。
+- 裸 `No matches found` 会被模型当成"工具没跑完"，接着用 `bash grep` 复检两三次；无结果必须写清搜的是什么并给计数。
+- 模型习惯在命令尾部加 `echo $?` 看退出码，那会把真实的失败变成 `ok: true`；工具描述里要说明结果自带 `exit_code`。
+- 改 Work 提示词会打到 `tests/test_prefix_cache.py` 里按文案写的锚点断言（`assert "保留真实退出码" in system` 这类），一起改。
+- 提示词 tokens 直接看真实调用的 `usage.prompt_tokens`（system + "hi"），不要用字符数估算。

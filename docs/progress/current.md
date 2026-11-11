@@ -2,8 +2,10 @@
 
 - 用户要求：把 `read_file`/`write_file`/`list_files`/`exec` 换成 Pi 的 `read`/`write`/`edit`/`bash`（另补 `grep`/`find`，底层 `rg`/`fd`），逻辑与性能优化照 Pi 源码做；随后临时调整 bash 的等待与期限。分支 `feat/pi-aligned-workspace-tools`，base `origin/main@7d17db92`，工作树 `.worktrees/pi-aligned-workspace-tools`；未授权推送、合并、部署。
 - 已完成：九个工具落地（行窗口、容错 `edit`、FIFO 文件锁、沙箱内 `ls`/`grep`/`find`）；bash 把「等待窗口 / 平台期限 / HTTP 单次等待」分成三件事，一次工具调用内部多段有界等待、不忙轮询、不按 idle 杀进程，期限由沙箱 supervisor 到点强制，句柄确定化使重启后接管原执行而不是重跑；提示词、技能生成物、Portal 步骤名同步。
-- 验证：[记录](updates/2026-11-11-pi-aligned-workspace-tools.md)。ruff 通过；单元套件 3002 项、16 失败（与未改基线逐条相同，缺 OCR/渲染环境）、189 跳过；Portal 286 项 + `tsc` 干净；未跑 Next 构建、contracts、E2E 与真模型。
-- 下一步：等用户决定是否推送/开 PR；镜像重建（`ripgrep`/`fd-find`）与前缀缓存真模型复测在 PR 后补。
+- 真模型验收（DeepSeek V4.1 Flash / OpenCode Go，16 个任务 29 次调用）：改前模型完全不用 read/edit/write、一律 bash + python 改文件；补 4 行工具选择规则后 read 出现在 9/16 个任务里，edit/write/ls/find/grep 均按意图使用。据此修了三处：grep/find 无结果写明搜索范围并给计数、bash 非 0 退出补 `Command exited with code N`、交付只在要成品时。等待窗口语义实测通过（10 秒窗口连续三次 bash_wait 后拿到最终结果，未被当成超时）。
+- 验证：[记录](updates/2026-11-11-pi-aligned-workspace-tools.md)。ruff 通过；单元套件 3014 项、16 失败（与未改基线逐条相同，缺 OCR/渲染环境）、189 跳过；Portal 286 项 + `tsc` 干净。提示词 system 2591 → 2765 tokens，含 28 个工具 schema 时 7283。
+- 未覆盖：真实 sbx-office 镜像（`ripgrep`/`fd-find`）、容器 uid 隔离、平台期限与 bash_kill 的真模型路径、Next 生产构建、contracts、E2E。
+- 下一步：等用户决定是否推送/开 PR；镜像重建与前缀缓存真模型复测在 PR 后补。
 
 ---
 

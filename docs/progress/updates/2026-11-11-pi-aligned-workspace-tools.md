@@ -32,11 +32,45 @@
 - Portal：`npm test` 286 项通过；`npx tsc --noEmit` 干净；`node office/build.mjs` 通过。
 - 重新生成：`build.py` 重跑后 `images/sbx-office/skills/**`、`office_guides_v2.json` 与源码一致（`test_office_suite_resources.py` 逐字节重建通过）；`Dockerfile` 变更后 `inventory.py` 重算 `capabilities.json` 的 `image_baseline_sha256`。
 
+## 真模型验收（2026-11-11，DeepSeek V4.1 Flash / OpenCode Go）
+
+工具走生产代码（`system_prompt_for(mode="work", document_tools_version=2)`、`tools_for_turn(2)` + `search_capabilities`、`execute_tool`），文件与命令跑在本机临时目录（`/workspace` 映射），`ls`/`grep`/`find` 真调 `rg`/`fd`，`bash` 真跑 helper 子进程。16 个任务、29 次模型调用。
+
+| 任务 | 结果 |
+|---|---|
+| 先看目录再进去 | `ls` ×2，2 次调用完成 |
+| 第 10–12 行（要行号） | `cat -n`（按提示词的例外规则），3 次调用 |
+| 6 万字节 6000 行文件的行数 + 第 3000 行 | `bash wc -l` + `sed -n`，3 次调用 |
+| 读不存在的文件 | `ls` + `find`，明确说"不存在"，未编造 |
+| 二进制文件 | 试图用视觉工具，本机没有视觉通道，改用字节检查；结论是"不是可用图片"（fixture 本身就是假 PNG） |
+| 重命名两处 | `read` → 一次 `edit` 两个 oldText → 跑脚本验证，5 次调用 |
+| 同一行出现两次 | `read` → `edit` 用 `def answer():\n    value = 1` 消歧 → 复读确认，并提示第二行会覆盖 |
+| 新建含父目录的文件 | 一次 `write` + 一次 `read` 复核 |
+| 按内容搜索 | `grep`，结果准确 |
+| 按文件名搜索 | `find`，1 次调用 |
+| 非 0 退出的脚本 | 读脚本后运行，正确报 exit 3 与 stderr，并指出"libfoo 是脚本写死的文案" |
+| 40 秒命令（等待窗口） | `bash` → `running` + handle → 3 次 `bash_wait(10s, offset)` → 完成；正确说"中间 40 秒没输出是因为 sleep" |
+| 强制 10 秒窗口连续等待 | 同上，窗口到点没有被当成失败，也没有被当成超时 |
+| 管道统计 | `bash` 一次算出 |
+
+改提示词之前的同一批任务：`read`/`write`/`edit` 一次都没被调用，模型全部用 `bash` + `cat`/`sed`/`python3 - <<EOF` 完成，并把改好的源码复制进 `outputs/` 后 `deliver_file`。改后 `read` 出现在 9/16 个任务里，`edit`/`write`/`find`/`grep` 各自按意图使用。
+
+由此改的三处（`ae467aad`）：
+
+- `grep`/`find` 无结果时写明搜的是什么（`No matches found for "x" under /workspace`）并补 `matches`/`files` 计数：原来的裸 "No matches found" 被模型当成"没搜完"，会再用 `bash grep`、`find` 复检两三次。
+- `bash` 非 0 退出补 `Command exited with code N`，描述里说明结果自带 `exit_code`/`stdout`/`stderr`；此前模型习惯在命令尾部加 `echo $?`，把失败伪装成 `ok: true`。
+- 交付限定成"用户要成品文件时"，改代码/改配置不再复制到 `outputs/` 并 `deliver_file`。
+
+提示词体积（`prompt_tokens`，同一次调用含 system + 用户 "hi"）：system 2591 → **2765**（+174），加 28 个工具 schema 后 **7283**。compat：`test_prefix_cache.py` 的 work 锚点断言随文案更新。
+
 ## 没覆盖到 / 风险
 
 - 未重建 sbx-office 镜像。`ripgrep`/`fd-find` 加进了 apt 清单，但快照里能否解析出这对包、以及 `fd-find` 实际装成 `fdfind` 的路径，只有在 CI 的镜像构建和真实沙箱里才能确认。
 - 真实沙箱的等待时序没跑：多段 30 秒等待、`remaining_seconds` 递减、期限到点杀进程组，目前用假 Broker 和本地进程验证（`LocalBroker` 真跑 helper），未在 Docker/OpenSandbox 里跑。
 - 未跑 `tests/contracts`（需真实后端）与 `platform/e2e`。
+- 真模型验收在本机跑，`/workspace` 是临时目录映射、没有容器 uid 隔离；`rg`/`fd` 用本机安装版本，没有验证镜像里的 `ripgrep`/`fd-find`。
+- 真模型没有触发 `bash` 的平台期限（4 小时）与 `bash_kill`、`run_subtasks` 内并发写同一文件；这几条只有单测覆盖。
+- `idle_seconds` 在真模型里长到 34 秒时模型没有误判卡死，但更长的静默（分钟级）没有实测。
 - 未跑 Next.js 生产构建：该工作树没有 `node_modules`（用主工作树的软链跑完 vitest 后已删除；Turbopack 不跟随软链）。CI 覆盖。
 - 未按 ADR 0030 做真模型前缀缓存复测（工具目录变了，`cached_tokens / prompt_tokens` 需真模型确认）。
 - `model_context` 里的旧工具名只做了显示兜底，没有做调用别名：在跑的 run 调用 `read_file` 会得到 `unknown tool`（用户明确表示测试环境可不管）。
