@@ -24,6 +24,9 @@
 
 ## 没覆盖到 / 风险
 
-- 本机只跑了上述两项和 genui 布局的 E2E，未跑完整 E2E 与双库全套，其余交 CI。
+- 本机只跑了上述两项和 genui 布局的 E2E，其余交 CI。
+- PR #183 首次 CI：`python (postgres)` 一个 `tests/faults/test_job_heartbeat.py::test_ownership_loss_or_renew_deadline_stops_work_before_expiry[outage]` 失败（work 在 0.343s 才被取消，断言 < 0.3s 租约），实时钟界限在负载明显的 CI 上偏紧，与本改动无关；重跑后 11 项全绿。
 - 未跑 Portal 生产构建与双库全套，交 CI。
 - 有档位的模型里选一个没有档位的模型后菜单仍开着，右栏只有「—」；用户需要点别处关闭。这是有意的（保持一次访问里可以继续换模型），但与改动前「选完就收起」不同。
+
+合并：PR #183 squash 为 `73e919a5`（2026-11-11），CI 在最终 head 上 11 项全绿。
