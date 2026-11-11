@@ -83,7 +83,7 @@ def test_every_occurrence_continues_the_same_conversation(client):
     with SessionLocal() as db:
         run = db.get(Run, later.last_run_id)
         assert run.conversation_id == first["conversation_id"] and run.parent_run_id == first["run_id"]
-        assert run.options["mode"] == "work" and run.options["schedule_id"] == task["id"]
+        assert run.options["mode"] == "work" and run.options["schedule_id"] == task["id"] and run.options["client"] == "portal"
         assert run.options["schedule"]["title"] == "每日摘要" and run.options["schedule"]["rule"] == "每天 09:00"
         assert db.get(Conversation, first["conversation_id"]).active_run_id == run.id
     assert c.get(f"/v1/schedules?conversation_id={first['conversation_id']}", headers=auth).json()[0]["id"] == task["id"]
@@ -110,6 +110,8 @@ def test_a_busy_conversation_gets_the_reply_right_after_it(client):
         run = db.get(Run, done.last_run_id)
         # the turn stands for the original time, not the retry; the conversation keeps Chat
         assert run.options["mode"] == "chat" and run.conversation_id == conv_id and run.parent_run_id == run_id
+        # same tool list as the conversation's own turns (run_js follows the client), so the cached prefix holds
+        assert run.options["client"] == db.get(Run, run_id).options["client"]
         local = as_utc(occurrence).astimezone(__import__("zoneinfo").ZoneInfo("Asia/Shanghai"))
         assert run.options["schedule"]["at"].startswith(local.strftime("%Y-%m-%d %H:%M"))
 
@@ -138,17 +140,41 @@ def test_once_runs_a_single_time_then_finishes_quietly(client):
     assert task["enabled"] and task["next_run_at"]
     at = as_utc(datetime.fromisoformat(task["next_run_at"].replace("Z", "+00:00")))
     assert due(task["id"], at) == 1
-    done = row(task["id"])
-    assert done.last_run_id and not done.enabled and done.paused_reason == "done"
+    with SessionLocal() as db:
+        # finished: the answer stays in its conversation and the slot is free again
+        assert db.get(ScheduledTask, task["id"]) is None
+        conv = db.scalar(select(Conversation).where(Conversation.user_id == task["user_id"]))
+        assert conv.active_run_id and not db.scalar(
+            select(Notification).where(Notification.user_id == task["user_id"], Notification.kind == "schedule.paused")
+        )
     assert dispatch_schedules(at + timedelta(minutes=5)) == 0
+
+
+def test_a_single_task_that_cannot_start_stays_to_be_fixed(client):
+    c, auth = client
+    tomorrow = (utcnow() + timedelta(days=2)).date().isoformat()
+    task = c.post("/v1/schedules", headers=auth, json=body(schedule={"kind": "once", "time": "08:00", "date": tomorrow})).json()
     with SessionLocal() as db:
-        assert not db.scalar(select(Notification).where(Notification.user_id == done.user_id, Notification.kind == "schedule.paused"))
+        db.get(ScheduledTask, task["id"]).skill = "missing"
+        db.commit()
+    at = as_utc(datetime.fromisoformat(task["next_run_at"].replace("Z", "+00:00")))
     with SessionLocal() as db:
-        db.get(ScheduledTask, task["id"]).schedule = {"kind": "once", "time": "08:00", "date": today.isoformat()}
+        db.get(ScheduledTask, task["id"]).next_run_at = at
+        db.commit()
+    dispatch_schedules(at + timedelta(days=1))  # its time has passed: no next occurrence
+    failed = row(task["id"])
+    assert not failed.enabled and failed.paused_reason == "failures" and failed.last_status == "failed"
+    with SessionLocal() as db:
+        stored = db.get(ScheduledTask, task["id"])
+        stored.skill, stored.schedule = None, {"kind": "once", "time": "08:00", "date": "2020-01-01"}
         db.commit()
     # turning it back on needs a time that is still ahead
     refused = c.patch(f"/v1/schedules/{task['id']}", headers=auth, json={"enabled": True})
-    assert refused.status_code == 422 or utcnow().astimezone(__import__("zoneinfo").ZoneInfo("Asia/Shanghai")).hour < 8
+    assert refused.status_code == 422 and refused.json()["detail"] == "时间已过，请选择以后的时间"
+    fixed = c.patch(
+        f"/v1/schedules/{task['id']}", headers=auth, json={"enabled": True, "schedule": {"kind": "once", "time": "08:00", "date": tomorrow}}
+    )
+    assert fixed.status_code == 200 and fixed.json()["enabled"] and fixed.json()["paused_reason"] is None
 
 
 def test_once_in_a_dst_gap_runs_at_the_first_valid_minute():
@@ -224,5 +250,7 @@ def test_the_model_reads_a_scheduled_turn_as_the_platform_speaking(client):
         schedule = db.get(Run, first["run_id"]).options["schedule"]
     history = c.get(f"/internal/runs/{latest.id}", headers=SERVICE).json()["history"]
     assert history[0]["prompt"] == scheduled_prompt("整理项目进展", schedule)
-    assert history[0]["prompt"].startswith("<scheduled_task>\n定时任务「每日摘要」（每天 09:00）到点：")
+    assert history[0]["prompt"].startswith("<scheduled_task>\n用户在 ")
+    assert scheduled_prompt("x", {**schedule, "manual": False}).startswith("<scheduled_task>\n定时任务「每日摘要」（每天 09:00）到点：")
     assert scheduled_prompt("x", None) == "x"
+    assert schedule["manual"] is True  # the first turn above came from 立即运行

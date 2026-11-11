@@ -101,11 +101,15 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
               <button key={k} type="button" role="radio" aria-checked={d.kind === k} className={d.kind === k ? "on" : ""} onClick={() => set({ kind: k })}>{label}</button>
             ))}
           </div>
-          {once ? (
-            <input type="date" className="schedule-date" aria-label="日期" value={d.date} min={fromToday(0)} onChange={(e) => set({ date: e.target.value })} />
-          ) : null}
           <TimeSelect value={d.time} onChange={(time) => set({ time })} aria-label="时刻" />
           {once ? null : <Select aria-label="结束" value={d.ends_on || ""} options={ends} onChange={(v) => set({ ends_on: v || null })} />}
+        </div>
+        <div className="collapse" data-open={once} inert={!once}>
+          <div>
+            <div className="schedule-on">
+              <input type="date" className="schedule-date" aria-label="日期" value={d.date} min={fromToday(0)} onChange={(e) => set({ date: e.target.value })} />
+            </div>
+          </div>
         </div>
         <div className="collapse" data-open={d.kind === "weekly"} inert={d.kind !== "weekly"}>
           <div>

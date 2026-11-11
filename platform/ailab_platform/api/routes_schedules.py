@@ -421,14 +421,18 @@ def dispatch_task(db, task, user, now, occurrence, regular):
     else:
         task.due_at = None
         execute_task(db, task, user, now, occurrence, dispatched=True)
-    if regular is None:
-        if task.due_at is None:
-            pause_task(db, task, "done")
-    elif task.ends_on and _aware(task.next_run_at).astimezone(zone).date() > task.ends_on:
+    if regular is None and task.due_at is None:
+        if task.last_status == "failed":
+            pause_task(db, task, "failures")
+        else:
+            # a single task that ran is finished: its answer stays in the conversation, its slot is free again
+            record_audit(db, "schedule.deleted", "schedule", task.id, actor_id=task.user_id)
+            db.delete(task)
+    elif regular is not None and task.ends_on and _aware(task.next_run_at).astimezone(zone).date() > task.ends_on:
         pause_task(db, task, "ended")
 
 
-def execute_task(db, task, user, now, occurrence, *, dispatched=False):
+def execute_task(db, task, user, now, occurrence, *, dispatched=False, manual=False):
     task.last_run_at, task.last_run_id = now, None
     try:
         with db.begin_nested():
@@ -457,13 +461,21 @@ def execute_task(db, task, user, now, occurrence, *, dispatched=False):
                 mode=None if leaf is not None else task.mode,
                 skill=task.skill,
                 reasoning=reasoning,
+                # the conversation's own surface: the client decides the tool list, and a turn that changes it
+                # breaks the conversation's cached prefix (ADR 0030). Tasks are made in the Portal.
+                client=(leaf.options or {}).get("client") if leaf is not None else "portal",
                 locked=True,
                 commit=False,
             )
             run.options = {
                 **run.options,
                 "schedule_id": task.id,
-                "schedule": {"title": task.title, "rule": rule_text(task.schedule), "at": local_text(occurrence, task.timezone)},
+                "schedule": {
+                    "title": task.title,
+                    "rule": rule_text(task.schedule),
+                    "at": local_text(occurrence, task.timezone),
+                    **({"manual": True} if manual else {}),
+                },
             }
             task.conversation_id = conv.id
             task.mode = run.options.get("mode", task.mode)
@@ -487,7 +499,7 @@ def run_now(task_id: str, user: User = Depends(current_user), db: Session = Depe
         if task.conversation_id and busy_run(db, task.conversation_id) is not None:
             raise HTTPException(409, "会话正在回答中，稍后再试")
         now = utcnow()
-        execute_task(db, task, user, now, now)
+        execute_task(db, task, user, now, now, manual=True)
         db.commit()
         if task.last_status == "failed":
             raise HTTPException(422, task.last_error)
@@ -665,7 +677,8 @@ def run_schedules(
             if exc.status_code != 422:
                 raise
             db.rollback()
-            return {"ok": False, **now, "error": exc.detail}
+            error = exc.detail + ("；用户可在「定时任务」页删除不用的" if str(exc.detail).startswith("最多") else "")
+            return {"ok": False, **now, "error": error}
         db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
         db.commit()
         return result

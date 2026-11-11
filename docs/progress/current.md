@@ -1,3 +1,11 @@
+# 定时任务绑定会话（2026-11-11）
+
+- 用户要求：检查定时任务逻辑与用例；每个任务绑定一个会话，到点在原会话后接着回复；Chat/Work 按创建来源标注，页面新建为 Work；真实模型测试；UI/UX 做到最好。分支 `feat/schedule-in-conversation`，base `origin/main@81d24699`；未授权部署。
+- 已完成：迁移 0071、对话内 `schedule` 工具、会话忙时顺延、一次性任务、到点轮的平台头与 Portal 时间标记/会话条/列表标签。决定见 [ADR 0040](../architecture/adr/0040-schedule-in-conversation.md)，验证与真实模型数字见[记录](updates/2026-11-11-schedule-conversation.md)。
+- 下一步：PR CI 全绿后再定合并；部署需用户当次明确要求。
+
+---
+
 # 搜索正确性复核与存储口径纠正（2026-11-11）
 
 - 用户授权：保留 PR #181 的索引方案，修复 bug、更正错误记录；追加授权提 PR、最终 CI 通过后合并并增量部署最新版。[PR #182](https://github.com/shijunan126-creator/ailab-lite/pull/182) 已 squash 合并为 `b8fe90b2`，当前分支 `main`，功能基线 `origin/main@b8fe90b2`，唯一工作树为仓库根。
