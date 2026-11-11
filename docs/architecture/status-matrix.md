@@ -1,4 +1,4 @@
-2026-11-11 搜索正确性复核（`fix/search-correctness`，base `fc7d540b`）：保留 ADR0039 索引结构，本地修复词项并发覆盖、同 flush 新会话漏索引、归一化漏搜、隐藏源码/词边界误报与固定截断漏搜；分页超时明确报错。已纠正原存储倍率；当前验收与边界见[复核](../progress/updates/2026-11-11-search-correctness.md)，已授权提 PR、CI 后合并和部署，当前尚未部署。[PR #181](https://github.com/shijunan126-creator/ailab-lite/pull/181) 已合并，其历史 CI/Portal/浏览器结果只覆盖原实现，见[原记录](../progress/updates/2026-11-11-search-index.md)。
+2026-11-11 搜索正确性复核已随 [PR #182](https://github.com/shijunan126-creator/ailab-lite/pull/182) 合并为 `main@b8fe90b2`：保留 ADR0039 索引结构，修复并发词项覆盖、同 flush 漏索引、归一化漏搜、隐藏源码/词边界误报、固定截断漏搜，以及 CI 暴露的 mock 沙箱取消竞态；纠正存储倍率。最终 `cf4567a` 的 11 项 CI 全绿，合并树一致；准确验收和未测边界见[复核](../progress/updates/2026-11-11-search-correctness.md)。本机部署不作为能力状态。[原 PR #181 记录](../progress/updates/2026-11-11-search-index.md)保留其历史证据。
 
 2026-11-11 思考强度（ADR0038，`feat/reasoning-effort`）：模型按 `reasoning.toml` 档位组提供思考强度，DeepSeek 低/高/最高、默认低，按模型记住上次选择；档位写入 `run.options` 并在整次回答内固定（同档位续轮缓存 96–97%，换档那一轮冷）。技能页基础技能收成一行。PR CI 验收中。见[记录](../progress/updates/2026-11-11-reasoning-effort.md)。
 

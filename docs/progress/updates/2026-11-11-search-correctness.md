@@ -1,7 +1,7 @@
 # 搜索正确性复核（2026-11-11）
 
 - 授权：保留现有会话级 FTS5 / tsvector + GIN 方案，修复 bug、更正存储记录；已追加授权提 PR、CI 通过后合并并增量部署。
-- 代码基线：`fc7d540b` 加 `fix/search-correctness` 的本报告所述代码差异。PR #181 已合并，其历史验收不覆盖本轮；本轮最终提交与 CI 见 [PR #182](https://github.com/shijunan126-creator/ailab-lite/pull/182)。
+- 代码基线：`fc7d540b` 加本报告所述代码差异，最终代码提交 `cf4567a5880ca1f7da4d1d657e94d43cccd1c9f3`；[PR #182](https://github.com/shijunan126-creator/ailab-lite/pull/182) 已 squash 合并为 `b8fe90b2ee5ad3f7f1afca6cde3ae0de48860f32`，合并树与测试树一致。PR #181 的历史验收不覆盖本轮。
 
 ## 根因与修复
 
@@ -33,10 +33,11 @@
 - 第三轮 `023953d` 的 [SQLite job](https://github.com/shijunan126-creator/ailab-lite/actions/runs/42956938030/job/130314206520) 在既有 mock 沙箱取消合同失败：子进程已创建但尚未登记时，cancel 可返回成功而漏杀。新增真实进程门控复现，在 Popen 返回前暂停，旧实现确定性失败；修复为同锁内创建并登记，communicate 期间释放锁。该修复只涉及 dev/test mock provider，无迁移或运行配置变化。
 - 为复核第三轮 CI 失败，本轮例外执行本地完整套件（4 个 xdist worker、真实临时 Redis/PG、构建固定 Office reader、macOS GNU 工具路径）。SQLite 2822 passed / 204 skipped，126.89s；跳过数与 CI 环境不同，不替代最终 CI。最初缺 GNU 工具路径和 reader 的本地启动已中断并补齐环境，不将该次记为产品验收。
 - 同一最终运行代码基线（`023953df` 加本段 mock 取消原子化修复），PostgreSQL 全套 2956 passed / 70 skipped，185.86s；SQLite 和 PG 均覆盖真实进程的新增门控回归及原取消合同。完整套件命令为 `pytest tests -n 4 --dist worksteal -o addopts='' -q --tb=short`，PG 使用专用可清空测试库，Redis 专用端口；临时数据与本轮 reader 构建产物在推送前清理。
+- 最终 [CI run 42959458024](https://github.com/shijunan126-creator/ailab-lite/actions/runs/42959458024) 在 `cf4567a` 的 11 个作业全部通过，包括完整 SQLite/PostgreSQL、quality、三片 E2E、存储合同等；无评审或评论待处理后才合并。合并后 `git diff --quiet cf4567a origin/main` 通过；本段之后只更新连续性交接，不修改运行代码。
 
 ## 成本与未测边界
 
 - 无迁移、依赖、配置、索引布局或 Portal 改动。写事务首次合并每个会话多一次幂等 INSERT 与锁定读取，后续合并复用事务缓存；锁会序列化同会话写入。查询仍分页读取，contains 不再为整个文本建立高亮偏移数组。
 - PG16 的非 ASCII 预筛选较宽，中文为主的长会话可能多读 Run；极端旧词项积累/隐藏源码可触发明确超时。协作式期限不能中断单条正在执行的 SQL，未测百万 Run、真实库副本、持续写入或整栈 CPU/RSS。
 - 无可索引词项的输入仍只检查最近 200 会话；升级回填未完成时仍可能漏旧会话，均为原方案已知边界。未新增重建任务。
-- 按仓库约定不重复本地全套；本地记录不代替最终 PR 的 CI；Portal/浏览器未重跑（未改 UI）。下一步等待最终 head CI，通过后合并并按用户授权增量部署；部署不额外备份或重复功能验收。
+- 本地完整套件仅为复核 CI 故障而例外执行；最终 PR 的 CI 已通过，三片 E2E 也覆盖浏览器。本机部署按用户授权增量执行，不额外备份或重复功能验收；结果仅在对话汇报。后续按实际使用反馈推进。

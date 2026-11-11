@@ -1,10 +1,10 @@
 # 搜索正确性复核与存储口径纠正（2026-11-11）
 
-- 用户授权：保留 PR #181 的索引方案，修复 bug、更正错误记录；已追加授权提 PR、最终 CI 通过后合并并增量部署最新版。分支 `fix/search-correctness`，base `origin/main@fc7d540b`，当前唯一工作树为仓库根；原 PR #181 已合并，原分支/工作树记录已过期。
+- 用户授权：保留 PR #181 的索引方案，修复 bug、更正错误记录；追加授权提 PR、最终 CI 通过后合并并增量部署最新版。[PR #182](https://github.com/shijunan126-creator/ailab-lite/pull/182) 已 squash 合并为 `b8fe90b2`，当前分支 `main`，功能基线 `origin/main@b8fe90b2`，唯一工作树为仓库根。
 - 已修复：Unicode 归一化预筛选漏搜、隐藏 OpenUI 源码误报、拉丁词边界误报、新会话与 Run 同 flush 漏索引、并发词项覆盖，以及固定会话/Run 截断漏搜。分页保留，5 秒协作式期限超时返回明确 503。未改索引结构或 Portal。
 - 错误记录：已撤回“9 倍”；基准按 UTF-8 原文字节、逻辑主库页、搜索专用页与 WAL/SHM 分列。SQLite 与 PostgreSQL 的增量不能混用，数字及原始口径纠正统一见[搜索记录](updates/2026-11-11-search-index.md)。
-- 验证与边界：[本轮复核](updates/2026-11-11-search-correctness.md)。N+1 与请求计数隔离已修复，第三轮 CI 暴露的 mock 启动/登记取消竞态已确定性复现并修复。补齐本机 CI 依赖后，双库全套（各 4 worker，依次运行）SQLite 2822 passed / 204 skipped、PG 2956 passed / 70 skipped；不替代最终 head CI，不延长期限或增加重试。
-- 发布：[PR #182](https://github.com/shijunan126-creator/ailab-lite/pull/182) 已创建，等待最终 head 的 CI；通过后合并，按本机实际运行版本增量部署，不备份、不重复功能验收。
+- 验证与边界：[本轮复核](updates/2026-11-11-search-correctness.md)。最终代码 `cf4567a` 的 11 项 CI 全绿（完整双库、quality、三片 E2E 等），无未处理评审；合并树与该提交一致。此前失败根因和本地全套结果均保留在复核记录，不延长期限或增加重试。
+- 下一步：本轮代码已合并，无待实现项；按当次授权增量部署，本机部署结果只在对话汇报，不当作能力状态写入仓库。后续以实际使用反馈为准。
 
 ---
 
