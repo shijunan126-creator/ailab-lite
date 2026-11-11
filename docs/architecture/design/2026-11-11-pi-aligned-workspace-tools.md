@@ -169,3 +169,32 @@ Pi 的测试就是规格，可以逐条搬过来（`packages/coding-agent/test/`
 3. `grep`/`find` 只给 Work。
 4. `ls` 照 Pi：字母序、目录带 `/`、含点文件、上限 500。
 5. bash 的等待与期限按上面「等待窗口与平台期限」执行，不再由模型设置终止时间。
+
+## 独立审查后的修正（2026-11-12）
+
+审查提出三类问题，全部照改，其中前两条改变了实现选择而不是参数。
+
+### `edit` 的模糊匹配只改被匹配的那一段
+
+Pi 把整份文件归一化后就地替换并整体写回，被碰到的那一行里所有全角标点、全角数字、弯引号、行尾空白都会被折成半角/python 形态；面向中文用户等于悄悄改坏文件。现在按字符建立「折叠字符 → 原文区间」的映射（NFKC 只保留 1:1 折叠，组合字符向前合并），匹配到哪一段就只替换那一段的原文，未命中的字节一个不动。
+
+- 归一化后唯一性、重叠、空 oldText 的判定不变；计数改成能统计重叠出现（`"}\n}\n"` 在 `"}\n}\n}\n"` 里算两次），避免 `str.count` 把重复的右括号当成唯一。
+- 拼接缝规则用穷举取代随机：字符集 `{a, \r, \n}`、长度 ≤ 6 的全部文件 × 全部 oldText × 5 种 newText，断言写回后归一化等于计算结果（毫秒级）。
+
+### bash 的三件事继续分开，但返回值只有一个形状
+
+- 结束（含短命令、等待中完成、kill）统一返回 `ok/exit_code/running/stdout/stderr` 加可选 `error/killed_by/duration_ms/truncated/log_path/idle_seconds/elapsed_seconds`；不再有 `output_tail`，同一段输出不会在一份结果里出现两次。
+- 运行中返回累计的 `stdout`；某一跳的字节数超过 helper 单次上限时插入 `...[elided N bytes]...`，不让拼接悄悄跨过缺口。
+- `bash_kill` 是"按用户要求终止"，成功即 `ok: true`（带 `killed_by: caller`）；之后再 wait 才报"命令已被终止"。
+- 主参数改名为 `command`（`cmd` 仍接受，句柄哈希取同一份文本）。
+- `timeout`/`timeout_seconds` 不再报错，忽略并在结果里附 `note`：报错只会浪费一轮。
+
+### 恢复、子任务与其它
+
+- 只有完全观察不到结果时才换算成 `UNCERTAIN_EXEC`：句柄不存在（helper 返回 `lost`）、退出状态丢失（`exit_code == -1`）、或等待本身失败（没有 `exit_code` 也没在跑）。正常结束但退出码非 0 的命令把真实结果交给模型。
+- 恢复时的 `agent.tool_result` 沿用原调用名 `bash`，否则 Portal 按名字关闭步骤时会让那条 `bash` 永远显示"运行中"。
+- 子任务的调用编号带父 step：两次 `run_subtasks` 里同一位置同一命令不再算出同一个句柄（否则 helper 把它当成重试，直接返回上一批的结果）。
+- `write` 与 `edit` 共用 `(lease, path)` 队列：整份写与读改写并发时，后写的不会覆盖掉另一个。
+- `grep` 的 `glob` 用 `removeprefix("./")`（`lstrip` 会吃掉 `.env`/`.github` 的点），并加 `--no-require-git` 与 `find` 的忽略规则对齐。
+- Portal 的步骤图标新旧工具名都认，历史事件的图标不再退化。
+- 提示词去掉重复表述：system 2657 tokens（含 28 个工具 schema 共 7175），比修正前少 108。

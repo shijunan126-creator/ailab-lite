@@ -92,6 +92,38 @@
 - **Next 生产构建**：工作树内 `npm ci --ignore-scripts && npm run build` → `✓ Compiled successfully`，路由表完整。
 - **run_subtasks 并发写同一文件（真模型）**：用真 `AgentLoop`（`FakePlatform` + 真 Broker + 真 ModelTransport）跑一次 Work run，状态 `succeeded`；模型起 3 个子任务，每个子任务都 `edit` 同一份 `/workspace/report/findings.md` 的不同小节，三节全部落盘、数值正确（30/70/50）。另加了一条确定性回归 `test_two_concurrent_edits_of_one_file_both_land`：两个并发 `edit` 走 `execute_tool`，读改写之间插 50 ms 延迟，两次都成功且文件内容完整（靠 `(lease, path)` 队列串行）。
 
+## 独立审查后的修正（2026-11-12）
+
+外部独立审查（读 diff + 小脚本实测，未重跑套件）给出 3 条必须修、4 条应该修和若干补充项，全部照改，每条都补了"不修就失败"的用例。
+
+| 项 | 问题 | 处理 | 用例 |
+|---|---|---|---|
+| `edit` 模糊匹配 | 一处匹配走归一化后，**整行**被归一化写回：全角标点/数字、弯引号、行尾空白全变半角 | 折叠字符带原文区间，只替换匹配到的那一段 | `test_a_fuzzy_edit_does_not_rewrite_the_rest_of_the_line`（审查给的原文）等 2 条 |
+| 唯一性计数 | `str.count` 不重叠，`"}\n}\n"` 在 `"}\n}\n}\n"` 里算 1 次 | 改成重叠计数 | `test_overlapping_occurrences_are_refused` |
+| 子任务句柄 | 调用编号不含父 step，第二批同一命令撞上第一批句柄，helper 当重试直接返回旧结果 | 编号带父 step | `test_the_same_command_in_a_second_batch_is_a_new_execution` |
+| 恢复判定 | 已正常结束但 exit≠0 的命令被当成"丢失"报 `UNCERTAIN_EXEC` | 只有 `lost`/`exit_code == -1` 才算丢失 | `test_a_finished_failing_command_keeps_its_result_across_a_restart`、`test_a_command_whose_state_was_lost_stays_uncertain` |
+| 恢复事件名 | 换名成 `bash_wait`，Portal 按名字关不掉原来的 `bash` 步骤 | 事件沿用原调用名 | `test_a_resumed_wait_keeps_the_original_tool_name_for_the_ui` |
+| `grep` glob | `lstrip("./")` 删的是字符集合，`.env*`→`env*` | `removeprefix("./")` | `test_grep_keeps_a_leading_dot_glob_and_ignores_like_find` |
+| `grep` 忽略规则 | 只有 `find` 传 `--no-require-git` | rg 也传，语义对齐 | 同上 |
+| `bash_kill` | 成功终止却返回 `ok: false`，UI 显示失败、卡死检测记一次失败 | kill 成功即 `ok: true` + `killed_by: caller` | `test_a_kill_that_found_the_command_reports_success` |
+| 结果形状 | 短命令与长命令两种形状；`output_tail` 与 `stdout` 同段重复；跨段缺口无标记 | 统一 `ok/exit_code/running/stdout/stderr`+可选字段，去掉 `output_tail`，缺口插 `...[elided N bytes]...` | `test_every_finished_command_has_the_same_shape`、`test_a_gap_between_what_was_read_and_what_arrived_is_marked` |
+| `write` 未排队 | 与 `edit` 并发时整份写会覆盖读改写 | 同一条 `(lease, path)` 队列 | `test_a_write_and_an_edit_of_one_file_cannot_interleave`（去掉修复即失败，已实测） |
+| `timeout` 参数 | 直接报错，Pi 系模型每次多浪费一轮 | 忽略并附 `note` | `test_a_retired_timeout_argument_is_ignored_with_a_note` |
+| 主参数名 | `cmd` 与 Pi/其它工具不一致 | 主参数 `command`，`cmd` 兼容，句柄哈希取同一文本 | `test_the_command_may_be_named_command_or_cmd` |
+| 提示词重复 | 同一句"窗口结束不是失败/长时间没输出不等于卡死"出现 5 次 | 删两处复述 | system 2765 → **2657** tokens，含目录 7283 → **7175** |
+| Portal 图标 | `StepIcon` 只认新名，历史事件图标退化 | 新旧名都认 | `tsc --noEmit` + vitest 286 项 |
+
+拼接缝规则改用穷举（`{a, \r, \n}` 长度 ≤ 6 的全部文件 × 全部 oldText × 5 种 newText），随机那版保留。
+另修 `config.py` 两处注释仍写着 `read_file`/`write_file`。
+
+**验证**（基线 `feat/pi-aligned-workspace-tools` 工作树，arm64 macOS）：
+
+- `ruff check` / `format --check` 干净（704 文件）。
+- 全量 `pytest tests -q -n auto`：**3166 项 / 16 失败 / 276 跳过**，16 项与未改基线的 `test_document_context`(3)、`test_document_reading_reliability`(12)、`test_library_render`(1) 逐条相同（缺 OCR/渲染依赖）；跳过项全部因为没设 PG/Redis/OSB/S3/Docker 等外部服务。
+- 改动模块定向：`tests/test_bash_wait_window.py`、`test_text_edit.py`、`test_workspace_tools.py`、`test_workspace_query.py`、`test_subtasks.py`、`test_background_exec.py`、`test_agent_loop.py`、`test_prefix_cache.py`、`test_stuck.py` 共 **342 项 0 失败**。
+- Portal：`npm ci --ignore-scripts`、`tsc --noEmit` 干净、`npm test` **48 文件 / 286 项通过**。
+- 真模型（DeepSeek V4.1 Flash / OpenCode Go）重跑 9 个任务：`bash` 已用新参数名 `command`，40 秒脚本按 10 秒窗口分 4 次等待后拿到 `exit_code 0` 与最后一行；`edit`/`write`/`read`/`grep`/`find`/`ls` 按意图使用，未出现退回 `bash cat/sed` 的情况。
+
 ## 没覆盖到 / 风险
 
 - 镜像只在本机 arm64 构建并冒烟，没有做 amd64/双架构构建，也没有导入 k3s/gVisor 跑 `tests/t1_image.sh` 的第 3、4 步。
