@@ -5,6 +5,7 @@ Sandbox tools execute through the Broker; local capability readers need no sandb
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -418,6 +419,16 @@ READ_URL = {
 
 
 # Tools that need a sandbox: the first call to one of them starts it.
+# Names the Agent used to execute and no longer does. A checkpoint recorded before the rename still
+# lists them; offering them would make every remaining call in that run an unknown tool.
+RETIRED_TOOLS = frozenset({"exec", "exec_wait", "exec_kill", "read_file", "write_file", "list_files"})
+
+
+def has_retired_tools(catalog) -> bool:
+    names = {entry.get("function", {}).get("name") for entry in catalog or []}
+    return bool(names & RETIRED_TOOLS)
+
+
 SANDBOX_TOOLS = {
     "review_artifact",
     "view_workspace_file",
@@ -771,6 +782,26 @@ def _workspace_path(path: str, under: str = WORKSPACE) -> str:
         raise ToolError(str(exc)) from exc
 
 
+def _file_error(path: str, verb: str, exc: ClientError) -> ToolError:
+    """Turn the Broker's file error into the next action, never into a blanket ENOENT.
+
+    Every failure used to read ``ENOENT``, so a model that wanted to edit a 12 MB file was told the
+    file does not exist and rewrote it with ``write``. The Broker now separates 404 / 413 / 400.
+    """
+    if exc.status == 404:
+        return ToolError(f"Could not {verb} file: {path}. Error code: ENOENT.")
+    if exc.status == 413:
+        limit = settings.max_sandbox_read_bytes // (1024 * 1024)
+        return ToolError(f"文件超过 {limit}MB 读取上限，未读取：{path}。用 bash 的 sed -n 或 head -c 分段查看。")
+    try:
+        detail = json.loads(exc.body).get("detail")
+    except (ValueError, AttributeError, TypeError):
+        detail = None
+    if isinstance(detail, str) and "not a regular file" in detail:
+        return ToolError(f"Could not {verb} file: {path}. 不是普通文件（可能是目录或链接），用 ls 查看。")
+    return ToolError(f"Could not {verb} file: {path}. {detail if isinstance(detail, str) and detail else '读取失败'}")
+
+
 def _looks_binary(data: bytes) -> bool:
     head = data[:8192]
     if b"\x00" in head:
@@ -927,9 +958,7 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         try:
             data = await broker.get_file(lease_id, path)
         except ClientError as exc:
-            if exc.status != 400:  # a 400 is the broker's "the path is not there"
-                raise
-            raise ToolError(f"Could not read file: {path}. Error code: ENOENT.") from exc
+            raise _file_error(path, "read", exc) from exc
         if _looks_binary(data):
             # Decoding an image/zip as text would put ~100k characters of noise into the context.
             return {
@@ -955,9 +984,11 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             try:
                 data = await broker.get_file(lease_id, path)
             except ClientError as exc:
-                if exc.status != 400:  # a 400 is the broker's "the path is not there"
-                    raise
-                raise ToolError(f"Could not edit file: {path}. Error code: ENOENT.") from exc
+                raise _file_error(path, "edit", exc) from exc
+            if len(data) > settings.max_edit_bytes:
+                size = len(data) / (1024 * 1024)
+                limit = settings.max_edit_bytes / (1024 * 1024)
+                raise ToolError(f"文件 {size:.1f} MB 超过 edit 上限 {limit:g} MB；用 bash 运行脚本修改。")
             if _looks_binary(data):
                 raise ToolError(f"Could not edit file: {path}. It is not a UTF-8 text file.")
             try:
@@ -965,7 +996,8 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             except UnicodeDecodeError as exc:
                 raise ToolError(f"Could not edit file: {path}. It is not a UTF-8 text file.") from exc
             try:
-                final = edit_text(raw, pairs, path)
+                # A large file is matched by regex in a worker thread: the loop keeps serving other runs.
+                final = await asyncio.to_thread(edit_text, raw, pairs, path)
             except EditError as exc:
                 raise ToolError(str(exc)) from exc
             await broker.put_file(lease_id, path, final.encode("utf-8"))

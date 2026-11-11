@@ -24,7 +24,7 @@ class FakeBroker:
 
     async def get_file(self, lease_id: str, path: str) -> bytes:
         if path not in self.files:
-            raise ClientError("GET", f"/internal/leases/{lease_id}/files", 400, "文件不存在")
+            raise ClientError("GET", f"/internal/leases/{lease_id}/files", 404, '{"detail": "no such file in the sandbox"}')
         return self.files[path]
 
     async def put_file(self, lease_id: str, path: str, data: bytes) -> None:
@@ -242,3 +242,33 @@ def test_a_write_and_an_edit_of_one_file_cannot_interleave(monkeypatch):
     result = asyncio.run(scenario())
     assert result["ok"] is True
     assert broker.files[f"{WORK}/a.md"] == b"REPLACED\n"  # the whole-file write is the last one to land
+
+
+def test_a_too_large_file_is_not_reported_as_missing():
+    """12 MB: the model must not hear ENOENT and rewrite the file with write."""
+
+    class BigBroker(FakeBroker):
+        async def get_file(self, lease_id, path):
+            raise ClientError("GET", "/internal/leases/lease/files", 413, '{"detail": "file is 12582912 bytes; the limit is 10485760"}')
+
+    with pytest.raises(ToolError, match="超过 10MB 读取上限"):
+        call("read", {"path": f"{WORK}/big.csv"}, BigBroker())
+    with pytest.raises(ToolError, match="超过 10MB 读取上限"):
+        call("edit", {"path": f"{WORK}/big.csv", "edits": [{"oldText": "a", "newText": "b"}]}, BigBroker())
+
+
+def test_a_broker_400_hands_the_detail_to_the_model():
+    class DirectoryBroker(FakeBroker):
+        async def get_file(self, lease_id, path):
+            raise ClientError("GET", "/internal/leases/lease/files", 400, '{"detail": "not a regular file: /workspace/work"}')
+
+    with pytest.raises(ToolError, match="不是普通文件"):
+        call("read", {"path": f"{WORK}/sub"}, DirectoryBroker())
+
+
+def test_edit_refuses_a_file_over_its_own_memory_budget(monkeypatch):
+    from ailab_platform.config import settings
+
+    monkeypatch.setattr(settings, "max_edit_bytes", 16)
+    with pytest.raises(ToolError, match="超过 edit 上限"):
+        call("edit", {"path": f"{WORK}/a.md", "edits": [{"oldText": "a", "newText": "b"}]}, FakeBroker({f"{WORK}/a.md": b"a" * 32}))

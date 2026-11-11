@@ -4,23 +4,32 @@ Every ``oldText`` is matched against the original content, must be unique there,
 and must not overlap another edit in the same call. Matching is exact first and
 then tolerant to the differences a model reliably introduces when it quotes a
 file back: trailing whitespace, curly quotes, Unicode dashes, special spaces and
-width/compatibility forms. Tolerance never widens the *set* of matches, so a
-text that occurs twice is still refused.
+width/compatibility forms.
 
-Tolerance is built character by character with a source span for every folded
-character, so a fuzzy match is applied to the bytes it actually matched. Pi
-rewrites the whole file from its normalized copy, which silently converts every
-full-width comma, digit and punctuation mark on the touched lines to half width;
-keeping the spans means an edit of one quote never rewrites its neighbours.
+Tolerance never rewrites the file: ``oldText`` is compiled into one regex whose
+character classes accept every character that folds to the requested one, and it
+is searched directly in the original bytes. Matched offsets are therefore file
+offsets, a fuzzy edit costs nothing beyond the pattern (a 5 MB file matches in
+tens of milliseconds, no per-character table and no second copy of the file), and
+a full-width comma next to the matched span keeps its own bytes.
+
+Deliberate differences from Pi:
+
+* Pi normalizes the whole file and writes the normalized copy back, which turns
+  every full-width mark on the touched lines into half width.
+* Combining sequences (``e`` + U+0301) are not folded: models quote composed
+  text, and supporting it would put the per-character cost back.
 """
 
 from __future__ import annotations
 
 import itertools
+import re
 import unicodedata
 from dataclasses import dataclass
 
 BOM = "\ufeff"
+OCCURRENCE_REPORT_CAP = 100  # a repeated line can occur thousands of times; the message stays readable
 
 
 class EditError(ValueError):
@@ -62,59 +71,43 @@ _FUZZY_TABLE = {
     **{ord(char): " " for char in _SPACES},
 }
 
-_TRIM = frozenset(" \t")
+_folds: dict[str, str] | None = None
+_variants: dict[str, list[str]] | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class _Unit:
-    """One character of the folded text and the source span it came from."""
+def _fold_tables() -> tuple[dict[str, str], dict[str, list[str]]]:
+    """Every one-to-one fold and its reverse map, built on first fuzzy match.
 
-    char: str
-    start: int
-    end: int
-
-
-def _fold(char: str) -> str:
-    mapped = _FUZZY_TABLE.get(ord(char))
-    if mapped is not None:
-        return mapped
-    composed = unicodedata.normalize("NFKC", char)
-    # Only 1:1 folds keep one source character per folded character: a full-width digit folds,
-    # a compatibility ligature ("fi" written as one glyph) does not.
-    return composed if len(composed) == 1 else char
-
-
-def _trim_line_ends(units: list[_Unit]) -> list[_Unit]:
-    """Drop whitespace a model leaves at the end of a line; kept characters keep their own offsets."""
-    kept: list[_Unit] = []
-    for unit in units:
-        if unit.char in _TRIM:
-            kept.append(unit)
-            continue
-        if unit.char == "\n":
-            while kept and kept[-1].char in _TRIM:
-                kept.pop()
-        kept.append(unit)
-    while kept and kept[-1].char in _TRIM:
-        kept.pop()
-    return kept
-
-
-def folded_units(text: str) -> list[_Unit]:
-    units: list[_Unit] = []
-    for index, char in enumerate(text):
-        # A combining mark folds into the character before it ("e" + U+0301 -> "é").
-        if units and unicodedata.combining(char):
-            composed = unicodedata.normalize("NFKC", units[-1].char + char)
-            if len(composed) == 1:
-                units[-1] = _Unit(composed, units[-1].start, index + 1)
+    Scanning 1.1M code points costs ~150 ms, which is too much for module import on
+    every service start; an exact match never needs the tables at all. A fold is kept
+    only when it maps one character to one character: a full-width digit folds, the
+    ``fi`` ligature would become two characters and is left alone.
+    """
+    global _folds, _variants
+    if _folds is None:
+        folds: dict[str, str] = {}
+        for code in range(0x110000):
+            if 0xD800 <= code <= 0xDFFF:  # lone surrogates cannot appear in decoded text
                 continue
-        units.append(_Unit(_fold(char), index, index + 1))
-    return _trim_line_ends(units)
+            char = chr(code)
+            mapped = _FUZZY_TABLE.get(code)
+            if mapped is None:
+                folded = unicodedata.normalize("NFKC", char)
+                if len(folded) != 1 or folded == char:
+                    continue
+                mapped = folded
+            folds[char] = mapped
+        variants: dict[str, list[str]] = {}
+        for source, folded in folds.items():
+            variants.setdefault(folded, [folded]).append(source)
+        _folds, _variants = folds, variants
+    return _folds, _variants
 
 
 def folded_text(text: str) -> str:
-    return "".join(unit.char for unit in folded_units(text))
+    """The text with every one-to-one fold applied; used to compare short strings."""
+    folds, _ = _fold_tables()
+    return "".join(folds.get(char, char) for char in text)
 
 
 def find_all(haystack: str, needle: str) -> list[int]:
@@ -129,6 +122,35 @@ def find_all(haystack: str, needle: str) -> list[int]:
     return found
 
 
+def _atom(char: str) -> str:
+    """One character of ``oldText``: every file character that folds to the same one."""
+    folds, variants = _fold_tables()
+    group = variants.get(folds.get(char, char))
+    if group is None:
+        return re.escape(char)
+    return "[" + "".join(re.escape(item) for item in group) + "]"
+
+
+def _space_class() -> str:
+    _, variants = _fold_tables()
+    return "[" + "".join(re.escape(item) for item in variants.get(" ", [" "])) + r"\t]*"
+
+
+def fuzzy_pattern(old_text: str) -> re.Pattern[str] | None:
+    """``oldText`` as a regex over the original file: trailing whitespace optional, widths folded.
+
+    Returns ``None`` for a text that is only whitespace (its pattern would match everywhere).
+    """
+    space = _space_class()
+    lines = old_text.split("\n")
+    body = (space + "\n").join("".join(_atom(char) for char in line.rstrip(" \t")) for line in lines)
+    if not body:
+        return None
+    if lines[-1] != lines[-1].rstrip(" \t"):
+        body += space  # the quoted trailing spaces must be consumed, not left behind
+    return re.compile(body)
+
+
 def _missing_message(path: str, index: int, total: int) -> str:
     if total == 1:
         return f"Could not find the exact text in {path}. The old text must match exactly including all whitespace and newlines."
@@ -136,15 +158,26 @@ def _missing_message(path: str, index: int, total: int) -> str:
 
 
 def _occurrences_message(path: str, index: int, total: int, occurrences: int) -> str:
+    count = f"{occurrences}" if occurrences < OCCURRENCE_REPORT_CAP else f"at least {OCCURRENCE_REPORT_CAP}"
     if total == 1:
-        return (
-            f"Found {occurrences} occurrences of the text in {path}. "
-            "The text must be unique. Please provide more context to make it unique."
-        )
+        return f"Found {count} occurrences of the text in {path}. The text must be unique. Please provide more context to make it unique."
     return (
-        f"Found {occurrences} occurrences of edits[{index}] in {path}. "
+        f"Found {count} occurrences of edits[{index}] in {path}. "
         "Each oldText must be unique. Please provide more context to make it unique."
     )
+
+
+def _fuzzy_starts(pattern: re.Pattern[str], content: str) -> list[int]:
+    """Overlapping start offsets, stopped once the text is known not to be unique."""
+    starts: list[int] = []
+    position = 0
+    while len(starts) < OCCURRENCE_REPORT_CAP:
+        found = pattern.search(content, position)
+        if found is None:
+            break
+        starts.append(found.start())
+        position = found.start() + 1
+    return starts
 
 
 def _apply_replacements(content: str, replacements: list[TextReplacement]) -> str:
@@ -165,8 +198,6 @@ def apply_edits(base_content: str, edits: list[tuple[str, str]], path: str) -> E
                 f"oldText must not be empty in {path}." if total == 1 else f"edits[{index}].oldText must not be empty in {path}."
             )
 
-    units: list[_Unit] | None = None
-    folded: str | None = None
     matched: list[TextReplacement] = []
     for index, (old_text, new_text) in enumerate(normalized):
         exact = find_all(base_content, old_text)
@@ -174,20 +205,17 @@ def apply_edits(base_content: str, edits: list[tuple[str, str]], path: str) -> E
             matched.append(TextReplacement(exact[0], len(old_text), new_text, index))
             continue
         if len(exact) > 1:
-            raise EditError(_occurrences_message(path, index, total, len(exact)))
-        if units is None:
-            units = folded_units(base_content)
-            folded = "".join(unit.char for unit in units)
-        assert folded is not None
-        needle = folded_text(old_text)
-        found = find_all(folded, needle)
-        if not found:
+            raise EditError(_occurrences_message(path, index, total, min(len(exact), OCCURRENCE_REPORT_CAP)))
+        pattern = fuzzy_pattern(old_text)
+        starts = _fuzzy_starts(pattern, base_content) if pattern is not None else []
+        if not starts:
             raise EditError(_missing_message(path, index, total))
-        if len(found) > 1:
-            raise EditError(_occurrences_message(path, index, total, len(found)))
-        start = units[found[0]].start
-        stop = units[found[0] + len(needle) - 1].end
-        matched.append(TextReplacement(start, stop - start, new_text, index))
+        if len(starts) > 1:
+            raise EditError(_occurrences_message(path, index, total, len(starts)))
+        # The regex matched trailing whitespace and width variants too, so its span is the replacement span.
+        found = pattern.search(base_content, starts[0])
+        assert found is not None and found.start() == starts[0]
+        matched.append(TextReplacement(found.start(), found.end() - found.start(), new_text, index))
 
     matched.sort(key=lambda item: item.match_index)
     for previous, current in itertools.pairwise(matched):

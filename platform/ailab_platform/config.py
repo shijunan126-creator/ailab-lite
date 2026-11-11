@@ -243,6 +243,9 @@ class Settings(ContextBandSettings, BaseSettings):
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, gt=0)  # one delivered file
     max_sandbox_read_bytes: int = Field(default=10 * 1024 * 1024, gt=0)  # read tool
     max_sandbox_write_bytes: int = Field(default=20 * 1024 * 1024, gt=0)  # write/edit tools
+    # read may stream 10 MB; edit holds the file, the edited copy and the encoding at once,
+    # so its own ceiling keeps one edit well inside the Agent pod's memory budget (§6).
+    max_edit_bytes: int = Field(default=2 * 1024 * 1024, gt=0)
     max_auto_deliver_files: int = Field(default=20, gt=0)
     max_workspace_bytes: int = Field(default=60 * 1024 * 1024, gt=0)  # compressed workspace carried between turns of a conversation
     workspace_ttl_days: int = Field(default=3, ge=0)  # retain per-turn workspaces for forks/retry this long; 0 = keep all

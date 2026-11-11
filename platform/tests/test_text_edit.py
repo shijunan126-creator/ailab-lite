@@ -13,6 +13,7 @@ from ailab_platform.domain.text_edit import (
     apply_edits,
     apply_replacements_to_original,
     edit_text,
+    folded_text,
     normalize_to_lf,
 )
 
@@ -79,7 +80,11 @@ class TestFuzzyMatching:
         assert edit("你好，世界\n你好（世界）\n", [("你好,世界\n你好(世界)\n", "你好，pi\n你好(pi)\n")]) == "你好，pi\n你好(pi)\n"
 
     def test_compatibility_forms(self):
-        assert edit("ＡＢＣ１２３\ncafe\u0301\n", [("ABC123\ncafé\n", "XYZ789\ncoffee\n")]) == "XYZ789\ncoffee\n"
+        # Widths fold; a decomposed "e"+U+0301 does not, deliberately: models quote composed text and
+        # supporting the decomposition would put a per-character table back on every edit.
+        assert edit("ＡＢＣ１２３\ncafé\n", [("ABC123\ncafé\n", "XYZ789\ncoffee\n")]) == "XYZ789\ncoffee\n"
+        with pytest.raises(EditError, match="Could not find"):
+            edit("cafe\u0301\n", [("café", "coffee")])
 
     def test_smart_quotes(self):
         assert "world" in edit("console.log(\u2018hello\u2019);\n", [("console.log('hello');", "console.log('world');")])
@@ -120,6 +125,10 @@ class TestFuzzyMatching:
         """``str.count`` is non-overlapping, so "}\n}\n" in "}\n}\n}\n" used to look unique."""
         with pytest.raises(EditError, match="Found 2 occurrences"):
             edit("}\n}\n}\n", [("}\n}\n", "X\n")])
+
+    def test_quoted_trailing_spaces_are_consumed(self):
+        """The old bug: the quoted space was dropped from the pattern, so the file's own space stayed behind."""
+        assert edit('say "x" = 1\n', [("say “x” = ", "say “y” = ")]) == "say “y” = 1\n"
 
     def test_the_matched_occurrence_is_the_one_replaced(self):
         result = edit("replace me   \nafter   \n", [("replace me\n", "after\n")])
@@ -212,3 +221,24 @@ def test_random_mixed_endings_always_normalize_to_the_diffed_content():
             continue  # duplicate, not found or no change
         written = apply_replacements_to_original(original, applied.replacements)
         assert normalize_to_lf(written) == applied.new_content
+
+
+def test_a_five_megabyte_chinese_file_edits_quickly_without_a_second_copy():
+    """The per-character table this replaced peaked at 403 MiB and 8.3 s for 5 MB in a 256 MiB pod."""
+    import time
+    import tracemalloc
+
+    folded_text("warm the fold tables: their one-time build is not part of the measured edit")
+    body = "".join(f"第{i}段：价格（含税）为１００元，保持不变。\n" for i in range(200000))
+    assert len(body) > 5 * 1024 * 1024
+    old_text = "第199999段：价格(含税)为100元，保持不变。"  # half-width: forces the fuzzy path
+    tracemalloc.start()
+    started = time.perf_counter()
+    result = edit_text(body, [(old_text, "第199999段：已改。")], "/workspace/work/a.txt")
+    _, peak = tracemalloc.get_traced_memory()
+    elapsed = time.perf_counter() - started
+    tracemalloc.stop()
+    assert result.startswith("第0段：") and result.endswith("第199999段：已改。\n")
+    assert result.count("价格（含税）为１００元") == 199999
+    assert elapsed < 0.5, elapsed
+    assert peak < 32 * 1024 * 1024, peak
