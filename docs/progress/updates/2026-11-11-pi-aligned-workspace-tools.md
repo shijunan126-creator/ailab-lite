@@ -81,9 +81,22 @@
 
 容器里暴露并修掉的一处真 bug：短命令（helper 的 short-command 形态）走的是 `_final` 的提前返回分支，非 0 退出的 `error` 和 `killed_by` 都被丢掉——也就是说模型看到的失败命令只有 `ok:false` 和裸 `exit_code`。现在提前返回也带上判定，`killed_by` 也进结果。
 
+## 补齐的整栈验收（2026-11-11 晚）
+
+外置 SSD 上起了一个专门的构建 VM（`COLIMA_HOME=~/AILabDisk/local/colima`、profile `sbxbuild`、60 GiB 盘），镜像层全部落在 SSD。
+
+- **完整 sbx-office 镜像**：`docker build -f images/sbx-office/Dockerfile` 成功，`sbx-office:check` 4.85 GB。`--network none --memory 2g --cpus 1` 跑仓库自带 `smoke/smoke.sh`：OFFICE READER PASS、pptx/xlsx 生成、LibreOffice 渲染 1 秒、三条外网探测全部被拒、内存峰值 199 MiB、`SMOKE PASS`。镜像里 `rg 14.1.1`、`fdfind 10.2.0`（无 `fd`）、Python 3.12.16、`/opt/skills` 索引齐全（构建期 `skill_index.py --check --requirements` 通过）。
+- **沙箱程序在真镜像里**：以 uid 10001 跑 `LS_PROGRAM`/`GREP_PROGRAM`/`FIND_PROGRAM`，`/workspace` 的 inputs/outputs/work 正常列出，`grep` 命中 `.hidden`、`find` 返回相对路径。
+- **contracts**：起了临时 PostgreSQL 16 + Redis 7，`AILAB_TEST_OFFICE_IMAGE=sbx-office:check`。**135 项、0 失败、52 跳过**；跳过项全是缺外部服务的（OpenSandbox、MinIO/S3、clamd、crawler、OIDC、storage-docker tmpfs）。四格式真实 create/edit/convert 契约在真镜像里通过。
+- **E2E**：`AILAB_E2E=1 pytest e2e`（四服务 + Redis + Portal 生产构建 + Chromium），**210 项、0 失败、15 跳过**。
+- **Next 生产构建**：工作树内 `npm ci --ignore-scripts && npm run build` → `✓ Compiled successfully`，路由表完整。
+- **run_subtasks 并发写同一文件（真模型）**：用真 `AgentLoop`（`FakePlatform` + 真 Broker + 真 ModelTransport）跑一次 Work run，状态 `succeeded`；模型起 3 个子任务，每个子任务都 `edit` 同一份 `/workspace/report/findings.md` 的不同小节，三节全部落盘、数值正确（30/70/50）。另加了一条确定性回归 `test_two_concurrent_edits_of_one_file_both_land`：两个并发 `edit` 走 `execute_tool`，读改写之间插 50 ms 延迟，两次都成功且文件内容完整（靠 `(lease, path)` 队列串行）。
+
 ## 没覆盖到 / 风险
 
-- 没有重建完整 sbx-office 镜像：只验证了 base + 快照里能装出 `rg`/`fdfind`，以及这些程序在该用户下工作；Office/TeX/Chromium 那一层、`requirements.lock`、`skill_index.py --check` 未在本机重建。
+- 镜像只在本机 arm64 构建并冒烟，没有做 amd64/双架构构建，也没有导入 k3s/gVisor 跑 `tests/t1_image.sh` 的第 3、4 步。
+- E2E 用的是默认 mock 沙箱（真实栈 + 真实 Portal，沙箱替身）；`AILAB_E2E_SANDBOX_PROVIDER=docker/opensandbox` 那一档需要 disposable OpenSandbox 服务，没跑。
+- contracts 的 52 项跳过需要 OpenSandbox、MinIO、clamd、crawler、OIDC、storage-docker 等外部服务。
 - 真实沙箱的等待时序没跑：多段 30 秒等待、`remaining_seconds` 递减、期限到点杀进程组，目前用假 Broker 和本地进程验证（`LocalBroker` 真跑 helper），未在 Docker/OpenSandbox 里跑。
 - 未跑 `tests/contracts`（需真实后端）与 `platform/e2e`。
 - 真模型验收在本机映射目录里跑（不是容器），容器内的验证用脚本直接调 `execute_tool`，没有让模型参与。

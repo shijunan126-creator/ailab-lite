@@ -5,7 +5,8 @@
 - 真模型验收（DeepSeek V4.1 Flash / OpenCode Go，16 个任务 29 次调用）：改前模型完全不用 read/edit/write、一律 bash + python 改文件；补 4 行工具选择规则后 read 出现在 9/16 个任务里，edit/write/ls/find/grep 均按意图使用。据此修了三处：grep/find 无结果写明搜索范围并给计数、bash 非 0 退出补 `Command exited with code N`、交付只在要成品时。等待窗口语义实测通过（10 秒窗口连续三次 bash_wait 后拿到最终结果，未被当成超时）。
 - 验证：[记录](updates/2026-11-11-pi-aligned-workspace-tools.md)。ruff 通过；单元套件 3014 项、16 失败（与未改基线逐条相同，缺 OCR/渲染环境）、189 跳过；Portal 286 项 + `tsc` 干净。提示词 system 2591 → 2765 tokens，含 28 个工具 schema 时 7283。
 - 容器内验证：按同一 base 与 Debian 快照装了 `ripgrep`/`fd-find`，在 uid 10001 下把 ls/grep/find/read/edit/write/bash/bath_wait/期限杀进程/kill 全跑通（`fd-find` 实际是 `fdfind`，探针回退必要）；由此修掉短命令丢失 `error`/`killed_by` 的真 bug。
-- 未覆盖：完整 sbx-office 镜像（Office/TeX 层）、Next 生产构建、contracts、E2E。
+- 整栈补齐：完整 sbx-office 镜像在本机 arm64 构建成功（4.85 GB，SMOKE PASS，rg/fdfind 在、渲染 1 秒、断网），contracts 135 项 0 失败（52 项缺外部服务跳过），E2E 210 项 0 失败（15 跳过），Next 生产构建通过，真 AgentLoop 下 3 个子任务并发 edit 同一文件三节全落盘。
+- 未覆盖：amd64/双架构镜像与 k3s/gVisor 冒烟、E2E 的 docker/opensandbox 沙箱档、依赖外部服务的 contracts。
 - 下一步：等用户决定是否推送/开 PR；镜像重建与前缀缓存真模型复测在 PR 后补。
 
 ---

@@ -193,3 +193,28 @@ def test_the_catalog_never_offers_the_same_tool_twice(catalog):
 def test_the_wait_tool_asks_for_one_wait_parameter_name():
     wait = next(tool for tool in tools_for_turn(2) if tool["function"]["name"] == "bash_wait")
     assert set(wait["function"]["parameters"]["properties"]) == {"handle", "wait_seconds", "offset"}
+
+
+def test_two_concurrent_edits_of_one_file_both_land():
+    """run_subtasks runs 2-4 children at once; without the queue the second read-modify-write wins."""
+    import time
+
+    class SlowBroker(FakeBroker):
+        async def get_file(self, lease, path):
+            data = await super().get_file(lease, path)
+            await asyncio.sleep(0.05)  # widen the window between read and write
+            return data
+
+    broker = SlowBroker({f"{WORK}/a.md": b"## a\n\n## b\n"})
+
+    async def scenario():
+        return await asyncio.gather(
+            execute_tool("edit", {"path": f"{WORK}/a.md", "edits": [{"oldText": "## a", "newText": "## a\n\nx"}]}, "lease", broker),
+            execute_tool("edit", {"path": f"{WORK}/a.md", "edits": [{"oldText": "## b", "newText": "## b\n\ny"}]}, "lease", broker),
+        )
+
+    started = time.monotonic()
+    results = asyncio.run(scenario())
+    assert [r["ok"] for r in results] == [True, True]
+    assert broker.files[f"{WORK}/a.md"] == b"## a\n\nx\n\n## b\n\ny\n"
+    assert time.monotonic() - started >= 0.1  # serialized, not interleaved
