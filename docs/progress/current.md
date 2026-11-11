@@ -8,7 +8,7 @@
 - 整栈补齐：完整 sbx-office 镜像在本机 arm64 构建成功（4.85 GB，SMOKE PASS，rg/fdfind 在、渲染 1 秒、断网），contracts 135 项 0 失败（52 项缺外部服务跳过），E2E 210 项 0 失败（15 跳过），Next 生产构建通过，真 AgentLoop 下 3 个子任务并发 edit 同一文件三节全落盘。
 - 未覆盖：amd64/双架构镜像与 k3s/gVisor 冒烟、E2E 的 docker/opensandbox 沙箱档、依赖外部服务的 contracts。
 - 独立代码审查（2026-11-12）提出 3 条必须修 + 4 条应该修 + 补充项，已全部修复并各配"不修就失败"的用例：`edit` 模糊匹配只看匹配段（不再把整行全角标点折成半角）；重叠出现计数；子任务调用编号带父 step（否则第二批同命令复用旧句柄）；恢复时只有真的丢失才算 `UNCERTAIN_EXEC`、事件名沿用原工具名；`grep` 的 glob `removeprefix` 与 `--no-require-git`；`bash_kill` 成功即 ok；bash 结果统一一个形状（去掉 `output_tail`，缺口有 elided 标记）；`write` 进文件队列；`timeout` 参数忽略并附 note；主参数改 `command`；提示词 2765 → 2657 tokens。
-- 验证：ruff 干净；全量 3166 项 / 16 失败（与未改基线逐条相同）/ 276 跳过；改动模块定向 342 项 0 失败；Portal 286 项 + `tsc` 干净；真模型重跑 9 个任务，`command` 参数与 10 秒窗口多次 `bash_wait` 均正常。
+- 验证：ruff 干净；全量 3166 项 / 16 失败（与未改基线逐条相同）/ 276 跳过；改动模块定向 342 项 0 失败；Portal 286 项 + `tsc` 干净；整栈 E2E 210 项 0 失败；真模型重跑 9 个任务，`command` 参数与 10 秒窗口多次 `bash_wait` 均正常。
 - 下一步：等用户决定是否推送/开 PR；镜像重建与前缀缓存真模型复测在 PR 后补。
 
 ---

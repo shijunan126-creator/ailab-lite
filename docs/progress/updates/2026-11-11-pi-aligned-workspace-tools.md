@@ -122,6 +122,7 @@
 - 全量 `pytest tests -q -n auto`：**3166 项 / 16 失败 / 276 跳过**，16 项与未改基线的 `test_document_context`(3)、`test_document_reading_reliability`(12)、`test_library_render`(1) 逐条相同（缺 OCR/渲染依赖）；跳过项全部因为没设 PG/Redis/OSB/S3/Docker 等外部服务。
 - 改动模块定向：`tests/test_bash_wait_window.py`、`test_text_edit.py`、`test_workspace_tools.py`、`test_workspace_query.py`、`test_subtasks.py`、`test_background_exec.py`、`test_agent_loop.py`、`test_prefix_cache.py`、`test_stuck.py` 共 **342 项 0 失败**。
 - Portal：`npm ci --ignore-scripts`、`tsc --noEmit` 干净、`npm test` **48 文件 / 286 项通过**。
+- 整栈 E2E 重跑（四服务 + Redis + Portal 生产构建 + Chromium，mock 沙箱）：**210 项 / 0 失败 / 15 跳过**，与修正前一致。
 - 真模型（DeepSeek V4.1 Flash / OpenCode Go）重跑 9 个任务：`bash` 已用新参数名 `command`，40 秒脚本按 10 秒窗口分 4 次等待后拿到 `exit_code 0` 与最后一行；`edit`/`write`/`read`/`grep`/`find`/`ls` 按意图使用，未出现退回 `bash cat/sed` 的情况。
 
 ## 没覆盖到 / 风险
