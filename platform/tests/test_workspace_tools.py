@@ -178,3 +178,18 @@ def test_a_sandbox_query_failure_becomes_a_tool_error():
     broker = FakeBroker(exit_code=1)
     with pytest.raises(ToolError, match="沙箱查询失败"):
         call("ls", {"path": WORK}, broker)
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [lambda: tools_for_turn(1), lambda: tools_for_turn(2), lambda: tools_for_chat(1), lambda: tools_for_chat(2)],
+)
+def test_the_catalog_never_offers_the_same_tool_twice(catalog):
+    # A duplicate schema is a request the provider may reject; one tool, one name.
+    names = [tool["function"]["name"] for tool in catalog()]
+    assert len(names) == len(set(names)), names
+
+
+def test_the_wait_tool_asks_for_one_wait_parameter_name():
+    wait = next(tool for tool in tools_for_turn(2) if tool["function"]["name"] == "bash_wait")
+    assert set(wait["function"]["parameters"]["properties"]) == {"handle", "wait_seconds", "offset"}

@@ -245,24 +245,6 @@ for _name, _description, _properties in (
             },
         }
     )
-    TOOLS.append(
-        {
-            "type": "function",
-            "function": {
-                "name": _name,
-                "description": _description,
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "handle": {"type": "string"},
-                        "seconds": {"type": "integer", "minimum": 0, "maximum": 300},
-                        "offset": {"type": "integer", "minimum": 0},
-                    },
-                    "required": ["handle"],
-                },
-            },
-        }
-    )
 
 
 ASK_USER = {
