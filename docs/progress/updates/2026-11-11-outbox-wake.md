@@ -23,6 +23,8 @@
 
 - 完整双库、E2E 与 Portal build 交 CI（AGENTS §9 不在本地重复全套）。[PR #185](https://github.com/shijunan126-creator/ailab-lite/pull/185) 11 项 CI 全绿（最终 head 见 PR）：SQLite/PostgreSQL 全套、三片 E2E、quality、crawler、shell、storage-contracts。首次 postgres 失败是 `tests/faults/test_broker_recovery.py::test_reserved_render_slot_survives_full_general_pool_and_queue[redis]` 的 0.1 秒墙钟断言（实际 `queue_deadline`、期望 `queue_full`），不经过本次改动的 API/outbox 路径，重跑通过。之后仅文档更新。
 
+已合并：用户要求合并，PR #185 squash 为 `27ed82cd`，提交树与 head `39d85b02` 一致；未部署。
+
 ## 没覆盖到 / 风险
 
 - 唤醒是进程内的：多 API 副本时，请求所在进程与派发器不在同一进程就等 1 秒轮询；当前单进程部署无影响，行为最多和改动前一样。

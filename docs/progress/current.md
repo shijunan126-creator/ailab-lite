@@ -3,7 +3,8 @@
 - 用户授权：按讨论实现“提交后直接叫醒派发”，不改变 outbox 可靠性契约。分支 `perf/outbox-wake`，base `origin/main@c8f93131`；改动只在 `/tmp/ailab-outbox-wake` 工作树，主工作区既有改动未动。
 - 已完成：`after_flush` 标记本事务新增的 `OutboxMessage`，`after_commit` 唤醒 `dispatch_forever`；savepoint 内提交跳过（行对派发器尚不可见，由外层提交唤醒）。派发循环改为事件等待 + 1 秒轮询兜底，`reconcile` 节拍不变。Run/文件/预览/OCR/文档及直接写 outbox 的路径都覆盖，接口不用逐个接线。
 - 验证：[记录](updates/2026-11-11-outbox-wake.md)。新增 5 项测试含红证据，相关模块 232 项通过 / 7 跳过，ruff 通过。[PR #185](https://github.com/shijunan126-creator/ailab-lite/pull/185) 11 项 CI 全绿（双库、三片 E2E、quality 等，最终 head 见 PR）；首次 postgres 失败是 broker 队列 0.1 秒墙钟断言，与本改动无关，重跑通过。
-- 下一步：PR 已 green，等待用户决定是否合并；合并后只需增量更新 API 镜像，本轮未部署。
+- 已合并：用户要求合并，PR #185 squash 为 `27ed82cd`，提交树与验证过的 head `39d85b02` 一致；分支与临时工作树已删除。
+- 下一步：无待实现项；部署需用户当次明确要求（只需增量更新 API 镜像）。
 
 ---
 
