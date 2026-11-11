@@ -2,7 +2,9 @@
 
 - 用户要求：记忆行去掉「来源对话 / 等 N 段对话」，后端保留来源数据并保证删除链正确。分支 `feat/memory-hide-sources`，base `main@bc5c5b5c`；未授权部署。
 - 已完成：Portal 只显示内容与日期；API 视图不再返回 `sources`，删除无调用方的来源接口；删除链核对并补测试。详见[记录](updates/2026-11-11-memory-hide-sources.md)。
-- 下一步：推送、开 PR、CI 全绿后合并；部署需用户当次明确要求（API + Portal）。
+- CI：首轮双库只挂 `test_memory_v2.py` 的来源批量查询断言（该查询已删），改为断言视图不查来源；`e70c5d0d` 11 项全绿。
+- 已合并：用户要求合并，[PR #187](https://github.com/shijunan126-creator/ailab-lite/pull/187) squash 为 `087c60a6`，提交树与 `e70c5d0d` 一致；分支已删除。
+- 下一步：无待实现项；部署需用户当次明确要求（API + Portal）。
 
 ---
 
