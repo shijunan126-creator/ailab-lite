@@ -15,4 +15,5 @@
 - `tests/test_memory_source_retention.py` 改为直接断言 `source_run_ids` 与 `memory_item_sources` 一致，并新增「删除记忆行后索引表无残留」；视图断言不含 `sources`。
 - 本地：ruff 通过；`test_memory_source_retention/document/summary/recall/query_plans` 全部通过；Portal `memory-view` 10 项通过、`tsc` 干净；1280/375 宽浏览器截图确认（Playwright 拦截接口，临时文件已删）。
 - `tests/test_document_context.py` 有 3 项单独运行时报缺表，在 `main` 上同样失败，与本改动无关，以 CI 全套为准。
+- CI 首轮（`d85dff5c`）双库均只失败 `test_memory_v2.py::test_management_sources_are_batched_for_both_views`：它断言视图恰好一次来源批量查询，本次已去掉该查询；改为断言视图不查来源。
 - 未做：真实模型检查（不涉及请求构造）；未部署。

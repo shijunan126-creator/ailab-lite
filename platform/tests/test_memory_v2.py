@@ -53,7 +53,8 @@ def test_stagger_is_stable_and_spreads_hundreds_of_users():
     assert offsets == [offset(f"synthetic_user_{i}", 180) for i in range(500)]
 
 
-def test_management_sources_are_batched_for_both_views():
+def test_management_view_reads_no_sources():
+    """Sources stay in the database for organizing and deletion; the page never joins runs to show them."""
     from fastapi.testclient import TestClient
     from sqlalchemy import event
 
@@ -84,7 +85,7 @@ def test_management_sources_are_batched_for_both_views():
                 assert sum(len(s["items"]) for s in memory_view(None, user, db)["sections"]) == 10
             finally:
                 event.remove(connection, "before_cursor_execute", capture)
-            assert len(queries) == 1
+            assert queries == []
 
 
 def test_manual_memory_cannot_forge_prompt_tags():
