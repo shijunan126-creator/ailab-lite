@@ -228,13 +228,6 @@ class MemoryDreamRunOut(BaseModel):
     finished_at: datetime | None = None
 
 
-class MemorySource(BaseModel):
-    run_id: str
-    conversation_id: str | None
-    conversation_title: str
-    date: datetime
-
-
 class MemoryItem(BaseModel):
     id: str
     project_id: str | None
@@ -243,7 +236,6 @@ class MemoryItem(BaseModel):
     content: str
     observed_at: datetime
     updated_at: datetime
-    sources: list[MemorySource] = Field(default_factory=list)
 
 
 class MemoryItemPatch(BaseModel):

@@ -182,7 +182,7 @@ def test_add_without_revision_is_deduplicated_and_enforces_hard_ceiling(monkeypa
             "sections",
         }
         item = view["sections"][0]["items"][0]
-        fields = {"id", "project_id", "kind", "created_by", "content", "observed_at", "updated_at", "sources"}
+        fields = {"id", "project_id", "kind", "created_by", "content", "observed_at", "updated_at"}
         assert set(item) == fields
         assert (
             client.post(

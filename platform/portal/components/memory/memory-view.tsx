@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, MemoryItem, MemoryView } from "../../lib/api";
 import { confirmDialog } from "../../lib/dialog";
@@ -116,21 +115,6 @@ export function organizeNote(run: Run): string {
 type Change = { content: string };
 type Act = { change: (item: MemoryItem, c: Change) => Promise<boolean>; remove: (item: MemoryItem) => void; busy: boolean };
 
-/** Where a line came from: the conversation it was learned in (a link), how many more, and when. */
-function Provenance({ item }: { item: MemoryItem }) {
-  const first = item.sources.find((s) => s.conversation_id);
-  const others = item.sources.length - (first ? 1 : 0);
-  return (
-    <span className="memory-meta">
-      {first ? (
-        <Link href={`/c/${first.conversation_id}`} title="打开来源对话">{first.conversation_title || "对话"}</Link>
-      ) : null}
-      {others > 0 ? <span>{first ? `等 ${others + 1} 段对话` : `${others} 段对话`}</span> : null}
-      <span>{shortDate(item.observed_at || item.updated_at)}</span>
-    </span>
-  );
-}
-
 function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable: boolean }) {
   const [draft, setDraft] = useState<string | null>(null); // the text being edited in place
   const actions = [
@@ -182,7 +166,7 @@ function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable
       <div className="memory-item-text">
         {item.content}
       </div>
-      <Provenance item={item} />
+      <span className="memory-meta">{shortDate(item.observed_at || item.updated_at)}</span>
       {editable ? <RowMenu label={item.content} actions={actions} disabled={act.busy} /> : null}
     </li>
   );
