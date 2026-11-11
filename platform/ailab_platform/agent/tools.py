@@ -126,9 +126,9 @@ TOOLS: list[dict] = [
         "function": {
             "name": "bash",
             "description": (
-                "在沙箱内执行 shell 命令。wait_seconds 是本次等待窗口（1-300 秒）：窗口内跑完就直接返回结果，"
-                "到点仍在运行则返回句柄和已有输出。窗口结束不是超时，命令会继续跑；"
-                "要立即拿句柄不等，用 background=true。"
+                "在沙箱内执行 shell 命令。结果里直接有 exit_code、stdout、stderr：非 0 退出就是命令的失败结果，"
+                "不用在命令末尾加 echo $? 或 | tail 去看。wait_seconds 是本次等待窗口（1-300 秒）：窗口内跑完就直接返回结果，"
+                "到点仍在运行则返回句柄和已有输出。窗口结束不是超时，命令会继续跑；要立即拿句柄不等，用 background=true。"
             ),
             "parameters": {
                 "type": "object",
@@ -983,7 +983,7 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         path = _workspace_path(str(args.get("path") or WORKSPACE))
         glob = args.get("glob")
         try:
-            output = await workspace_query.search_text(
+            output, matches = await workspace_query.search_text(
                 broker,
                 lease_id,
                 pattern,
@@ -996,7 +996,7 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             )
         except workspace_query.QueryError as exc:
             raise ToolError(str(exc)) from exc
-        return {"ok": True, "path": path, "output": output}
+        return {"ok": True, "path": path, "output": output, "matches": matches}
 
     if name == "find":
         pattern = str(args.get("pattern") or "")
@@ -1004,10 +1004,10 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             raise ToolError("find requires pattern")
         path = _workspace_path(str(args.get("path") or WORKSPACE))
         try:
-            output = await workspace_query.find_files(broker, lease_id, pattern, path, args.get("limit"))
+            output, found = await workspace_query.find_files(broker, lease_id, pattern, path, args.get("limit"))
         except workspace_query.QueryError as exc:
             raise ToolError(str(exc)) from exc
-        return {"ok": True, "path": path, "output": output}
+        return {"ok": True, "path": path, "output": output, "files": found}
 
     if name == "deliver_file":
         path = _workspace_path(str(args.get("path") or ""), OUTPUTS)

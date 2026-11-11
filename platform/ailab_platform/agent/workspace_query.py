@@ -320,8 +320,8 @@ async def search_text(
     literal: bool = False,
     context: int = 0,
     limit: int | None = None,
-) -> str:
-    """Matching lines with file paths and line numbers, parsed from ``rg --json``."""
+) -> tuple[str, int]:
+    """Matching lines with file paths and line numbers, parsed from ``rg --json``, plus how many matched."""
     effective = _limit(limit, GREP_DEFAULT_LIMIT)
     context = context if isinstance(context, int) and not isinstance(context, bool) else 0
     request = {
@@ -336,7 +336,8 @@ async def search_text(
     payload = await _run(broker, lease_id, _command(GREP_PROGRAM, [json.dumps(request), DEFAULT_MAX_BYTES, GREP_MAX_LINE_LENGTH]))
     lines = payload.get("lines") or []
     if not lines:
-        return "No matches found"
+        # Say what was searched: a bare "no matches" reads like an unfinished tool call and invites a re-check.
+        return f'No matches found for "{pattern}" under {path}', 0
     output = "\n".join(lines)
     notices = []
     if payload.get("limit_reached"):
@@ -347,11 +348,11 @@ async def search_text(
         notices.append(f"Some lines truncated to {GREP_MAX_LINE_LENGTH} chars. Use read tool to see full lines")
     if notices:
         output += f"\n\n[{'. '.join(notices)}]"
-    return output
+    return output, payload.get("matches", 0)
 
 
-async def find_files(broker, lease_id: str, pattern: str, path: str, limit: int | None = None) -> str:
-    """Paths matching a glob, relative to the search root, from ``fd``."""
+async def find_files(broker, lease_id: str, pattern: str, path: str, limit: int | None = None) -> tuple[str, int]:
+    """Paths matching a glob, relative to the search root, from ``fd``, plus how many matched."""
     effective = _limit(limit, FIND_DEFAULT_LIMIT)
     payload = await _run(
         broker,
@@ -360,7 +361,7 @@ async def find_files(broker, lease_id: str, pattern: str, path: str, limit: int 
     )
     lines = payload.get("lines") or []
     if not lines:
-        return "No files found matching pattern"
+        return f'No files found matching "{pattern}" under {path}', 0
     output = "\n".join(lines)
     notices = []
     if payload.get("limit_reached"):
@@ -369,4 +370,4 @@ async def find_files(broker, lease_id: str, pattern: str, path: str, limit: int 
         notices.append(f"{format_size(DEFAULT_MAX_BYTES)} limit reached")
     if notices:
         output += f"\n\n[{'. '.join(notices)}]"
-    return output
+    return output, len(lines)

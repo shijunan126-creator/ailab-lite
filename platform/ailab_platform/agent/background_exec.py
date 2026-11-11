@@ -138,6 +138,8 @@ def _final(response: dict, action: str, output: _BoundedOutput) -> dict:
     for key in ("duration_ms", "stdout", "stderr", "error", "idle_seconds", "total_bytes", "truncated", "elapsed_seconds", "log_path"):
         if response.get(key) not in (None, ""):
             final[key] = response[key]
+    if response["exit_code"] != 0 and not final.get("error"):
+        final["error"] = f"Command exited with code {response['exit_code']}"
     if response.get("killed_by") == "deadline":
         final["remaining_seconds"] = 0
         final["error"] = "命令超过平台期限，已被终止（这不是等待窗口结束，也不是命令自己退出）"

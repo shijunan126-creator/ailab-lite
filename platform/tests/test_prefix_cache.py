@@ -2024,7 +2024,7 @@ def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode, fmt)
     system = requests[0]["messages"][0]["content"]
     assert "只回答用户本次问的内容" in system
     if mode == "work":
-        assert "保留真实退出码" in system and "inputs只注入本轮附件" not in system
+        assert "exit_code、stdout 和 stderr" in system and "inputs只注入本轮附件" not in system
     else:
         search = next(t for t in requests[0]["tools"] if t["function"]["name"] == "search_document")
         assert "字面匹配" in search["function"]["description"]

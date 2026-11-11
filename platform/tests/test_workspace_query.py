@@ -201,15 +201,18 @@ class TestFormatting:
                 }
             )
         )
-        output = asyncio.run(search_text(broker, "lease", "x", "/workspace/work", limit=100))
+        output, _ = asyncio.run(search_text(broker, "lease", "x", "/workspace/work", limit=100))
         assert "100 matches limit reached. Use limit=200 for more, or refine pattern" in output
         assert "50.0KB limit reached" in output
         assert "Some lines truncated to 500 chars. Use read tool to see full lines" in output
 
-    def test_no_matches_reads_as_pi_does(self):
+    def test_no_matches_says_what_was_searched(self):
+        # A bare "no matches" reads like an unfinished call and makes models re-check with bash.
         broker = FakeBroker(stdout=json.dumps({"ok": True, "lines": [], "limit_reached": False}))
-        assert asyncio.run(search_text(broker, "lease", "x", "/workspace/work")) == "No matches found"
-        assert asyncio.run(find_files(broker, "lease", "*.md", "/workspace/work")) == "No files found matching pattern"
+        text, matches = asyncio.run(search_text(broker, "lease", "x", "/workspace/work"))
+        assert text == 'No matches found for "x" under /workspace/work' and matches == 0
+        text, files = asyncio.run(find_files(broker, "lease", "*.md", "/workspace/work"))
+        assert text == 'No files found matching "*.md" under /workspace/work' and files == 0
 
     def test_a_missing_binary_becomes_a_readable_message(self):
         broker = FakeBroker(stdout=json.dumps({"ok": False, "error": "sandbox image has no ripgrep (rg)"}))
