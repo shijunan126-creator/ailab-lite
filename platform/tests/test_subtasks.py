@@ -131,3 +131,38 @@ def test_v2_children_copy_original_and_view_in_parent_lease_without_platform_doc
         t["function"]["name"] in {"read_library_file", "read_document", "view_document", "extract_text"} for t in request["tools"]
     )
     assert model.requests["parent"][0]["tools"] == request["tools"]
+
+
+def test_the_same_command_in_a_second_batch_is_a_new_execution():
+    """Child invocations must include the parent step: otherwise the handle matches batch one and the
+    helper answers with its old result instead of running the command again."""
+    command = {"command": "python build.py", "background": True}
+    model = Routing(
+        [
+            LLMResponse(tool_calls=[ToolCall("s1", "run_subtasks", {"tasks": TASKS})]),
+            LLMResponse(tool_calls=[ToolCall("s2", "run_subtasks", {"tasks": TASKS})]),
+            LLMResponse(content="完成"),
+        ],
+        {
+            "甲": [
+                LLMResponse(tool_calls=[ToolCall("b1", "bash", command)]),
+                LLMResponse(content="甲1"),
+                LLMResponse(tool_calls=[ToolCall("b3", "bash", command)]),
+                LLMResponse(content="甲2"),
+            ],
+            "乙": [
+                LLMResponse(tool_calls=[ToolCall("b2", "bash", command)]),
+                LLMResponse(content="乙1"),
+                LLMResponse(tool_calls=[ToolCall("b4", "bash", command)]),
+                LLMResponse(content="乙2"),
+            ],
+        },
+    )
+    _, broker = _run(model)
+    starts = [
+        json.loads(data)["handle"]
+        for path, data in broker.put_calls
+        if path.startswith("/workspace/.ailab-exec-") and json.loads(data).get("action") == "start"
+    ]
+    assert len(starts) == 4  # two batches, two children each
+    assert len(set(starts)) == 4  # every call is its own execution

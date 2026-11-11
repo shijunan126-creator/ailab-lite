@@ -218,3 +218,27 @@ def test_two_concurrent_edits_of_one_file_both_land():
     assert [r["ok"] for r in results] == [True, True]
     assert broker.files[f"{WORK}/a.md"] == b"## a\n\nx\n\n## b\n\ny\n"
     assert time.monotonic() - started >= 0.1  # serialized, not interleaved
+
+
+def test_a_write_and_an_edit_of_one_file_cannot_interleave(monkeypatch):
+    """Without the queue the edit reads the old content, the write lands, and the edit then writes its own copy back."""
+
+    class SlowBroker(FakeBroker):
+        async def get_file(self, lease_id, path):
+            data = await super().get_file(lease_id, path)
+            await asyncio.sleep(0.05)  # widen the read-modify-write window
+            return data
+
+    broker = SlowBroker({f"{WORK}/a.md": b"## a\n"})
+
+    async def scenario():
+        edit = asyncio.create_task(
+            execute_tool("edit", {"path": f"{WORK}/a.md", "edits": [{"oldText": "## a", "newText": "## a\n\nx"}]}, "lease", broker)
+        )
+        await asyncio.sleep(0.01)  # the edit is already reading when the write starts
+        await execute_tool("write", {"path": f"{WORK}/a.md", "content": "REPLACED\n"}, "lease", broker)
+        return await edit
+
+    result = asyncio.run(scenario())
+    assert result["ok"] is True
+    assert broker.files[f"{WORK}/a.md"] == b"REPLACED\n"  # the whole-file write is the last one to land

@@ -228,3 +228,16 @@ class TestFormatting:
         broker = FakeBroker(stdout="not json")
         with pytest.raises(QueryError, match="沙箱查询没有返回可用的结果"):
             asyncio.run(list_directory(broker, "lease", "/workspace/work"))
+
+
+def test_grep_keeps_a_leading_dot_glob_and_ignores_like_find(tmp_path, bin_dir):
+    """``lstrip("./")`` ate the dot of ".env"/".github"; rg also needs --no-require-git to match fd."""
+    root = tmp_path / "work"
+    root.mkdir()
+    marker = tmp_path / "argv.json"
+    fake_tool(bin_dir, "rg", f"import json, sys, pathlib\npathlib.Path({str(marker)!r}).write_text(json.dumps(sys.argv))")
+    for glob in (".env*", ".github/**/*.yml"):
+        run_program(bin_dir, GREP_PROGRAM, [json.dumps({"path": str(root), "pattern": "x", "limit": 10, "glob": glob}), 51200, 500])
+        argv = json.loads(marker.read_text())
+        assert argv[argv.index("--glob") + 1] == glob
+        assert "--no-require-git" in argv

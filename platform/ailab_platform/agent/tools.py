@@ -19,7 +19,7 @@ from ..domain.text_truncate import read_lines
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
 from . import net_tools, subtasks, workspace_query
-from .background_exec import background_exec
+from .background_exec import background_exec, command_text
 from .document_tools import TOOLS as DOCUMENT_TOOLS
 from .file_mutation_queue import with_file_mutation_queue
 from .prompts import load_skill
@@ -133,11 +133,11 @@ TOOLS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "cmd": {"type": "string"},
+                    "command": {"type": "string"},
                     "wait_seconds": {"type": "integer", "minimum": 1, "maximum": 300, "default": 30},
                     "background": {"type": "boolean", "default": False},
                 },
-                "required": ["cmd"],
+                "required": ["command"],
             },
         },
     },
@@ -900,8 +900,8 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
     except net_tools.NetToolError as exc:
         raise ToolError(str(exc)) from exc
     if name in {"bash", "bash_wait", "bash_kill"}:
-        if name == "bash" and not str(args.get("cmd") or args.get("command") or "").strip():
-            raise ToolError("bash requires cmd")
+        if name == "bash" and not command_text(args).strip():
+            raise ToolError("bash requires command")
         try:
             return await background_exec(
                 name, args, lease_id, broker, max_seconds=ctx.exec_lifetime_seconds, handle=ctx.command_handle or None
@@ -912,7 +912,10 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         path = _workspace_path(str(args.get("path") or ""))
         content = str(args.get("content") or "")
         data = content.encode("utf-8")
-        await broker.put_file(lease_id, path, data)
+        # Same queue as ``edit``: subtasks write the same file at the same time, and the last
+        # read-modify-write must not land on top of a whole-file write.
+        async with with_file_mutation_queue(f"{lease_id}:{path}"):
+            await broker.put_file(lease_id, path, data)
         return {"ok": True, "path": path, "bytes": len(data)}
 
     if name == "read":

@@ -95,7 +95,14 @@ class SandboxSpy(FakeBroker):
             # realistic case after a lease is rebuilt (the /tmp job registry does not survive it).
             return {
                 "exit_code": 0,
-                "stdout": json.dumps({"ok": False, "running": False, "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}),
+                "stdout": json.dumps(
+                    {
+                        "ok": False,
+                        "running": False,
+                        "lost": True,
+                        "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动",
+                    }
+                ),
             }
 
         def run():

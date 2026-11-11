@@ -77,11 +77,11 @@ def test_background_tools_start_wait_kill_and_cap(tmp_path, monkeypatch):
             full = await execute_tool("bash", {"cmd": "true", "background": True}, "lease", broker)
             assert not full["ok"] and "上限" in full["error"]
             waited = await execute_tool("bash_wait", {"handle": start["handle"], "seconds": 1}, "lease", broker)
-            assert waited["running"] and waited["output_tail"] == "first"
+            assert waited["running"] and waited["stdout"] == "first"
             again = await execute_tool(
                 "bash_wait", {"handle": start["handle"], "seconds": 0, "offset": waited["total_bytes"]}, "lease", broker
             )
-            assert again["output_tail"] == ""
+            assert again["stdout"] == ""
         finally:
             killed = await execute_tool("bash_kill", {"handle": start["handle"]}, "lease", broker)
         assert not killed["running"] and killed["exit_code"] == -9
@@ -90,7 +90,9 @@ def test_background_tools_start_wait_kill_and_cap(tmp_path, monkeypatch):
         start = await execute_tool("bash", {"cmd": command, "background": True}, "lease", broker)
         waited = await execute_tool("bash_wait", {"handle": start["handle"], "seconds": 5}, "lease", broker)
         assert waited["exit_code"] == 0 and waited["total_bytes"] > 20000
-        assert waited["truncated"] and waited["output_tail"].endswith("TAIL\n") and len(waited["output_tail"]) <= 4000
+        # One bounded view of the whole output: head, an elision marker, then the tail the ring buffer kept.
+        assert waited["truncated"] and waited["stdout"].endswith("TAIL\n") and len(waited["stdout"]) <= 9200
+        assert "[elided " in waited["stdout"]
         assert sum(p.stat().st_size for p in broker.root.glob("*/log")) <= 4096
 
     asyncio.run(scenario())
@@ -131,6 +133,7 @@ def test_short_exec_single_roundtrip_preserves_streams_and_exit(tmp_path):
     assert result == {
         "ok": False,
         "exit_code": 7,
+        "running": False,
         "stdout": "out",
         "stderr": "err",
         "duration_ms": result["duration_ms"],
@@ -144,13 +147,13 @@ def test_unified_exec_yields_waits_and_reports_idle(tmp_path):
     async def scenario():
         result = await execute_tool("bash", {"cmd": "printf first; sleep 2; printf last", "yield_seconds": 1}, "lease", broker)
         assert len(broker.commands) == 1 and result["running"]
-        assert result["output_tail"] == "first" and result["total_bytes"] == 5
+        assert result["stdout"] == "first" and result["total_bytes"] == 5
         assert result["idle_seconds"] >= 0.5
         again = await execute_tool("bash_wait", {"handle": result["handle"], "seconds": 0}, "lease", broker)
         assert again["idle_seconds"] >= result["idle_seconds"]
         completed = await execute_tool("bash_wait", {"handle": result["handle"], "seconds": 300, "offset": 5}, "lease", broker)
         assert completed["exit_code"] == 0 and not completed["running"]
-        assert completed["output_tail"] == "last" and completed["total_bytes"] == 9
+        assert completed["stdout"].endswith("firstlast") and completed["total_bytes"] == 9
         assert completed["idle_seconds"] < 1
 
     asyncio.run(scenario())
@@ -238,7 +241,7 @@ def test_pause_kills_jobs_before_snapshot(tmp_path, legacy_registry):
         {"cmd": "true", "wait_seconds": 0},  # bash must wait at least a moment, or use background
         {"cmd": "true", "wait_seconds": 301},
         {"cmd": "true", "wait_seconds": True},
-        {"cmd": "true", "timeout_seconds": 5},  # no longer a wait window, and never a kill deadline
+        {"cmd": "true", "wait_seconds": "5"},
     ],
 )
 def test_invalid_wait_window_is_rejected_before_start(tmp_path, args):

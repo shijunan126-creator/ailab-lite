@@ -32,7 +32,7 @@ def test_timings_are_volatile_but_advancing_output_is_not():
     args = {"handle": "a" * 32, "seconds": 1}
     same = [("bash_wait", args, {"ok": True, "running": True, "total_bytes": 5, "idle_seconds": i}) for i in range(4)]
     assert detect_loop(log_for(same)) is None
-    advancing = [("bash_wait", args, {"ok": True, "running": True, "total_bytes": i, "output_tail": str(i)}) for i in range(20)]
+    advancing = [("bash_wait", args, {"ok": True, "running": True, "total_bytes": i, "stdout": str(i)}) for i in range(20)]
     assert detect_loop(log_for(advancing)) is None
 
 

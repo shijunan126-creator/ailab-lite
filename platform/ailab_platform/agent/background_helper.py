@@ -238,7 +238,9 @@ def control(payload):
             start_worker(payload, directory)
         payload = {**payload, "action": "wait", "initial": True}
     if not (directory / "meta").exists():
-        return {"ok": False, "running": False, "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}
+        # ``lost`` is the only signal a resumed run may turn into "uncertain": a finished command
+        # with a non-zero exit code is a real result and must reach the model unchanged.
+        return {"ok": False, "running": False, "lost": True, "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}
     meta = json.loads((directory / "meta").read_text())
     payload["log_bytes"] = meta["log_bytes"]
     if payload["action"] == "kill" and not (directory / "exit").exists():

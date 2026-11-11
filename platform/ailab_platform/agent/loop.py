@@ -39,7 +39,7 @@ from ..skill_registry import BASE_SKILLS, resolve_name
 from ..telemetry import span
 from ..title_text import normalize_title
 from . import discovery, net_tools, subtasks, watchdog
-from .background_exec import background_exec, command_handle
+from .background_exec import background_exec, command_handle, command_text
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, ContextPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
 from .context import ContextManager
@@ -1161,7 +1161,9 @@ class AgentLoop:
                 if version == 2:
                     available = available and c.name in {t["function"]["name"] for t in offered}
                 if available:
-                    result = await self._subtask_tool(turn, run_id, lease_id, c, messages, f"sub{index}:{used}:{ordinal}")
+                    # The parent step is part of the invocation: the same command in the same slot of a
+                    # second run_subtasks is a different execution, not a retry of the first one.
+                    result = await self._subtask_tool(turn, run_id, lease_id, c, messages, f"step{step}:sub{index}:{used}:{ordinal}")
                 else:
                     result = {"ok": False, "error": subtasks.REFUSED.format(name=c.name)}
                 child_images.extend(result.pop("_child_images", []))
@@ -1186,7 +1188,7 @@ class AgentLoop:
         budget.update()
         ctx.exec_lifetime_seconds = max(1, settings.run_max_seconds - budget.data["active_seconds"])
         if call.name == "bash":
-            ctx.command_handle = command_handle(run_id, invocation, str(call.arguments.get("cmd") or ""))
+            ctx.command_handle = command_handle(run_id, invocation, command_text(call.arguments))
         try:
             if call.name == "view_workspace_file" and ctx.document_tools_version == 2:
                 import base64
@@ -1370,9 +1372,10 @@ class AgentLoop:
                 }
             )
 
-    async def _run_tool(self, turn: _Turn, run_id: str, call, step: int, invocation: str = "") -> dict:
+    async def _run_tool(self, turn: _Turn, run_id: str, call, step: int, invocation: str = "", event_name: str | None = None) -> dict:
         image_start = len(self._states[run_id].get("pending_image_inputs", []))
-        await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
+        shown_name = event_name or call.name
+        await self._event(run_id, "agent.tool_call", {"step": step, "name": shown_name, "arguments": _clip_arguments(call.arguments)})
         tool = metrics.tool_label(call.name)
         tool_started = time.perf_counter()
         wanted = None
@@ -1608,7 +1611,7 @@ class AgentLoop:
                     120 if budget.data.get("pause_step") is not None else max(1, settings.run_max_seconds - budget.data["active_seconds"])
                 )
                 if call.name == "bash":
-                    ctx.command_handle = command_handle(run_id, invocation, str(call.arguments.get("cmd") or ""))
+                    ctx.command_handle = command_handle(run_id, invocation, command_text(call.arguments))
                 with span("agent.tool", tool=tool):
                     try:
                         result = await self._interruptible(
@@ -1716,13 +1719,10 @@ class AgentLoop:
             "agent.tool_result",
             {
                 "step": step,
-                "name": call.name,
+                "name": shown_name,
                 "ok": bool(result.get("ok")),
                 "exit_code": result.get("exit_code"),
-                "stdout": (
-                    (result.get("output_tail") if result.get("running") else result.get("stdout"))
-                    or (f"已读取技能说明（{len(shown)} 字）" if shown else "")
-                )[:2000],
+                "stdout": (result.get("stdout") or (f"已读取技能说明（{len(shown)} 字）" if shown else ""))[:2000],
                 **(
                     {
                         "running": bool(result.get("running")),
@@ -1891,22 +1891,28 @@ class AgentLoop:
         if record and "result" in record:
             return record["result"]
         if record and call.name in NON_REPLAYABLE:
-            handle = record.get("handle") or (
-                command_handle(run_id, invocation, str(call.arguments.get("cmd") or "")) if call.name == "bash" else ""
-            )
+            computed = command_handle(run_id, invocation, command_text(call.arguments)) if call.name == "bash" else ""
+            handle = record.get("handle") or computed
             if not handle:
                 return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True}
             # The command may still be running in this sandbox: continue waiting on that execution.
             # If the sandbox lost it, the helper says so and nothing is started again.
-            resumed = await self._run_tool(turn, run_id, ToolCall(call.id, "bash_wait", {"handle": handle}), step, invocation)
-            if resumed.get("ok") is False and not resumed.get("running"):
+            # The event keeps the original tool name so the UI closes the step it opened before the restart.
+            resumed = await self._run_tool(
+                turn, run_id, ToolCall(call.id, "bash_wait", {"handle": handle}), step, invocation, event_name=call.name
+            )
+            # No observable result at all (lost execution, an unrecoverable exit state, or the wait itself
+            # failed): the model must re-check the workspace, not re-run. A finished command, even with a
+            # non-zero exit code, is a real result and passes through untouched.
+            unobserved = resumed.get("exit_code") in (None, -1) and not resumed.get("running")
+            if resumed.get("lost") or unobserved:
                 return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True, "handle": handle}
             return {**resumed, "resumed": True}
         if not record:
             record = {"name": call.name, "started": True}
             if call.name == "bash":
                 # Deterministic, so a resumed run can wait on the same execution.
-                record["handle"] = command_handle(run_id, invocation, str(call.arguments.get("cmd") or ""))
+                record["handle"] = command_handle(run_id, invocation, command_text(call.arguments))
             state["tool_log"][invocation] = record
             if call.name in FILE_TOOLS:
                 state["workspace_dirty"] = True

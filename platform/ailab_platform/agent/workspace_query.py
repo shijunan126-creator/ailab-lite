@@ -92,14 +92,17 @@ if not rg:
 if not os.path.exists(root):
     fail("Path not found: " + root)
 is_directory = os.path.isdir(root)
-args = [rg, "--no-config", "--json", "--line-number", "--color=never", "--hidden"]
+# --no-require-git keeps the ignore rules identical to ``find``: fd adds it outside a git
+# repository, and both tools then honour a workspace's own .gitignore the same way.
+args = [rg, "--no-config", "--json", "--line-number", "--color=never", "--hidden", "--no-require-git"]
 if request.get("ignore_case"):
     args.append("--ignore-case")
 if request.get("literal"):
     args.append("--fixed-strings")
 glob = request.get("glob") or ""
 if glob:
-    args.extend(["--glob", glob.lstrip("./")])
+    # removeprefix, not lstrip: lstrip("./") would eat the dot of ".env" and ".github/**".
+    args.extend(["--glob", glob.removeprefix("./")])
 context = max(0, int(request.get("context") or 0))
 if context:
     args.extend(["--context", str(context)])

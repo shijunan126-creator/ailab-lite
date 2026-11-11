@@ -241,8 +241,8 @@ class Settings(ContextBandSettings, BaseSettings):
     preview_eager_max_bytes: int = Field(default=20 * 1024**2, ge=0)  # 0 disables speculative office/PDF previews
     sandbox_exec_timeout_seconds: int = Field(default=120, gt=0)
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, gt=0)  # one delivered file
-    max_sandbox_read_bytes: int = Field(default=10 * 1024 * 1024, gt=0)  # read_file tool
-    max_sandbox_write_bytes: int = Field(default=20 * 1024 * 1024, gt=0)  # write_file tool
+    max_sandbox_read_bytes: int = Field(default=10 * 1024 * 1024, gt=0)  # read tool
+    max_sandbox_write_bytes: int = Field(default=20 * 1024 * 1024, gt=0)  # write/edit tools
     max_auto_deliver_files: int = Field(default=20, gt=0)
     max_workspace_bytes: int = Field(default=60 * 1024 * 1024, gt=0)  # compressed workspace carried between turns of a conversation
     workspace_ttl_days: int = Field(default=3, ge=0)  # retain per-turn workspaces for forks/retry this long; 0 = keep all

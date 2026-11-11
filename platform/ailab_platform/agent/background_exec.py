@@ -52,18 +52,27 @@ def command_handle(run_id: str, invocation: str, command: str) -> str:
     return digest[:32]
 
 
-def _wait_seconds(args: dict, action: str) -> int:
-    # ``timeout`` used to mean the wait window and read as a kill deadline. It now means neither.
+def command_text(args: dict) -> str:
+    """The command itself; ``cmd`` stays accepted because older calls and checkpoints used it."""
+    value = args.get("command", args.get("cmd"))
+    return value if isinstance(value, str) else ""
+
+
+def _wait_seconds(args: dict, action: str) -> tuple[int, str]:
+    """The wait window and, when the model sent a retired argument, the sentence that explains it."""
+    note = ""
     for stale in ("timeout", "timeout_seconds"):
-        if stale in args:
-            raise ValueError(f"{stale} 不再支持：它既不指定等待窗口也不终止命令；用 wait_seconds 指定本次等待窗口，命令期限由平台决定")
+        if stale in args and not note:
+            # It used to mean the wait window and read as a kill deadline. It now means neither, and
+            # failing the call only costs the model a turn, so it is dropped with a note instead.
+            note = f"{stale} 已忽略：它既不设定等待窗口也不终止命令；本次等待用 wait_seconds，命令期限由平台决定"
     raw = args.get("wait_seconds", args.get("yield_seconds", args.get("seconds", DEFAULT_WAIT_SECONDS)))
     if isinstance(raw, bool) or not isinstance(raw, int):
         raise ValueError("wait_seconds 须是整数秒")
     low = 1 if action == "start" else 0
     if not low <= raw <= MAX_WAIT_SECONDS:
         raise ValueError(f"wait_seconds 须在 {low} 到 {MAX_WAIT_SECONDS} 秒之间")
-    return raw
+    return raw, note
 
 
 class _BoundedOutput:
@@ -129,40 +138,35 @@ async def _control(broker, lease_id: str, payload: dict, seconds: int) -> dict:
 
 
 def _final(response: dict, action: str, output: _BoundedOutput) -> dict:
-    """The command finished, or the request never started one: hand back what the model needs, unchanged."""
+    """The command finished, or the request never started one: one shape, whatever the helper answered with."""
     if "exit_code" not in response:
         return response  # capacity limit, lost handle, sandbox refusal
-    final = {"ok": response["exit_code"] == 0, "exit_code": response["exit_code"]}
-    for key in (
-        "duration_ms",
-        "stdout",
-        "stderr",
-        "error",
-        "killed_by",
-        "idle_seconds",
-        "total_bytes",
-        "truncated",
-        "elapsed_seconds",
-        "log_path",
-    ):
+    exit_code = response["exit_code"]
+    killed_by = response.get("killed_by")
+    stdout, stderr = response.get("stdout") or "", response.get("stderr") or ""
+    if not stdout and not stderr:
+        stdout = output.text()  # the sandbox lost its own copy: hand back what the waits collected
+    final = {
+        # An explicit kill succeeded by definition; any other non-zero exit code is the command's failure.
+        "ok": exit_code == 0 or (action == "kill" and killed_by == "caller"),
+        "exit_code": exit_code,
+        "running": False,
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+    for key in ("duration_ms", "idle_seconds", "elapsed_seconds", "total_bytes", "truncated", "log_path"):
         if response.get(key) not in (None, ""):
             final[key] = response[key]
-    if response.get("killed_by") == "deadline":
+    if killed_by == "deadline":
+        final["killed_by"] = "deadline"
         final["remaining_seconds"] = 0
         final["error"] = "命令超过平台期限，已被终止（这不是等待窗口结束，也不是命令自己退出）"
-    elif response.get("killed_by") == "caller":
-        final["error"] = "命令已被终止"
-    elif response["exit_code"] != 0 and not final.get("error"):
-        final["error"] = f"Command exited with code {response['exit_code']}"
-    if action == "start" and not output.total:
-        # The helper's short-command form already split stdout/stderr; keep its shape, add the verdict.
-        return {**response, "ok": final["ok"], **({"error": final["error"]} if "error" in final else {})}
-    # ``output_tail`` stays for callers that read the delta form; the accumulated text is the fallback.
-    if not final.get("output_tail"):
-        final["output_tail"] = response.get("output_tail") or output.text()
-    final.setdefault("stdout", response.get("output_tail") or output.text())
-    final.setdefault("stderr", "")
-    final["running"] = False
+    elif killed_by == "caller":
+        final["killed_by"] = "caller"
+        if action != "kill":
+            final["error"] = "命令已被终止"
+    elif exit_code != 0:
+        final["error"] = f"Command exited with code {exit_code}"
     return final
 
 
@@ -172,7 +176,7 @@ def _running(response: dict, output: _BoundedOutput, window: int, offset: int) -
         "handle": response["handle"],
         "running": True,
         "exit_code": None,
-        "output_tail": output.text(),
+        "stdout": output.text(),
         "total_bytes": offset,
         "truncated": bool(response.get("truncated")),
         "idle_seconds": response.get("idle_seconds"),
@@ -188,12 +192,13 @@ async def background_exec(name, args, lease_id, broker, *, max_seconds=None, han
     action = ACTIONS.get(name)
     if action is None:
         raise ValueError(f"unknown background action: {name}")
+    note = ""
     if action in {"kill", "kill_all"}:
         window = 0  # one round trip: report what happened, let the model decide to ask again
     elif action == "start" and args.get("background") is True:
         window = 0
     else:
-        window = _wait_seconds(args, action)
+        window, note = _wait_seconds(args, action)
     if action in {"start", "kill_all"}:
         handle = handle or args.get("handle") or uuid4().hex
     else:
@@ -203,10 +208,10 @@ async def background_exec(name, args, lease_id, broker, *, max_seconds=None, han
     offset = args.get("offset", 0)
     if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
         raise ValueError("输出位置无效")
-    command_text = args.get("cmd") or args.get("command")
-    if action == "start" and (not isinstance(command_text, str) or not command_text.strip()):
+    command = command_text(args)
+    if action == "start" and not command.strip():
         raise ValueError("后台命令不能为空")
-    if action == "start" and len(command_text) > 20000:
+    if action == "start" and len(command) > 20000:
         raise ValueError("命令不能超过20000字符")
     lifetime = settings.run_max_seconds if max_seconds is None else max(0.001, min(max_seconds, settings.run_max_seconds))
     deadline = time.monotonic() + window
@@ -222,7 +227,7 @@ async def background_exec(name, args, lease_id, broker, *, max_seconds=None, han
             {
                 "action": step,
                 "handle": handle,
-                "cmd": command_text if step == "start" else None,
+                "cmd": command if step == "start" else None,
                 "seconds": chunk,
                 "offset": offset,
                 "max_jobs": settings.exec_background_max_jobs,
@@ -237,12 +242,22 @@ async def background_exec(name, args, lease_id, broker, *, max_seconds=None, han
             # A sandbox that answered before its window ended must not be polled in a tight loop.
             await asyncio.sleep(min(max(0.0, chunk - (time.monotonic() - issued)), max(0.0, deadline - time.monotonic())))
         if response.get("running") is not True:
-            return _final(response, action, output)
+            result = _final(response, action, output)
+            break
         total = response.get("total_bytes")
+        delta = response.get("output_tail") or ""
         if not isinstance(total, int):  # a response without a byte counter: take its delta as new
-            output.add(response.get("output_tail") or "")
-        elif total > offset:  # only bytes this call has not seen yet
-            output.add(response.get("output_tail") or "")
+            output.add(delta)
+        elif total > offset:
+            # The helper caps one response's delta; say so rather than stitching a gap away.
+            gap = total - offset - len(delta.encode())
+            if gap > 0:
+                output.add(f"\n...[elided {gap} bytes]...\n")
+            output.add(delta)
             offset = total
         if time.monotonic() >= deadline:
-            return _running(response, output, window, offset)
+            result = _running(response, output, window, offset)
+            break
+    if note:
+        result["note"] = note
+    return result
