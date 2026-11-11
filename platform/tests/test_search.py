@@ -10,6 +10,7 @@ from sqlalchemy import delete, event, select
 
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal, engine
+from ailab_platform.deps import get_db
 from ailab_platform.models import Conversation, ConversationSearch, Run, SearchIndexState
 from ailab_platform.search_index import index_conversation, index_pending
 from tests.test_chat_fork_retry import create
@@ -275,8 +276,15 @@ def test_search_scans_past_false_positive_candidate_pages(monkeypatch):
         clock = SimpleNamespace(now=0.0)
         monkeypatch.setattr(search_index, "time", SimpleNamespace(monotonic=lambda: clock.now))
 
-        def count_run_queries(_conn, _cursor, statement, *_args):
-            if "FROM runs" in statement:
+        def search_db():
+            with SessionLocal() as db:
+                db.connection(execution_options={"search_regression": True})
+                yield db
+
+        monkeypatch.setitem(app.dependency_overrides, get_db, search_db)
+
+        def count_run_queries(_conn, _cursor, statement, _params, context, _executemany):
+            if context.execution_options.get("search_regression") and "FROM runs" in statement:
                 run_queries.append(statement)
                 # Model 5ms per database round trip deterministically. Do not sleep, extend the product deadline,
                 # or rely on the local database being as fast as an unloaded laptop.
@@ -284,10 +292,14 @@ def test_search_scans_past_false_positive_candidate_pages(monkeypatch):
 
         event.listen(engine, "before_cursor_execute", count_run_queries)
         try:
+            # Background jobs share this engine, but their connections are outside the request being measured.
+            with SessionLocal() as unrelated:
+                unrelated.execute(select(Run.id).limit(1)).all()
+            assert not run_queries
             assert search(c, "目标词组")[0]["conversation_id"] == true_conv["id"]
         finally:
             event.remove(engine, "before_cursor_execute", count_run_queries)
-        assert len(run_queries) <= 42  # 41 candidate pages and one real conversation's matching-run query.
+        assert 0 < len(run_queries) <= 42  # 41 candidate pages and one real conversation's matching-run query.
 
 
 def test_search_scans_past_hidden_run_matches():

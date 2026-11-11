@@ -28,6 +28,8 @@
 - 查询次数回归额外模拟每次数据库往返消耗 5ms，以独立单调时钟推进，不实际 sleep，也不修改产品的 5 秒期限。对旧 `_indexed_search` 实现确定性复现 503；修复后仍要求找回最旧真实命中且 Run SQL ≤42 次。
 - 新增生产 EXISTS 查询的双库 EXPLAIN 断言，要求使用 Run 的 conversation 索引。最终检查结果以本 PR 最新 head 为准，未重跑本地全套。
 - 修复后 `pytest tests/test_search.py tests/test_conversation_tree_migration.py -o addopts='' -q`：SQLite 26 passed / 2 skipped，临时 PG16 配置下 28 passed；Ruff check/format 通过。包含不放宽期限的确定性往返回归及新增 EXISTS 查询计划检查。
+- 第二轮 `727cc9e` 的 [PG job](https://github.com/shijunan126-creator/ailab-lite/actions/runs/42955812595/job/130310561122)：搜索实际返回 200 / 275ms，但引擎级计数器把后台任务查询也计入，断言为 44 >42。修正测试采样范围：仅计带请求专用 execution option 的连接，在请求外连接主动查 Run 并断言不会污染计数；保留 ≤42 上限、真实命中和原期限断言，不改产品代码。
+- 采样修复后搜索回归 SQLite / PG 各 24 passed；补上计数必须非零的约束后，该用例双库各 1 passed，避免未采样导致虚假通过。Ruff check/format 通过；未重复产品压测或全套。
 
 ## 成本与未测边界
 

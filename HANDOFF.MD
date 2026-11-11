@@ -5,6 +5,7 @@
 - 会话词项并集不能直接用 ORM 缓存做读改写：同会话并发写入会互相覆盖，后台水位已前移时无法自动补回。先 `INSERT ON CONFLICT DO NOTHING` 解决首次建行竞争，再取写锁并刷新旧 ORM 值；SQLite 必须在读并集前取得写锁，`FOR UPDATE` 单独无效。同一 flush 的新会话也要从 `session.new` 找到，不能只 `db.get`。
 - 搜索最终确认只认归一化后的可见内容：SQL 预筛选必须是候选超集，PG16 的 `lower` 不等于 NFKC/casefold；不能把仅命中隐藏 OpenUI 源码的行当兜底结果。固定候选/Run 条数截断会漏掉后面的真命中，应分页到足量或结束，超时明确报错。
 - 取消搜索截断后，只有标题的误候选不能逐会话查 Run：2001 个空会话在 CI PG 下两千多次往返会耗尽 5 秒。每页先以相关 EXISTS 批量探测消息存在性（两库确认 Run 索引），标题已命中的会话也不必探测；用查询次数和模拟往返时钟回归，不延长期限。
+- SQL 次数回归不能裸统计整个 Engine：API 后台任务共用引擎，CI 会混入其他连接的查询。给被测请求的连接设置 execution option，只计该上下文；主动用另一连接查同表，确认不会污染计数，不放宽查询次数上限。
 - SQLite 里 `conversation_search_fts` 如果直接和 `conversations`/`conversation_search` 平铺 JOIN，规划器会先扫会话、再对每行跑一次 FTS `MATCH`：2000 会话的稀有词要 590ms。候选查询必须用 `WITH matched AS MATERIALIZED (...)` 让 FTS 结果先物化；同一查询 3ms。`EXPLAIN QUERY PLAN` 里出现 `SCAN f VIRTUAL TABLE ... M0` 而不是 `M1` 就是退化。
 - PostgreSQL 的表达式索引 `to_tsvector('simple', terms)` 在小表上会被规划器放弃（2000 行 Seq Scan 480ms）。要存 `terms_tsv`（触发器维护）+ GIN；查询用 `terms_tsv @@ plainto_tsquery(...)`，不要每次重算 `to_tsvector`。
 - `before_flush` 里做 `select`/`db.get` 前必须临时关掉 `session.autoflush`；测试里 `Session(engine)` 默认 autoflush=True，否则嵌套 flush。
