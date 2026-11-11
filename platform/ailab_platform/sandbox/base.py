@@ -22,6 +22,14 @@ class SandboxError(RuntimeError):
     pass
 
 
+class SandboxFileNotFound(SandboxError):
+    """The path is not in the sandbox at all.
+
+    Its own class because the Broker maps it to 404: telling the Agent "400" made every failure look
+    like a missing file, and a model that hears ENOENT rewrites the file instead of reading it.
+    """
+
+
 # The provider-side expiry outlives the Broker lease by this much, so the Broker
 # reaper normally acts first and the provider is only the backstop.
 SANDBOX_EXPIRY_GRACE_SECONDS = 300
@@ -110,10 +118,13 @@ class SandboxProvider(ABC):
             'rp=$(realpath -m "$parent") || exit 1; '
             'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; '
             f"[ ! -L {q} ] || exit 1; "
-            f"[ -f {q} ] || exit 1; "
+            f"[ -e {q} ] || exit 2; "  # 2 = absent (404), 3 = present but not a regular file (400)
+            f"[ -f {q} ] || exit 3; "
             f"stat -c %s {q}"
         )
         res = self.exec(sandbox_id, cmd, timeout=15)
+        if res.exit_code == 2:
+            raise SandboxFileNotFound(f"no such file in the sandbox: {path}")
         if res.exit_code != 0 or not res.stdout.strip().isdigit():
             raise SandboxError(f"not a regular file in the sandbox: {path}")
         return int(res.stdout.strip())

@@ -9,7 +9,7 @@ import uuid
 import pytest
 
 from ailab_platform.config import settings
-from ailab_platform.sandbox import SandboxError
+from ailab_platform.sandbox import SandboxError, SandboxFileNotFound
 from ailab_platform.sandbox.base import SandboxSpec
 from tests.contracts.test_sandbox_lifecycle import provider  # noqa: F401
 
@@ -32,6 +32,15 @@ def test_streaming_roundtrip_limits_and_symlinks(provider, tmp_path):  # noqa: F
             provider.get_file_to_path(ref, path, target, max_bytes=size - 1)
         with pytest.raises(SandboxError):
             provider.put_file_from_path(ref, path, source, max_bytes=size - 1)
+        # A missing file is its own error: the Broker turns it into 404 and the model is told ENOENT,
+        # not "unreadable" (which used to make it rewrite an existing file).
+        with pytest.raises(SandboxFileNotFound):
+            provider.file_size(ref, "/workspace/outputs/missing.bin")
+        with pytest.raises(SandboxFileNotFound):
+            provider.get_file_to_path(ref, "/workspace/outputs/missing.bin", target, max_bytes=size)
+        with pytest.raises(SandboxError) as not_a_file:
+            provider.file_size(ref, "/workspace/outputs")
+        assert not isinstance(not_a_file.value, SandboxFileNotFound)
         provider.exec(ref, "ln -s /etc/passwd /workspace/outputs/link", 5)
         with pytest.raises(SandboxError):
             provider.get_file_to_path(ref, "/workspace/outputs/link", target, max_bytes=size)
@@ -88,6 +97,13 @@ def test_deep_output_manifest_and_frozen_revision(provider, tmp_path):  # noqa: 
         provider.put_file(ref, path, b"BB")
         second = parse_listing(provider.exec(ref, command, 60).stdout)
         assert second[0]["sha256"] == hashlib.sha256(b"BB").hexdigest()
+        # A missing file is its own error: the Broker turns it into 404 and the model is told ENOENT,
+        # not "unreadable" (which used to make it rewrite an existing file).
+        with pytest.raises(SandboxFileNotFound):
+            provider.file_size(ref, "/workspace/outputs/missing.bin")
+        with pytest.raises(SandboxError) as not_a_file:
+            provider.file_size(ref, "/workspace/outputs")
+        assert not isinstance(not_a_file.value, SandboxFileNotFound)
         provider.exec(ref, "ln -s /etc/passwd /workspace/outputs/link", 5)
         assert not json.loads(provider.exec(ref, command, 60).stdout)["complete"]
     finally:

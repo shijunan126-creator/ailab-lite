@@ -120,3 +120,23 @@ def test_fetched_downloads_stream_into_the_sandbox_within_the_limit(broker, monk
     outside = client.put(f"/internal/leases/{lease_id}/fetched", headers=headers, params={"path": "/etc/x"}, content=b"x")
     assert outside.status_code == 400
     assert not list(manager._transfer_root.glob("transfer-*"))  # spools are removed on every path
+
+
+def test_file_errors_carry_the_reason_the_agent_needs(broker, monkeypatch):
+    """404 / 413 / 400 instead of one 400: "missing" makes a model rewrite a file it cannot read."""
+    client, manager, provider = broker
+    headers = {"X-Service-Token": settings.service_token}
+    lease_id = client.post("/internal/leases", headers=headers, json={"run_id": "files"}).json()["lease_id"]
+
+    missing = client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/none.csv"})
+    assert missing.status_code == 404 and "no such file" in missing.json()["detail"]
+
+    provider.put_file(lease_id, "/workspace/work/big.csv", b"x" * 2048)
+    monkeypatch.setattr(settings, "max_sandbox_read_bytes", 1024)
+    too_large = client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/big.csv"})
+    assert too_large.status_code == 413
+    monkeypatch.setattr(settings, "max_sandbox_read_bytes", 4096)
+    assert manager.get_file(lease_id, "/workspace/work/big.csv")  # the file is there; only the read was refused
+
+    directory = client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work"})
+    assert directory.status_code == 400 and "not a regular file" in directory.json()["detail"]

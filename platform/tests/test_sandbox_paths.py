@@ -119,3 +119,25 @@ def test_redis_ack_is_one_atomic_script() -> None:
     assert "XACK" in script and "XDEL" in script
     assert numkeys == 2
     assert args == ("ailab:stream:runs", "ailab:stream:runs:jobs", "workers", "1-0", "")
+
+
+def test_a_missing_file_is_its_own_error_on_every_provider(tmp_path):
+    """The mock provider is the one that runs here; Docker and OpenSandbox are covered by contracts/."""
+    from pathlib import Path
+
+    from ailab_platform.sandbox.base import SandboxError, SandboxFileNotFound
+    from ailab_platform.sandbox.mock import MockSandbox
+
+    provider = MockSandbox()
+    ref = provider.acquire("missing-file", "mock:latest", ttl_seconds=60)
+    try:
+        with pytest.raises(SandboxFileNotFound):
+            provider.file_size(ref, "/workspace/work/none.csv")
+        with pytest.raises(SandboxFileNotFound):
+            provider.get_file_to_path(ref, "/workspace/work/none.csv", Path(tmp_path) / "out.bin", max_bytes=1024)
+        provider.exec(ref, "mkdir -p /workspace/work", 10)
+        with pytest.raises(SandboxError) as directory:
+            provider.file_size(ref, "/workspace/work")
+        assert not isinstance(directory.value, SandboxFileNotFound)
+    finally:
+        provider.release(ref)

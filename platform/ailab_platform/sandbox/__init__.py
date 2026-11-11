@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from ..config import settings
-from .base import ExecResult, SandboxError, SandboxProvider
+from .base import ExecResult, SandboxError, SandboxFileNotFound, SandboxProvider
 from .docker import DockerSandbox
 from .mock import MockSandbox
 from .opensandbox import OpenSandboxProvider
@@ -16,6 +16,7 @@ __all__ = [
     "MockSandbox",
     "OpenSandboxProvider",
     "SandboxError",
+    "SandboxFileNotFound",
     "SandboxProvider",
     "get_provider",
     "reset_provider",

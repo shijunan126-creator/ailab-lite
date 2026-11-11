@@ -17,7 +17,8 @@ from ..metrics import BrokerStateCollector, metrics_response, register_once
 from ..obs import RequestContextMiddleware, setup_logging
 from ..runtime_context import RuntimeContextMiddleware
 from ..sandbox import SandboxError
-from ..sandbox.base import LeaseHandle
+from ..sandbox.base import LeaseHandle, SandboxFileNotFound
+from ..sandbox.transfer import TransferLimitError
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
 from ..service_auth import require_scope
 from ..storage import close_storage
@@ -373,6 +374,10 @@ def copy_library_file(lease_id: str, body: dict):
 def get_file(lease_id: str, path: str = Query(..., min_length=1)) -> Response:
     try:
         data = get_manager().get_file(lease_id, path)
+    except SandboxFileNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TransferLimitError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return Response(content=data, media_type="application/octet-stream")
