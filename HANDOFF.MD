@@ -1,12 +1,19 @@
 ## 2026-11-11 全量对话搜索
 
+- SQLite 搜索压测要分别记回填前后主库、WAL/SHM、空闲页和 `dbstat` 各表页数。WAL 文件可循环使用，文件大小不等于未 checkpoint 的数据；不要把主库与 WAL 之和除以合成文本字符数当作索引倍率。复测见[搜索记录](docs/progress/updates/2026-11-11-search-index.md#sqlite)。
+- FTS5 改 `detail=none` 时，默认 tokenizer 会把 `"ailab_platform"` 当多词短语并报错；要把下划线纳入词字符，再用原文校验回归。`contentless_delete=1` 与 `columnsize=0` 不兼容。
+- 会话词项并集不能直接用 ORM 缓存做读改写：同会话并发写入会互相覆盖，后台水位已前移时无法自动补回。先 `INSERT ON CONFLICT DO NOTHING` 解决首次建行竞争，再取写锁并刷新旧 ORM 值；SQLite 必须在读并集前取得写锁，`FOR UPDATE` 单独无效。同一 flush 的新会话也要从 `session.new` 找到，不能只 `db.get`。
+- 搜索最终确认只认归一化后的可见内容：SQL 预筛选必须是候选超集，PG16 的 `lower` 不等于 NFKC/casefold；不能把仅命中隐藏 OpenUI 源码的行当兜底结果。固定候选/Run 条数截断会漏掉后面的真命中，应分页到足量或结束，超时明确报错。
+- 取消搜索截断后，只有标题的误候选不能逐会话查 Run：2001 个空会话在 CI PG 下两千多次往返会耗尽 5 秒。每页先以相关 EXISTS 批量探测消息存在性（两库确认 Run 索引），标题已命中的会话也不必探测；用查询次数和模拟往返时钟回归，不延长期限。
+- SQL 次数回归不能裸统计整个 Engine：API 后台任务共用引擎，CI 会混入其他连接的查询。给被测请求的连接设置 execution option，只计该上下文；主动用另一连接查同表，确认不会污染计数，不放宽查询次数上限。
+- MockSandbox 的 Popen 与进程登记必须和 cancel 共用同一临界段：子进程可能在 Popen 返回前写好 ready 文件，此时若尚未登记，取消会假成功并漏杀。用真实子进程和登记门控复现该窗口；测试只拦截目标命令，finally 直接杀进程组，避免失败时留下一分钟进程。
 - SQLite 里 `conversation_search_fts` 如果直接和 `conversations`/`conversation_search` 平铺 JOIN，规划器会先扫会话、再对每行跑一次 FTS `MATCH`：2000 会话的稀有词要 590ms。候选查询必须用 `WITH matched AS MATERIALIZED (...)` 让 FTS 结果先物化；同一查询 3ms。`EXPLAIN QUERY PLAN` 里出现 `SCAN f VIRTUAL TABLE ... M0` 而不是 `M1` 就是退化。
 - PostgreSQL 的表达式索引 `to_tsvector('simple', terms)` 在小表上会被规划器放弃（2000 行 Seq Scan 480ms）。要存 `terms_tsv`（触发器维护）+ GIN；查询用 `terms_tsv @@ plainto_tsquery(...)`，不要每次重算 `to_tsvector`。
 - `before_flush` 里做 `select`/`db.get` 前必须临时关掉 `session.autoflush`；测试里 `Session(engine)` 默认 autoflush=True，否则嵌套 flush。
 - `autoflush=False` 时新加的 `ConversationSearch` 行对 SELECT 不可见；`_index_row` 先查 `session.new`，否则同一事务里同一会话插两次，撞 `uq_conversation_search_conversation`。
 - 迁移漂移测试要过滤 FTS5 虚表/影子表和 `ix_conversation_search_terms`（索引实现，不是 ORM 表）；统一用 `tests/test_migrations.py::assert_schema_matches`，不要恢复成裸 `compare_metadata == []`。
 - 词项并集只增不减：编辑/重试/删除 Run 后旧词项仍在，候选会多一点，但 SQL `LIKE` + Python 校验保证不会误报；不要为了让候选变少而删除词项（会漏命中）。
-- 单字/纯标点查询没有可用索引词项，只回退扫最近 200 个会话；两字及以上才全量。不要把这个回退扩大成无界扫描。
+- 无可索引词项的输入（单字、纯标点、分词器未覆盖的文字等）只回退扫最近 200 个会话；不能按字符数承诺全量覆盖。不要把这个回退扩大成无界扫描。
 - E2E 的 mock viewer 需要 `vendor/office-suite/runtime/node_modules` 和 `runner.mjs`；两者都是本地构建产物，不要提交。
 
 ## 2026-11-11 思考强度

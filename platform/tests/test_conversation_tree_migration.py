@@ -5,7 +5,7 @@ from sqlalchemy.sql.elements import TextClause
 
 from ailab_platform.conversation_tree import ancestor_query, siblings_query
 from ailab_platform.models import Conversation, ConversationSearch, ModelUsage, Run
-from ailab_platform.search_index import candidate_query, matching_run_query
+from ailab_platform.search_index import candidate_query, matching_run_query, run_presence_query
 from tests.test_migrations import _downgrade_to, _seed_user_and_run, _upgrade_to, assert_schema_matches
 from tests.test_migrations import engine as engine
 
@@ -58,6 +58,7 @@ def test_tree_search_pin_context_production_query_plans(engine):
         "siblings": siblings_query("c1", "r1").limit(50),
         "search_candidates": candidate_query("u1", ["机器"], engine.dialect.name, limit=50),
         "search_runs": matching_run_query("c1", ["机器"], engine.dialect.name, limit=20),
+        "search_run_presence": run_presence_query(["c1", "c2"]),
         "pin": select(Conversation.id)
         .where(Conversation.user_id == "u1", Conversation.deleted_at.is_(None), Conversation.project_id.is_(None))
         .order_by(Conversation.pinned_at.desc().nulls_last(), Conversation.updated_at.desc())
@@ -97,6 +98,8 @@ def test_tree_search_pin_context_production_query_plans(engine):
                 assert "ix_conversation_search_terms" in plan, plan
             if name == "search_runs":
                 assert "ix_runs_conversation_created_id" in plan, plan
+            if name == "search_run_presence":
+                assert "ix_runs_conversation" in plan, plan
             if name == "ancestors" and engine.dialect.name == "sqlite":
                 assert plan.count("sqlite_autoindex_runs_1 (id=?)") >= 3, plan
             if name == "ancestors" and engine.dialect.name == "postgresql":

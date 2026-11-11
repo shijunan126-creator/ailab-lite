@@ -1,4 +1,4 @@
-2026-11-11 全量对话搜索（ADR0039，`feat/search-index`）：去掉继续搜索和游标，一次搜完整个账号；会话级词项并集索引（SQLite FTS5、PostgreSQL `terms_tsv` GIN）、同事务维护与后台回填、多关键词 AND/跨问题与回答、标题高亮。本地完整双库套件、Portal 282/build 与浏览器 E2E 通过；2000 会话稀有词 SQLite 3.0ms vs 旧 2100.9ms，PG 7.3ms vs 2828.1ms。[PR #181](https://github.com/shijunan126-creator/ailab-lite/pull/181) CI 全绿，未部署。见[记录](../progress/updates/2026-11-11-search-index.md)。
+2026-11-11 搜索正确性复核（`fix/search-correctness`，base `fc7d540b`）：保留 ADR0039 索引结构，本地修复词项并发覆盖、同 flush 新会话漏索引、归一化漏搜、隐藏源码/词边界误报与固定截断漏搜；分页超时明确报错。已纠正原存储倍率；当前验收与边界见[复核](../progress/updates/2026-11-11-search-correctness.md)，已授权提 PR、CI 后合并和部署，当前尚未部署。[PR #181](https://github.com/shijunan126-creator/ailab-lite/pull/181) 已合并，其历史 CI/Portal/浏览器结果只覆盖原实现，见[原记录](../progress/updates/2026-11-11-search-index.md)。
 
 2026-11-11 思考强度（ADR0038，`feat/reasoning-effort`）：模型按 `reasoning.toml` 档位组提供思考强度，DeepSeek 低/高/最高、默认低，按模型记住上次选择；档位写入 `run.options` 并在整次回答内固定（同档位续轮缓存 96–97%，换档那一轮冷）。技能页基础技能收成一行。PR CI 验收中。见[记录](../progress/updates/2026-11-11-reasoning-effort.md)。
 

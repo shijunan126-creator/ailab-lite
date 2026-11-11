@@ -139,21 +139,23 @@ class MockSandbox(SandboxProvider):
         env["TMPDIR"] = str(root / "tmp")
         started = time.monotonic()
         try:
-            proc = subprocess.Popen(
-                translated,
-                shell=True,
-                executable="/bin/bash",
-                cwd=root / "workspace",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                start_new_session=True,
-            )
+            # A child may start executing before Popen returns. Keep launch and registration atomic with cancel,
+            # otherwise a ready marker can be observed while cancellation still sees an empty process registry.
+            with self._process_lock:
+                proc = subprocess.Popen(
+                    translated,
+                    shell=True,
+                    executable="/bin/bash",
+                    cwd=root / "workspace",
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    env=env,
+                    start_new_session=True,
+                )
+                self._processes.setdefault(sandbox_id, set()).add(proc)
         except OSError as exc:
             raise SandboxError("mock sandbox unavailable") from exc
-        with self._process_lock:
-            self._processes.setdefault(sandbox_id, set()).add(proc)
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
             exit_code = proc.returncode

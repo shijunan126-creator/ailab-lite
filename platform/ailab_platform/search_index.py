@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import math
 import re
+import time
 import unicodedata
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, event, func, literal_column, or_, select, text, tuple_
+from sqlalchemy import and_, event, exists, func, literal_column, or_, select, text, tuple_
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -28,12 +31,21 @@ from .models import Conversation, ConversationSearch, Run, SearchIndexState, new
 
 SNIPPET_CHARS = 120
 CANDIDATE_PAGE = 50
-CANDIDATE_BUDGET = 2000
 RUN_MATCH_PAGE = 20
-RUN_MATCH_BUDGET = 200
 FALLBACK_CONVERSATIONS = 200
 MAX_QUERY_TERMS = 48
+SEARCH_TIMEOUT_SECONDS = 5
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+class SearchTimeout(TimeoutError):
+    pass
+
+
+def _check_deadline(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise SearchTimeout("搜索超时，请缩小关键词范围")
+
 
 _LATIN = re.compile(r"[a-z0-9]+(?:[_.\-/][a-z0-9]+)*")
 _CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]+")
@@ -88,20 +100,61 @@ def query_terms(segments: list[str]) -> list[str]:
     return found[::step][:MAX_QUERY_TERMS]
 
 
-def fold_with_map(text: str) -> tuple[str, list[int]]:
+def fold_with_map(text: str) -> tuple[str, list[tuple[int, int]]]:
     """Fold the text the same way as the query and remember where each folded code point came from."""
     parts: list[str] = []
-    positions: list[int] = []
-    for index, char in enumerate(text or ""):
-        part = unicodedata.normalize("NFKC", char).casefold()
+    positions: list[tuple[int, int]] = []
+    source = text or ""
+    start = 0
+    cluster = ""
+    previous = ""
+    for index, char in enumerate(source):
+        normalized = unicodedata.normalize("NFKC", char)
+        # Combining accents and Hangul jamo can compose across code points. Map the entire composing cluster so
+        # a decomposed café has the same match as café, with highlights covering the original accent as well.
+        joins = bool(cluster) and (
+            unicodedata.combining(normalized[0])
+            or ("\u1100" <= normalized[0] <= "\u11ff" and ("\u1100" <= previous <= "\u11ff" or "\uac00" <= previous <= "\ud7af"))
+        )
+        if cluster and not joins:
+            part = _fold(cluster)
+            parts.append(part)
+            positions.extend([(start, index)] * len(part))
+            cluster = ""
+        if not cluster:
+            start = index
+        cluster += char
+        previous = normalized[-1]
+    if cluster:
+        part = _fold(cluster)
         parts.append(part)
-        positions.extend([index] * len(part))
+        positions.extend([(start, len(source))] * len(part))
     return "".join(parts), positions
 
 
 def contains(text: str, segments: list[str]) -> bool:
-    folded, _ = fold_with_map(text)
-    return bool(segments) and all(segment in folded for segment in segments)
+    folded = _fold(text)
+    return bool(segments) and all(next(_segment_hits(folded, segment), None) is not None for segment in segments)
+
+
+def _segment_hits(folded: str, segment: str):
+    start = 0
+    while segment:
+        at = folded.find(segment, start)
+        if at < 0:
+            return
+        end = at + len(segment)
+        # Match the tokenizer's Latin word boundary even if a different run supplied the candidate's term. CJK
+        # remains a literal substring, and identifier separators remain valid boundaries for component searches.
+        left = segment[0] in "abcdefghijklmnopqrstuvwxyz0123456789" and at > 0 and folded[at - 1] in "abcdefghijklmnopqrstuvwxyz0123456789"
+        right = (
+            segment[-1] in "abcdefghijklmnopqrstuvwxyz0123456789"
+            and end < len(folded)
+            and folded[end] in "abcdefghijklmnopqrstuvwxyz0123456789"
+        )
+        if not left and not right:
+            yield at, end
+        start = end
 
 
 def _ranges(text: str, segments: list[str], cap: int = 60) -> list[tuple[int, int]]:
@@ -110,15 +163,11 @@ def _ranges(text: str, segments: list[str], cap: int = 60) -> list[tuple[int, in
     for segment in segments:
         if not segment:
             continue
-        start = 0
-        while len(found) < cap:
-            at = folded.find(segment, start)
-            if at < 0:
+        for at, end in _segment_hits(folded, segment):
+            if len(found) >= cap:
                 break
-            end = at + len(segment)
             if positions:
-                found.append((positions[at], positions[end - 1] + 1))
-            start = at + max(1, len(segment))
+                found.append((positions[at][0], positions[end - 1][1]))
     found.sort()
     merged: list[tuple[int, int]] = []
     for start, end in found:
@@ -212,8 +261,18 @@ def matching_run_query(conversation_id: str, segments: list[str], dialect: str, 
     """The newest runs of one conversation where every segment appears in the prompt or in the answer."""
     lower = _lower(dialect)
     patterns = [_like(segment) for segment in segments]
+
     # Terms may be split across the user's question and the answer; a run is a document, not two separate ones.
-    per_segment = [or_(lower(Run.prompt).like(pattern, escape="\\"), lower(Run.summary).like(pattern, escape="\\")) for pattern in patterns]
+    def possible(column, pattern):
+        matched = lower(column).like(pattern, escape="\\")
+        if dialect == "postgresql":
+            # PG16 has no Unicode casefold(). A lower() prefilter is exact for ASCII, but must not reject Unicode
+            # text before Python checks NFKC/casefold (e.g. fullwidth SERVICE or Straße). UTF-8 byte length exposes
+            # non-ASCII without requiring an extension; only indexed candidate conversations reach this query.
+            return or_(matched, func.octet_length(column) != func.length(column))
+        return matched
+
+    per_segment = [or_(possible(Run.prompt, pattern), possible(Run.summary, pattern)) for pattern in patterns]
     query = select(Run.id, Run.prompt, Run.summary, Run.created_at).where(Run.conversation_id == conversation_id, and_(*per_segment))
     if after is not None:
         query = query.where(tuple_(Run.created_at, Run.id) < after)
@@ -221,12 +280,38 @@ def matching_run_query(conversation_id: str, segments: list[str], dialect: str, 
     return query.limit(limit) if limit else query
 
 
+def run_presence_query(conversation_ids: list[str]):
+    has_runs = exists().where(Run.conversation_id == Conversation.id)
+    return select(Conversation.id, has_runs.label("has_runs")).where(Conversation.id.in_(conversation_ids))
+
+
 def _index_row(db: Session, conversation: Conversation) -> ConversationSearch:
     # autoflush is off, so a row added earlier in this transaction is not visible to a SELECT yet.
     for pending in db.new:
         if isinstance(pending, ConversationSearch) and pending.conversation_id == conversation.id:
             return pending
-    row = db.scalar(select(ConversationSearch).where(ConversationSearch.conversation_id == conversation.id))
+    # Serialize the read/union/write, including creation of the first index row. ON CONFLICT also handles two
+    # transactions that see a conversation with no index row. Pending parents must be inserted by the ORM first.
+    transaction = db.get_nested_transaction() or db.get_transaction() or db.begin()
+    locked = db.info.get("search_index_locked")
+    if locked is None or locked[0] is not transaction:
+        locked = (transaction, set())
+        db.info["search_index_locked"] = locked
+    first_read = conversation.id not in locked[1]
+    if first_read:
+        if conversation not in db.new:
+            insert = sqlite_insert if db.bind.dialect.name == "sqlite" else pg_insert
+            db.execute(
+                insert(ConversationSearch)
+                .values(conversation_id=conversation.id, user_id=conversation.user_id, terms="")
+                .on_conflict_do_nothing(index_elements=["conversation_id"])
+            )
+            # The SQLite INSERT acquires its single-writer lock even on conflict; PostgreSQL locks the row below.
+        locked[1].add(conversation.id)
+    query = select(ConversationSearch).where(ConversationSearch.conversation_id == conversation.id)
+    if first_read:
+        query = query.with_for_update()
+    row = db.scalar(query.execution_options(populate_existing=first_read))
     if row is None:
         row = ConversationSearch(conversation_id=conversation.id, user_id=conversation.user_id, terms="")
         db.add(row)
@@ -259,25 +344,24 @@ def refresh_conversation(db: Session, conversation_id: str) -> None:
 def index_run_terms(db: Session, run: Run) -> None:
     if not run.conversation_id:
         return
-    conversation = db.get(Conversation, run.conversation_id)
+    conversation = next((obj for obj in db.new if isinstance(obj, Conversation) and obj.id == run.conversation_id), None)
+    if conversation is None:
+        conversation = db.get(Conversation, run.conversation_id)
     if conversation is None:
         return
     index_conversation(db, conversation, terms((run.prompt or "") + "\n" + (run.summary or "")))
 
 
-def _matching_run(db: Session, conversation_id: str, segments: list[str], dialect: str):
+def _matching_run(db: Session, conversation_id: str, segments: list[str], dialect: str, deadline: float):
     """Return (run_id, match, text) for the newest run whose visible text contains every segment."""
     after = None
-    scanned = 0
-    fallback = None
-    while scanned < RUN_MATCH_BUDGET:
+    while True:
+        _check_deadline(deadline)
         rows = db.execute(matching_run_query(conversation_id, segments, dialect, after=after, limit=RUN_MATCH_PAGE)).all()
         if not rows:
             break
         for row in rows:
-            scanned += 1
-            if fallback is None:
-                fallback = row
+            _check_deadline(deadline)
             prompt = row.prompt or ""
             if contains(prompt, segments):
                 return row.id, "prompt", prompt
@@ -292,14 +376,6 @@ def _matching_run(db: Session, conversation_id: str, segments: list[str], dialec
                     return row.id, "answer", answer
                 return row.id, "prompt", prompt
         after = (rows[-1].created_at, rows[-1].id)
-    if fallback is not None:
-        # A database lower() can be broader than Python's casefold (or the hit may sit in UI source). Keep the
-        # result rather than pretending nothing matched, but never show the hidden text.
-        prompt = fallback.prompt or ""
-        if contains(prompt, segments) or all(segment in (prompt or "").lower() for segment in segments):
-            return fallback.id, "prompt", prompt
-        answer = for_history(fallback.summary or "", keep_ui=False, limit=len(fallback.summary or ""))
-        return fallback.id, "answer", answer
     return None
 
 
@@ -318,27 +394,32 @@ def _item(conversation, match: str, run_id: str | None, text: str, segments: lis
     }
 
 
-def _indexed_search(db: Session, user_id: str, segments: list[str], chosen: list[str], limit: int) -> list[dict]:
+def _indexed_search(db: Session, user_id: str, segments: list[str], chosen: list[str], limit: int, deadline: float) -> list[dict]:
     dialect = db.bind.dialect.name
     title_hits: list[dict] = []
     run_hits: list[dict] = []
     after = None
-    scanned = 0
-    while scanned < CANDIDATE_BUDGET and len(title_hits) < limit and len(run_hits) < limit:
+    while len(title_hits) + len(run_hits) < limit:
+        _check_deadline(deadline)
         rows = db.execute(candidate_query(user_id, chosen, dialect, after=after, limit=CANDIDATE_PAGE)).all()
         if not rows:
             break
+        # The term union can nominate title-only conversations whose bigrams do not form the requested phrase.
+        # Probe run existence once per candidate page instead of making a round trip for every empty conversation.
+        title_matches = {row.id for row in rows if contains(row.title or "", segments)}
+        body_candidates = [row.id for row in rows if row.id not in title_matches]
+        with_runs = {row.id for row in db.execute(run_presence_query(body_candidates)) if row.has_runs} if body_candidates else set()
         for conversation in rows:
-            scanned += 1
+            _check_deadline(deadline)
             title = conversation.title or ""
-            if contains(title, segments):
+            if conversation.id in title_matches:
                 title_hits.append(_item(conversation, "title", None, title, segments))
-            else:
-                found = _matching_run(db, conversation.id, segments, dialect)
+            elif conversation.id in with_runs:
+                found = _matching_run(db, conversation.id, segments, dialect, deadline)
                 if found:
                     run_id, match, text = found
                     run_hits.append(_item(conversation, match, run_id, text, segments))
-            if len(title_hits) >= limit or len(run_hits) >= limit:
+            if len(title_hits) + len(run_hits) >= limit:
                 break
         after = (rows[-1].updated_at, rows[-1].id)
     best: dict[str, dict] = {}
@@ -350,7 +431,7 @@ def _indexed_search(db: Session, user_id: str, segments: list[str], chosen: list
     return merged[:limit]
 
 
-def _fallback_search(db: Session, user_id: str, segments: list[str], limit: int) -> list[dict]:
+def _fallback_search(db: Session, user_id: str, segments: list[str], limit: int, deadline: float) -> list[dict]:
     """A query with no indexable term (a single character, punctuation) scans the newest conversations only."""
     dialect = db.bind.dialect.name
     rows = db.execute(
@@ -361,11 +442,12 @@ def _fallback_search(db: Session, user_id: str, segments: list[str], limit: int)
     ).all()
     items: list[dict] = []
     for conversation in rows:
+        _check_deadline(deadline)
         title = conversation.title or ""
         if contains(title, segments):
             items.append(_item(conversation, "title", None, title, segments))
         else:
-            found = _matching_run(db, conversation.id, segments, dialect)
+            found = _matching_run(db, conversation.id, segments, dialect, deadline)
             if found:
                 run_id, match, text = found
                 items.append(_item(conversation, match, run_id, text, segments))
@@ -379,9 +461,10 @@ def run_search(db: Session, user_id: str, query: str, limit: int = 20) -> list[d
     if not segments:
         return []
     chosen = query_terms(segments)
+    deadline = time.monotonic() + SEARCH_TIMEOUT_SECONDS
     if chosen:
-        return _indexed_search(db, user_id, segments, chosen, limit)
-    return _fallback_search(db, user_id, segments, limit)
+        return _indexed_search(db, user_id, segments, chosen, limit, deadline)
+    return _fallback_search(db, user_id, segments, limit, deadline)
 
 
 def index_pending(db: Session, run_limit: int = 200, conversation_limit: int = 200) -> bool:
@@ -464,3 +547,10 @@ def _on_before_flush(session: Session, _flush_context, _instances) -> None:
 
 
 event.listens_for(Session, "before_flush")(_on_before_flush)
+
+
+@event.listens_for(Session, "after_transaction_end")
+def _clear_index_locks(session: Session, transaction) -> None:
+    locked = session.info.get("search_index_locked")
+    if locked is not None and locked[0] is transaction:
+        session.info.pop("search_index_locked")

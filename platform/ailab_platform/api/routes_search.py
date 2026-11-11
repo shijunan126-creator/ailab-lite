@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..deps import current_user, get_db
 from ..models import User
 from ..schemas import ConversationSearchResult
-from ..search_index import run_search
+from ..search_index import SearchTimeout, run_search
 
 router = APIRouter(prefix="/v1/search", tags=["search"])
 
@@ -25,4 +25,7 @@ def search_conversations(
     query = q.strip()
     if not query:
         raise HTTPException(422, "搜索词不能为空")
-    return {"items": run_search(db, user.id, query, limit)}
+    try:
+        return {"items": run_search(db, user.id, query, limit)}
+    except SearchTimeout as exc:
+        raise HTTPException(503, str(exc)) from exc

@@ -2,14 +2,66 @@
 
 import json
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import UTC, datetime
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
 
-from ailab_platform.sandbox import docker
+from ailab_platform.sandbox import docker, mock
 from ailab_platform.sandbox.base import SandboxError
+from ailab_platform.sandbox.mock import MockSandbox
 from ailab_platform.sandbox.opensandbox import OpenSandboxProvider
+
+
+def test_mock_cancel_cannot_miss_a_process_between_launch_and_registration(tmp_path, monkeypatch):
+    provider = MockSandbox()
+    provider.root = tmp_path / "sandboxes"
+    provider.root.mkdir()
+    ref = provider.acquire("launch-cancel", "unused")
+    spawned, resume, cancel_entered = Event(), Event(), Event()
+    processes = []
+    popen = subprocess.Popen
+
+    def pause_after_spawn(*args, **kwargs):
+        proc = popen(*args, **kwargs)
+        if "launch-registration-race-completed" not in args[0]:
+            return proc
+        processes.append(proc)
+        spawned.set()
+        assert resume.wait(5), "process registration was not resumed"
+        return proc
+
+    def cancel():
+        cancel_entered.set()
+        return provider.cancel_exec(ref)
+
+    monkeypatch.setattr(
+        mock, "subprocess", SimpleNamespace(Popen=pause_after_spawn, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired)
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        execution = pool.submit(provider.exec, ref, "sleep 60; echo launch-registration-race-completed", 70)
+        try:
+            assert spawned.wait(5)
+            cancellation = pool.submit(cancel)
+            assert cancel_entered.wait(5)
+            try:
+                # The child already exists. Cancellation must wait for registration rather than report success
+                # while the live process is invisible to its registry. No retry or longer product deadline.
+                with pytest.raises(TimeoutError):
+                    cancellation.result(timeout=0.1)
+            finally:
+                resume.set()
+            assert cancellation.result(timeout=5)
+            result = execution.result(timeout=5)
+            assert result.exit_code != 0 and "completed" not in result.stdout
+            assert not provider._processes
+        finally:
+            resume.set()
+            for proc in processes:
+                provider._kill_group(proc)
+            provider.release(ref)
 
 
 def test_docker_nonzero_delete_is_retryable_not_success(monkeypatch):
