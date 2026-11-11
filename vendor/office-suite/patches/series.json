@@ -46,5 +46,9 @@
   {
     "file": "012-pptx-shape-positions.json",
     "reason": "Give each PPT shape its slide-relative extent so text seen in a rendered slide can be tied to the picture or text box that draws it."
+  },
+  {
+    "file": "013-tool-name-residue.json",
+    "reason": "Name the real subtask, review and clarification tools instead of the source assistant's subagent and preflight wording."
   }
 ]

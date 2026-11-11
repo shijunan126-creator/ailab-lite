@@ -1,19 +1,20 @@
 {
-  "adapter_revision": "ec2dc49f75e85cf699098ad3feef3ba6561973a0dc720cd8caec6e61f191bab5",
+  "adapter_revision": "a4712f939be8e817dbbbdfaea7bf4fd45dd623a93cda5911a4f1e793763f889e",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
       "deps": [],
-      "estimated_tokens": 1455,
+      "estimated_tokens": 1467,
       "logical_path": "pdf-plugin/agents/visual-judge.md",
       "modes": [
         "work"
       ],
       "patches": [
-        "001-tools-and-roots.json"
+        "001-tools-and-roots.json",
+        "013-tool-name-residue.json"
       ],
       "path": "agents/visual-judge.md",
-      "sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db"
+      "sha256": "cd26d4dcf0c8e56e75f983306a59ce4601795c8cf2d7ae656a0b0103df07311c"
     },
     {
       "deps": [],
@@ -131,17 +132,18 @@
         "pdf-plugin/skills/pdf/typesetting/cover.md",
         "pdf-plugin/skills/pdf/typesetting/overflow.md"
       ],
-      "estimated_tokens": 12029,
+      "estimated_tokens": 12032,
       "logical_path": "pdf-plugin/skills/pdf/briefs/creative.md",
       "modes": [
         "work"
       ],
       "patches": [
         "001-tools-and-roots.json",
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "013-tool-name-residue.json"
       ],
       "path": "briefs/creative.md",
-      "sha256": "a8c0f7ad0f2451d0f0bce6e531f8a83fada1a6ca81af42f052ae748f14923e71"
+      "sha256": "326d85121e4db4c2d7b33a00873e79259f10b33255823f342a90afec801e6288"
     },
     {
       "deps": [

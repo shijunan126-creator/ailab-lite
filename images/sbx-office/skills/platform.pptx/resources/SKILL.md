@@ -152,7 +152,7 @@ Build the palette on the **BACKGROUND → PRIMARY → ACCENT** model, and reuse 
 
 **Code QA:** run a short `python-pptx` script over the finished deck to flag text overflow (estimated text height/width vs. the shape box, plus boxes outside the slide) and overlap (bounding-box intersection between two text-bearing shapes), then fix the real hits and re-run.
 
-**Visual QA** once only: render the deck to images and use the visual-judge subagent (if not present, check it yourself) when necessary. Do not call an external VLM to check slides for visual QA.
+**Visual QA** once only: render the deck to images and judge every page from `review_artifact` or `view_workspace_file`; for a long deck you may hand the pages and `agents/visual-judge.md` to `run_subtasks`. Do not call an external VLM to check slides for visual QA.
 
 **Output QA (before handing the deck over):** the user's original input file is untouched at its original path (originals are read-only); deliver a new version under /workspace/outputs.
 

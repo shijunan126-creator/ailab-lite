@@ -7,6 +7,12 @@
 - 不带 `with` 的 `TestClient(app)` 不跑启动钩子，存储目录不会被 `ensure_dirs()` 建出来；某个 worker 第一个跑 `/readyz` 的用例会因 `storage: False` 得到 503。新增测试改变 xdist 分配时才暴露，单独跑该用例即可复现。
 - `tests/test_document_view.py::capture_setup` 的 run 用的模型和会话默认模型不同；在分支里续轮不带同一模型会得到 `model_changed`，不是快照没复制。
 
+## 2026-11-11 办公技能补丁
+
+- 改 `vendor/office-suite/patches/*.json` 里任何一个文件，`vendor/office-suite/runtime/UPSTREAM.json` 的 `adapter_revision` 也会变（它哈希整个补丁目录）。只重建 skills 不重建 runtime 时，`test_runtime_rebase_is_reproducible_and_keeps_original_sources` 会失败：用 `vendor/office-suite/build.py --runtime-output vendor/office-suite/runtime` 一起重建。
+- 新增补丁不能改上游原文：它的 `before_sha256` 必须是前一个补丁的 `after_sha256`，`start/end` 是对该状态文本的偏移（同一文件多个 edit 按输入文本计算，构建时倒序应用）。改完 `before`/`after` 长度要先确认原文只匹配一次，再重算两侧哈希。
+- `images/sbx-office/skills/index.json` 一变，Agent 的 `skill_verification` 就和旧镜像对不上，`load_skill` 直接拒绝。部署 Agent 必须同时重建 sbx-office 镜像。
+
 ## 2026-11-11 Outbox 唤醒
 
 - `Session` 的 `after_commit` 对 savepoint 提交也会触发，那时 outbox 行还没对外提交；用 `session.in_nested_transaction()` 跳过，让外层提交唤醒，否则优化在 `inbox` 等 `begin_nested` 路径上静默失效。

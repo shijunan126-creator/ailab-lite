@@ -1,0 +1,128 @@
+[
+  {
+    "path": "documents-plugin/agents/visual-judge.md",
+    "before_sha256": "36730c9b37ca2460172618daeb23b5d208fa93b5a9e2c01eee8361d141dc8637",
+    "after_sha256": "a628fa8b681fd0c98c249eda4a4ccc50338631bd813f16ade93edd462cb73a9b",
+    "edits": [
+      {
+        "start": 268,
+        "end": 396,
+        "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
+        "after": "pick one gate — hand these criteria to a `run_subtasks` child with the page images, or (when no child is dispatched) apply them yourself — and do not pre-screen"
+      },
+      {
+        "start": 1141,
+        "end": 1285,
+        "before": "Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).",
+        "after": "The gate runs once per deliverable, on pages returned by `review_artifact` or `view_workspace_file`; the run that produced the file fixes what it reports."
+      },
+      {
+        "start": 1993,
+        "end": 2092,
+        "before": "## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths",
+        "after": "## What you will receive (in the subtask instruction)\n\nThe subtask instruction gives you: the image paths"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/agents/visual-judge.md",
+    "before_sha256": "af70849f74ec1d740f8514a30991782b324ec327601a274ee0287ab4e11ac015",
+    "after_sha256": "395b3063a5b28b69d62a7248b1a2da7097457aecca69cf1b74feb136d65ebe70",
+    "edits": [
+      {
+        "start": 268,
+        "end": 396,
+        "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
+        "after": "pick one gate — hand these criteria to a `run_subtasks` child with the page images, or (when no child is dispatched) apply them yourself — and do not pre-screen"
+      },
+      {
+        "start": 1141,
+        "end": 1285,
+        "before": "Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).",
+        "after": "The gate runs once per deliverable, on pages returned by `review_artifact` or `view_workspace_file`; the run that produced the file fixes what it reports."
+      },
+      {
+        "start": 1993,
+        "end": 2092,
+        "before": "## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths",
+        "after": "## What you will receive (in the subtask instruction)\n\nThe subtask instruction gives you: the image paths"
+      }
+    ]
+  },
+  {
+    "path": "presentations-plugin/agents/visual-judge.md",
+    "before_sha256": "e3d0876411b50e0007f199e4f16ac4226feab56e6f4e720ef6aab42800811ff3",
+    "after_sha256": "8d2e4420c284161cdb987a761223d0344b59de854a6c5f4b324ef7cbce1a72c3",
+    "edits": [
+      {
+        "start": 268,
+        "end": 396,
+        "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
+        "after": "pick one gate — hand these criteria to a `run_subtasks` child with the page images, or (when no child is dispatched) apply them yourself — and do not pre-screen"
+      },
+      {
+        "start": 1141,
+        "end": 1285,
+        "before": "Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).",
+        "after": "The gate runs once per deliverable, on pages returned by `review_artifact` or `view_workspace_file`; the run that produced the file fixes what it reports."
+      },
+      {
+        "start": 1993,
+        "end": 2092,
+        "before": "## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths",
+        "after": "## What you will receive (in the subtask instruction)\n\nThe subtask instruction gives you: the image paths"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/agents/visual-judge.md",
+    "before_sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db",
+    "after_sha256": "cd26d4dcf0c8e56e75f983306a59ce4601795c8cf2d7ae656a0b0103df07311c",
+    "edits": [
+      {
+        "start": 268,
+        "end": 396,
+        "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
+        "after": "pick one gate — hand these criteria to a `run_subtasks` child with the page images, or (when no child is dispatched) apply them yourself — and do not pre-screen"
+      },
+      {
+        "start": 1141,
+        "end": 1285,
+        "before": "Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).",
+        "after": "The gate runs once per deliverable, on pages returned by `review_artifact` or `view_workspace_file`; the run that produced the file fixes what it reports."
+      },
+      {
+        "start": 1988,
+        "end": 2087,
+        "before": "## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths",
+        "after": "## What you will receive (in the subtask instruction)\n\nThe subtask instruction gives you: the image paths"
+      }
+    ]
+  },
+  {
+    "path": "presentations-plugin/skills/pptx/SKILL.md",
+    "before_sha256": "05fd1cb4f47e32d794c4a13071e3a3604135a904ac2622c9b475dd41360c4c13",
+    "after_sha256": "9ece2443af06c7915dffd04763f88e928441ebcd937f09c40e371015997472b0",
+    "edits": [
+      {
+        "start": 15441,
+        "end": 15636,
+        "before": "**Visual QA** once only: render the deck to images and use the visual-judge subagent (if not present, check it yourself) when necessary. Do not call an external VLM to check slides for visual QA.",
+        "after": "**Visual QA** once only: render the deck to images and judge every page from `review_artifact` or `view_workspace_file`; for a long deck you may hand the pages and `agents/visual-judge.md` to `run_subtasks`. Do not call an external VLM to check slides for visual QA."
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/creative.md",
+    "before_sha256": "a8c0f7ad0f2451d0f0bce6e531f8a83fada1a6ca81af42f052ae748f14923e71",
+    "after_sha256": "326d85121e4db4c2d7b33a00873e79259f10b33255823f342a90afec801e6288",
+    "edits": [
+      {
+        "start": 32985,
+        "end": 33114,
+        "before": "If `node`/`playwright`/`chromium` were not all ✓, did I ask the user via user clarification instead of picking a fallback myself?",
+        "after": "If `node`/`playwright`/`chromium` were not all ✓, did I report the missing dependency and stop this route instead of picking a fallback myself?"
+      }
+    ]
+  }
+]

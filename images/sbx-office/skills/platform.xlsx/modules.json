@@ -1,19 +1,20 @@
 {
-  "adapter_revision": "ec2dc49f75e85cf699098ad3feef3ba6561973a0dc720cd8caec6e61f191bab5",
+  "adapter_revision": "a4712f939be8e817dbbbdfaea7bf4fd45dd623a93cda5911a4f1e793763f889e",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
       "deps": [],
-      "estimated_tokens": 1457,
+      "estimated_tokens": 1469,
       "logical_path": "spreadsheets-plugin/agents/visual-judge.md",
       "modes": [
         "work"
       ],
       "patches": [
-        "001-tools-and-roots.json"
+        "001-tools-and-roots.json",
+        "013-tool-name-residue.json"
       ],
       "path": "agents/visual-judge.md",
-      "sha256": "af70849f74ec1d740f8514a30991782b324ec327601a274ee0287ab4e11ac015"
+      "sha256": "395b3063a5b28b69d62a7248b1a2da7097457aecca69cf1b74feb136d65ebe70"
     },
     {
       "deps": [],

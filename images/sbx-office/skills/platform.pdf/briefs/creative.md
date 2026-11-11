@@ -627,7 +627,7 @@ Study these examples to understand how to translate raw requests into perfect bl
 ## Pre-Flight Checklist (Self-Correction before generating output)
 
 Before you output the JSON block, verify:
-0a. **🚨 PLAYWRIGHT/CHROMIUM PREFLIGHT:** Did I run `env.check`? If `node`/`playwright`/`chromium` were not all ✓, did I ask the user via user clarification instead of picking a fallback myself? See the preflight at the top of this file.
+0a. **🚨 PLAYWRIGHT/CHROMIUM PREFLIGHT:** Did I run `env.check`? If `node`/`playwright`/`chromium` were not all ✓, did I report the missing dependency and stop this route instead of picking a fallback myself? See the preflight at the top of this file.
 0b. **🚨 VECTOR OUTPUT IRON RULE:** The final PDF MUST be generated via `page.pdf()` / `convert.blueprint` - NEVER `page.screenshot()` → image → wrap as PDF. Screenshot PDFs are blurry raster images. `page.pdf()` produces vector text that stays sharp at any zoom level.
 1. **Did I write ANY HTML or CSS?** If yes, delete it. Only output JSON.
 2. **Is any `Glass_Canvas` markdown content too long?** Count the words. Over 150? Summarize it or push to the next page.

@@ -1,19 +1,20 @@
 {
-  "adapter_revision": "ec2dc49f75e85cf699098ad3feef3ba6561973a0dc720cd8caec6e61f191bab5",
+  "adapter_revision": "a4712f939be8e817dbbbdfaea7bf4fd45dd623a93cda5911a4f1e793763f889e",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
       "deps": [],
-      "estimated_tokens": 1457,
+      "estimated_tokens": 1469,
       "logical_path": "presentations-plugin/agents/visual-judge.md",
       "modes": [
         "work"
       ],
       "patches": [
-        "001-tools-and-roots.json"
+        "001-tools-and-roots.json",
+        "013-tool-name-residue.json"
       ],
       "path": "agents/visual-judge.md",
-      "sha256": "e3d0876411b50e0007f199e4f16ac4226feab56e6f4e720ef6aab42800811ff3"
+      "sha256": "8d2e4420c284161cdb987a761223d0344b59de854a6c5f4b324ef7cbce1a72c3"
     },
     {
       "deps": [],
@@ -32,17 +33,18 @@
     },
     {
       "deps": [],
-      "estimated_tokens": 13079,
+      "estimated_tokens": 13097,
       "logical_path": "presentations-plugin/skills/pptx/SKILL.md",
       "modes": [
         "work"
       ],
       "patches": [
         "001-tools-and-roots.json",
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "013-tool-name-residue.json"
       ],
       "path": "resources/SKILL.md",
-      "sha256": "05fd1cb4f47e32d794c4a13071e3a3604135a904ac2622c9b475dd41360c4c13"
+      "sha256": "9ece2443af06c7915dffd04763f88e928441ebcd937f09c40e371015997472b0"
     }
   ],
   "package_id": "platform.pptx",
