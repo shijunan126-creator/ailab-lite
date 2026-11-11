@@ -90,7 +90,7 @@
 - 真模型没有触发平台期限与 `bash_kill`（4 小时的期限无法在验收里等），这两条在容器里用 3 秒的 `exec_lifetime_seconds` 验证过；`run_subtasks` 内并发写同一文件仍只有单测覆盖。
 - `idle_seconds` 在真模型里长到 34 秒时模型没有误判卡死，但更长的静默（分钟级）没有实测。
 - 未跑 Next.js 生产构建：该工作树没有 `node_modules`（用主工作树的软链跑完 vitest 后已删除；Turbopack 不跟随软链）。CI 覆盖。
-- 未按 ADR 0030 做真模型前缀缓存复测（工具目录变了，`cached_tokens / prompt_tokens` 需真模型确认）。
+- ADR 0030 的 ≥95% 缓存命中率**测不了**：OpenCode Go 网关的 usage 里没有 `prompt_tokens_details`（每个调用都是 `cached=None`）。能看到的是结构：同一任务 10 轮里 `prompt_tokens` 从 7320 单调增到 9726，没有任何一轮是重写前文；字节级的"上一请求是下一请求的前缀"由 `tests/test_prefix_cache.py` 的录制请求守着。
 - `model_context` 里的旧工具名只做了显示兜底，没有做调用别名：在跑的 run 调用 `read_file` 会得到 `unknown tool`（用户明确表示测试环境可不管）。
 - `edit` 的展示 diff 与 patch 没有接线（用户决定不进上下文、暂不渲染），`domain/text_edit.py` 只实现匹配与写回；32 行窗口 diff 未实现。
 - `read` 是整份读入（受 `max_sandbox_read_bytes=10MB` 约束）后切行窗口，不是 Pi 的流式只保留展示部分；`bash` 输出保留的是既有环形缓冲 + 头 1000/尾 8000，不是 Pi 的 2000 行/50KB 尾部截断加完整输出临时文件。这两处是刻意保留的既有边界，不是遗漏。
