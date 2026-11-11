@@ -231,11 +231,15 @@ def test_thinking_strength_is_picked_beside_the_model_and_remembered(logged_in) 
     page = logged_in
     menu = page.get_by_role("button", name="模型", exact=True)
     menu.click()
-    page.get_by_role("listbox", name="模型", exact=True).get_by_role("option").filter(has_text="Test Think").hover()
+    # the right column shows the levels of the chosen model, so the model is picked first: hover never switches it
+    page.get_by_role("listbox", name="模型", exact=True).get_by_role("option").filter(has_text="Test Think").click()
     levels = page.get_by_role("listbox", name="思考强度", exact=True)
     expect(levels.get_by_role("option", selected=True)).to_have_text("低")  # the platform default
     levels.get_by_role("option", name="高", exact=True).click()
     expect(menu).to_have_text("Test Think高")
+    expect(levels).to_be_visible()  # picking a level leaves the menu open
+    page.get_by_role("textbox", name="消息", exact=True).click()  # a click elsewhere closes it
+    expect(levels).to_be_hidden()
     with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/api/v1/conversations/start")) as started:
         page.get_by_role("textbox", name="消息", exact=True).fill("你好")
         page.keyboard.press("Enter")

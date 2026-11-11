@@ -47,6 +47,7 @@ def test_visual(logged_in, tmp_path):
                 }""")
             page.get_by_role("button", name="模型", exact=True).click()
             page.get_by_role("option").filter(has_text="Test Fast").click()
+            page.get_by_role("button", name="模型", exact=True).click()  # a pick leaves the menu open; close it for the shot
             page.locator(".composer-box").screenshot(path=str(OUT / f"composer-{scheme}-{w}.png"), animations="disabled")
             page.get_by_role("textbox", name="消息", exact=True).fill("")
         page.set_viewport_size({"width": 1440, "height": 900})
