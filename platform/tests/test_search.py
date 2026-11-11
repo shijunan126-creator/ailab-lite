@@ -1,12 +1,16 @@
 """Whole-account conversation search: ownership, exact text, ranking and the index catch-up."""
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal
-from ailab_platform.models import ConversationSearch, Run, SearchIndexState
-from ailab_platform.search_index import index_pending
+from ailab_platform.models import Conversation, ConversationSearch, Run, SearchIndexState
+from ailab_platform.search_index import index_conversation, index_pending
 from tests.test_chat_fork_retry import create
 from tests.test_conversations import AUTH, _finish, _other_user
 
@@ -191,3 +195,137 @@ def test_search_index_catch_up_repairs_missing_rows():
                 pass
         item = search(c, needle)[0]
         assert item["conversation_id"] == conv["id"] and item["match"] == "answer"
+
+
+@pytest.mark.parametrize(("source", "query"), [("ＳＥＲＶＩＣＥ", "service"), ("Straße", "STRASSE"), ("cafe\u0301", "café")])
+def test_search_uses_index_normalization_for_exact_matches(source, query):
+    with TestClient(app) as c:
+        conv, turns = create(c)
+        with SessionLocal() as db:
+            db.get(Run, turns[0]["id"]).summary = source
+            db.commit()
+        item = search(c, query)[0]
+        assert item["conversation_id"] == conv["id"]
+        assert item["highlight"] == [[0, len(source)]]
+
+
+def test_search_does_not_match_hidden_ui_source():
+    with TestClient(app) as c:
+        conv, turns = create(c)
+        with SessionLocal() as db:
+            db.get(Run, turns[0]["id"]).summary = 'visible text\n```openui\nroot = Text("hiddenuniqueneedle")\n```'
+            db.commit()
+        assert search(c, "hiddenuniqueneedle") == []
+        assert search(c, "visible")[0]["conversation_id"] == conv["id"]
+
+
+def test_search_latin_word_boundaries_are_checked_in_the_matching_run():
+    with TestClient(app) as c:
+        conv, turns = create(c, ("chat", "chat"))
+        needle = "wordboundaryneedle"
+        with SessionLocal() as db:
+            db.get(Run, turns[0]["id"]).prompt = needle
+            db.get(Run, turns[1]["id"]).prompt = needle + "suffix"
+            db.commit()
+        item = search(c, needle)[0]
+        assert item["conversation_id"] == conv["id"] and item["run_id"] == turns[0]["id"]
+
+
+def test_search_indexes_runs_whose_conversation_is_in_the_same_flush():
+    with TestClient(app) as c:
+        existing, _ = create(c)
+        with SessionLocal() as db:
+            user_id = db.get(Conversation, existing["id"]).user_id
+            conv = Conversation(id="cnv_pending_search", user_id=user_id, title="")
+            db.add_all([conv, Run(user_id=user_id, conversation_id=conv.id, prompt="pendinguniqueneedle")])
+            db.commit()
+        assert search(c, "pendinguniqueneedle")[0]["conversation_id"] == conv.id
+
+
+def test_search_index_union_refreshes_stale_session_state():
+    with TestClient(app) as c:
+        conv, _ = create(c)
+        with SessionLocal() as stale, SessionLocal() as writer:
+            stale_row = stale.scalar(select(ConversationSearch).where(ConversationSearch.conversation_id == conv["id"]))
+            # Keep the old ORM value alive across another transaction's committed index update.
+            index_conversation(writer, writer.get(Conversation, conv["id"]), ["firstuniqueneedle"])
+            writer.commit()
+            index_conversation(stale, stale.get(Conversation, conv["id"]), ["seconduniqueneedle"])
+            stale.commit()
+            stale.refresh(stale_row)
+            assert {"firstuniqueneedle", "seconduniqueneedle"} <= set(stale_row.terms.split())
+
+
+def test_search_scans_past_false_positive_candidate_pages(monkeypatch):
+    from ailab_platform import search_index
+
+    monkeypatch.setattr(search_index, "CANDIDATE_PAGE", 50)
+    with TestClient(app) as c:
+        true_conv, turns = create(c)
+        with SessionLocal() as db:
+            db.get(Run, turns[0]["id"]).prompt = "目标词组"
+            db.commit()
+        with SessionLocal() as db:
+            user_id = db.get(Conversation, true_conv["id"]).user_id
+            # The same bigrams, but the literal phrase never appears. More than the old 2,000-candidate cutoff.
+            db.add_all([Conversation(user_id=user_id, title="目标 标词 词组") for _ in range(2001)])
+            db.commit()
+        assert search(c, "目标词组")[0]["conversation_id"] == true_conv["id"]
+
+
+def test_search_scans_past_hidden_run_matches():
+    with TestClient(app) as c:
+        conv, turns = create(c)
+        needle = "hiddenrunbudgetneedle"
+        with SessionLocal() as db:
+            root = db.get(Run, turns[0]["id"])
+            root.prompt = needle
+            db.add_all(
+                [
+                    Run(
+                        user_id=root.user_id,
+                        conversation_id=conv["id"],
+                        prompt="no match",
+                        summary=f'```openui\nroot = Text("{needle}")\n```',
+                    )
+                    for _ in range(201)
+                ]
+            )
+            db.commit()
+        assert search(c, needle)[0]["run_id"] == turns[0]["id"]
+
+
+@pytest.mark.parametrize("missing_row", [False, True])
+def test_search_index_concurrent_writers_keep_both_term_sets(missing_row):
+    with TestClient(app) as c:
+        conv, _ = create(c)
+        if missing_row:
+            with SessionLocal() as db:
+                db.execute(delete(ConversationSearch).where(ConversationSearch.conversation_id == conv["id"]))
+                db.commit()
+        barrier = Barrier(2)
+
+        def write(needle):
+            with SessionLocal() as db:
+                row = db.scalar(select(ConversationSearch).where(ConversationSearch.conversation_id == conv["id"]))
+                assert (row is None) == missing_row
+                conversation = db.get(Conversation, conv["id"])
+                barrier.wait(timeout=10)
+                index_conversation(db, conversation, [needle])
+                db.commit()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(write, ["concurrentfirstneedle", "concurrentsecondneedle"]))
+        with SessionLocal() as db:
+            row = db.scalar(select(ConversationSearch).where(ConversationSearch.conversation_id == conv["id"]))
+            assert {"concurrentfirstneedle", "concurrentsecondneedle"} <= set(row.terms.split())
+
+
+def test_search_timeout_is_an_error_instead_of_a_false_empty_result(monkeypatch):
+    from ailab_platform import search_index
+
+    monkeypatch.setattr(search_index, "SEARCH_TIMEOUT_SECONDS", 0)
+    with TestClient(app) as c:
+        response = c.get("/v1/search", headers=AUTH, params={"q": "timeoutneedle"})
+        assert response.status_code == 503
+        assert "搜索超时" in response.json()["detail"]

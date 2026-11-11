@@ -72,7 +72,7 @@ def _parse() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _configure_database(args: argparse.Namespace) -> str:
+def _configure_database(args: argparse.Namespace, scratch: Path) -> str:
     if args.database_url:
         url = args.database_url
         if args.reset:
@@ -95,12 +95,11 @@ def _configure_database(args: argparse.Namespace) -> str:
             else:
                 raise SystemExit(f"unsupported benchmark database: {parsed.get_backend_name()}")
     else:
-        root = Path(tempfile.mkdtemp(prefix="ailab-search-bench-"))
-        url = f"sqlite:///{root / 'bench.db'}"
+        url = f"sqlite:///{scratch / 'bench.db'}"
     os.environ["AILAB_DATABASE_URL"] = url
     os.environ.setdefault("AILAB_ENV", "test")
     os.environ.setdefault("AILAB_ENV_FILE", os.devnull)
-    os.environ.setdefault("AILAB_DATA_DIR", tempfile.mkdtemp(prefix="ailab-search-bench-data-"))
+    os.environ.setdefault("AILAB_DATA_DIR", str(scratch / "data"))
     return url
 
 
@@ -322,9 +321,55 @@ def _percentile(values, fraction):
     return ordered[min(len(ordered) - 1, max(0, round(fraction * (len(ordered) - 1))))]
 
 
+def _storage_snapshot(db, url: str) -> dict:
+    """Keep logical database pages separate from WAL capacity and from the search-only allocation."""
+    from sqlalchemy import text
+
+    if db.bind.dialect.name == "sqlite":
+        page_size = db.execute(text("PRAGMA page_size")).scalar_one()
+        allocated = db.execute(text("PRAGMA page_count")).scalar_one() * page_size
+        free = db.execute(text("PRAGMA freelist_count")).scalar_one() * page_size
+        path = urlsplit(url).path
+        files = {
+            name: os.path.getsize(path + suffix) if os.path.exists(path + suffix) else 0
+            for name, suffix in (("main_file_bytes", ""), ("wal_file_bytes", "-wal"), ("shm_file_bytes", "-shm"))
+        }
+        search = db.execute(
+            text(
+                "SELECT coalesce(sum(pgsize),0) FROM dbstat WHERE name IN "
+                "('conversation_search','sqlite_autoindex_conversation_search_1',"
+                "'ix_conversation_search_user','search_index_state') OR name LIKE 'conversation_search_fts%'"
+            )
+        ).scalar_one()
+        return {"database_bytes": allocated, "used_bytes": allocated - free, "free_bytes": free, "search_bytes": search, **files}
+    allocated = db.execute(text("SELECT pg_database_size(current_database())")).scalar_one()
+    search = db.execute(
+        text("SELECT pg_total_relation_size('conversation_search') + pg_total_relation_size('search_index_state')")
+    ).scalar_one()
+    return {"database_bytes": allocated, "search_bytes": search}
+
+
+def _text_storage(db) -> dict:
+    from sqlalchemy import text
+
+    size = "length(CAST({} AS BLOB))" if db.bind.dialect.name == "sqlite" else "octet_length({})"
+    row = db.execute(
+        text(
+            "SELECT coalesce(sum(length(prompt)),0), coalesce(sum(length(summary)),0), "
+            f"coalesce(sum({size.format('prompt')}),0), coalesce(sum({size.format('summary')}),0) FROM runs"
+        )
+    ).one()
+    return dict(zip(("prompt_chars", "answer_chars", "prompt_utf8_bytes", "answer_utf8_bytes"), row, strict=True))
+
+
 def main() -> None:
     args = _parse()
-    url = _configure_database(args)
+    with tempfile.TemporaryDirectory(prefix="ailab-search-bench-") as scratch:
+        _benchmark(args, Path(scratch))
+
+
+def _benchmark(args: argparse.Namespace, scratch: Path) -> None:
+    url = _configure_database(args, scratch)
 
     from ailab_platform.db import SessionLocal, init_db
     from ailab_platform.search_index import index_pending, run_search
@@ -332,17 +377,13 @@ def main() -> None:
     init_db()
     with SessionLocal() as db:
         user_id, rare = _seed(db, args.conversations, args.runs_per_conversation, args.text_chars)
+        text_storage = _text_storage(db)
+        before = _storage_snapshot(db, url)
         started = time.perf_counter()
         while index_pending(db, run_limit=500, conversation_limit=500):
             pass
         build_seconds = time.perf_counter() - started
-        if url.startswith("sqlite"):
-            path = urlsplit(url).path
-            size_mb = sum(os.path.getsize(path + suffix) for suffix in ("", "-wal", "-shm") if os.path.exists(path + suffix)) / 1024**2
-        else:
-            from sqlalchemy import text
-
-            size_mb = db.execute(text("SELECT pg_database_size(current_database())")).scalar() / 1024**2
+        after = _storage_snapshot(db, url)
         queries = {
             "rare_oldest": rare,
             "common_two_char": "模型",
@@ -385,7 +426,11 @@ def main() -> None:
                     "conversations": args.conversations,
                     "runs": args.conversations * args.runs_per_conversation,
                     "index_build_seconds": round(build_seconds, 2),
-                    "database_mb": round(size_mb, 1),
+                    "text_storage": text_storage,
+                    "storage_before_index": before,
+                    "storage_after_index": after,
+                    "database_growth_bytes": after["database_bytes"] - before["database_bytes"],
+                    "database_growth_percent": round((after["database_bytes"] / before["database_bytes"] - 1) * 100, 2),
                     "rows": rows,
                 },
                 ensure_ascii=False,
