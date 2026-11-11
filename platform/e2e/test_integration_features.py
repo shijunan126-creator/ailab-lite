@@ -193,8 +193,6 @@ def test_schedule_create_run_and_five_task_limit(logged_in, stack):
             dialog = page.get_by_role("dialog")
             dialog.get_by_label("名称", exact=True).fill(title)
             dialog.get_by_label("要做什么", exact=True).fill(_prompt("定时"))
-            dialog.get_by_role("button", name="模式", exact=True).click()
-            page.get_by_role("listbox", name="模式", exact=True).get_by_role("option", name="对话", exact=True).click()
             with page.expect_response(lambda r: r.url.endswith("/api/v1/schedules") and r.request.method == "POST") as response:
                 dialog.get_by_role("button", name="保存", exact=True).click()
             assert response.value.status == 201, response.value.text()
@@ -202,6 +200,7 @@ def test_schedule_create_run_and_five_task_limit(logged_in, stack):
             expect(dialog).to_have_count(0)
             row = page.locator(".mrow", has_text=title)
             expect(row).to_be_visible()
+            expect(row.locator(".sched-mode")).to_have_text("工作")  # made on the page: Work
             if i == 0:
                 row.get_by_role("button", name=f"更多操作 {title}", exact=True).click()
                 page.get_by_role("menuitem", name="立即运行", exact=True).click()
@@ -217,12 +216,11 @@ def test_schedule_create_run_and_five_task_limit(logged_in, stack):
             data={
                 "title": "第六条",
                 "prompt": "不应创建",
-                "mode": "chat",
                 "timezone": "UTC",
                 "schedule": {"kind": "daily", "time": "09:00"},
             },
         )
-        assert refused.status == 422, refused.text()
+        assert refused.status == 422 and refused.json()["detail"] == "最多 5 个定时任务", refused.text()
     finally:
         for sid in ids:
             assert page.request.delete(stack.portal + f"/api/v1/schedules/{sid}").status == 204
