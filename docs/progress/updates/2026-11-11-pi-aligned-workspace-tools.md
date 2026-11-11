@@ -151,6 +151,7 @@
 - `ruff check` / `format --check` 干净（704 文件）。
 - 全量 `pytest tests -q -n auto`：**3181 项 / 16 失败 / 276 跳过**；16 项与未改基线逐条相同（`comm` 比对为 0 新增）。
 - Portal：`tsc --noEmit` 干净、`npm test` **49 文件 / 288 项通过**（新增 2 项）。
+- 整栈 E2E 重跑：**210 项 / 0 失败 / 15 跳过**，与本轮改动前一致。
 - 真模型多轮（DeepSeek V4.1 Flash / OpenCode Go）：第一轮 21 次请求 `prompt_tokens` 10173 → 14319 单调增；第二轮带 `previous_model_context` 继续，**前缀逐字节保留**、工具列表一致、无多余边界事件，`prompt_tokens` 14699 → 14935 继续增长；两轮都 `succeeded`。网关仍不报 `cached_tokens`，命中率无法在此验收（见上一节）。
 
 ## 没覆盖到 / 风险

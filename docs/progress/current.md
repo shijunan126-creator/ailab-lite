@@ -10,7 +10,7 @@
 - 独立代码审查（2026-11-12）提出 3 条必须修 + 4 条应该修 + 补充项，已全部修复并各配"不修就失败"的用例：`edit` 模糊匹配只看匹配段（不再把整行全角标点折成半角）；重叠出现计数；子任务调用编号带父 step（否则第二批同命令复用旧句柄）；恢复时只有真的丢失才算 `UNCERTAIN_EXEC`、事件名沿用原工具名；`grep` 的 glob `removeprefix` 与 `--no-require-git`；`bash_kill` 成功即 ok；bash 结果统一一个形状（去掉 `output_tail`，缺口有 elided 标记）；`write` 进文件队列；`timeout` 参数忽略并附 note；主参数改 `command`；提示词 2765 → 2657 tokens。
 - 验证：ruff 干净；全量 3166 项 / 16 失败（与未改基线逐条相同）/ 276 跳过；改动模块定向 342 项 0 失败；Portal 286 项 + `tsc` 干净；整栈 E2E 210 项 0 失败；真模型重跑 9 个任务，`command` 参数与 10 秒窗口多次 `bash_wait` 均正常。
 - 第三轮审查（2026-11-12）指出的 5 条必须修 + 4 条应该修已全部落地：`edit` 改成 "oldText 编译成正则、直接在原文上匹配"（5 MB 16 ms、峰值约 8 MiB，原实现 403 MiB）、尾空格 bug、`max_edit_bytes` 2 MiB + `to_thread`；Broker 的 404/413/400 与 `SandboxFileNotFound`；子任务编号带父调用；恢复不再多发 `tool_call`（`announce=False`）；旧目录含退役名时重建并记 `tool_catalog_changed`；`lost` 标记取代 `exit_code == -1`；缺口用 helper 的读取起点；运行中用 `output`；MockLLM 发 `command`；精简目录补 `read`/`write`/`edit`；提示词版本号升级。
-- 验证：ruff 干净；全量 3181 项 / 16 失败（与未改基线一致）/ 276 跳过；Portal 288 项 + `tsc` 干净；真模型两轮 Work，第二轮前缀逐字节保留、`prompt_tokens` 单调增。
+- 验证：ruff 干净；全量 3181 项 / 16 失败（与未改基线一致）/ 276 跳过；Portal 288 项 + `tsc` 干净；整栈 E2E 210 项 0 失败；真模型两轮 Work，第二轮前缀逐字节保留、`prompt_tokens` 单调增。
 - 下一步：等用户决定是否推送/开 PR；镜像重建与前缀缓存真模型复测在 PR 后补。
 
 ---
