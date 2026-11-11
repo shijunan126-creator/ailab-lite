@@ -31,6 +31,25 @@ function describeTool(name: string, args: any): { label: string; detail?: string
       return { label: "运行 JavaScript", detail: String(args?.code || "").split("\n").find((l) => l.trim())?.trim().slice(0, 120) };
     case "search_images":
       return { label: "搜索图片", detail: args?.query };
+    case "bash":
+      return { label: "运行命令", detail: String(args?.cmd || args?.command || "").slice(0, 160) };
+    case "bash_wait":
+      return { label: "查看命令进度" };
+    case "bash_kill":
+      return { label: "停止命令" };
+    case "write":
+      return { label: "写入文件", detail: args?.path };
+    case "read":
+      return { label: "读取文件", detail: args?.path };
+    case "edit":
+      return { label: "修改文件", detail: args?.path };
+    case "ls":
+      return { label: "查看目录", detail: args?.path };
+    case "grep":
+      return { label: "搜索内容", detail: args?.pattern };
+    case "find":
+      return { label: "查找文件", detail: args?.pattern };
+    // Names used before the Pi alignment: persisted events still have to render.
     case "exec":
       return { label: "运行命令", detail: String(args?.cmd || args?.command || "").slice(0, 160) };
     case "exec_wait":
@@ -161,7 +180,7 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
           if (s.name !== p.name || s.status !== "running" || (p.step !== undefined && s.modelStep !== p.step)) continue;
           const step: Step = { ...s, status: p.ok ? "ok" : "failed", output: [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500) };
           if (p.job_key) step.jobKey = p.job_key;
-          // a command still going after its first wait: the model comes back to it with exec_wait
+          // a command still going after its first wait: the model comes back to it with bash_wait
           if (p.running) {
             step.background = true;
             step.status = "note"; // not finished: no tick until a later look sees it end

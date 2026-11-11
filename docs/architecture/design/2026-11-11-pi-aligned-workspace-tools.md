@@ -53,10 +53,32 @@
 
 ### bash
 
-- 参数：`command`、`timeout`（秒，可选，**默认不超时**）。
-- 输出按 `2000 行 / 50KB` 做**尾部截断**（错误和结果都在末尾），截断时把完整输出落到临时文件并给出路径与 `[Showing lines X-Y of N. Full output: <path>]`。
-- 退出码非 0 是**错误结果**（`isError`），正文追加 `Command exited with code N`。
-- 子进程整组管理（`detached` + 进程组 kill），超时连后台子进程一起杀。
+Pi 在本地跑，`command` + `timeout`（到点杀）就够了。我们的命令在远端沙箱、单次 HTTP 不能挂很久，所以照抄它的**名字和阻塞语义**，但等待与期限分开（下一节）：
+
+- 参数：`cmd`、`wait_seconds`（本次等待窗口）、`background`（立即返回句柄）。
+- 输出增量读取、有界保存（环形缓冲 `log_bytes`，默认 1MB），单次返回有界（助手侧每路 8000 字符，头部 1000 字符）。
+- 退出码非 0 是错误结果：`{ok: false, exit_code: N, stdout, stderr}`。
+- 子进程整组管理（`start_new_session` + 进程组 SIGKILL）。
+- `bash_wait`（`handle`、`wait_seconds`、`offset`）与 `bash_kill`（`handle`）保留：显式后台执行和"确认终止"是模型必须能做的两件事，不能为了只留四个工具而删掉。
+
+### bash 的等待窗口与平台期限（2026-11-11 调整）
+
+三个概念必须分开，任何两个都不能混用同一个参数名：
+
+| 概念 | 谁定 | 实现 | 到点后果 |
+|---|---|---|---|
+| HTTP 单次等待 | Agent | `WAIT_CHUNK_SECONDS = 30`，一次 Broker 调用 | 释放响应，按计划发下一次 |
+| 等待窗口 `wait_seconds` | 模型 | 1–300 秒（`bash`），0–300（`bash_wait`），默认 30 | 返回状态和句柄，**不终止命令** |
+| 平台硬期限 | 平台 | `min(租约剩余预算, run_max_seconds)`，启动时固定 | 沙箱内的 supervisor 自己 SIGKILL 进程组 |
+
+- Agent 在一次工具调用里连续发多个有界的 Broker 等待请求，中间**不调用模型**、不把每个 `running` 写进上下文、不发持久事件；一次响应提前返回时补足剩余窗口，不做忙轮询。
+- 窗口结束返回 `running` 状态：`handle`、累计输出、`idle_seconds`、`elapsed_seconds`、`remaining_seconds`、`wait_seconds`，以及一句"这是等待窗口结束，不是失败也不是超时"。
+- 长时间没有输出不是卡死：没有任何代码路径按 `idle_seconds` 杀进程，工具描述也明确写了这一点。
+- 硬期限由沙箱内的 supervisor 执行（`deadline` 文件 + 自己的 `expires_at`），即使 Agent 停止轮询也会到点杀进程；被期限杀掉的命令返回 `exit_code=-9` 加"超过平台期限"的原因和已有输出，不伪装成正常完成。
+- 默认值与理由：`run_max_seconds = 14400`（4 小时，Run 的上限）是命令期限的来源；**没有**"所有命令固定 5 分钟"的规则。等待窗口上限 300 秒是因为一次模型调用不应阻塞更久而不做判断。
+- 参数名：`timeout` / `timeout_seconds` 明确拒收（报错说明它既不指定等待窗口也不终止命令），`yield_seconds` / `seconds` 只作为旧名字继续接受。
+- 恢复边界：句柄由 `(run_id, 调用序号, 命令文本)` 哈希得到并写进 checkpoint。Agent 重启/接管后对同一调用发的是 `bash_wait`，不是 `start`；沙箱内 helper 对已存在的句柄目录只等待、绝不重跑。租约重建导致 `/tmp` 里的作业记录消失时，返回"后台命令已不存在"并给模型 `UNCERTAIN_EXEC` 提示，不盲目重跑。
+- 用户新消息可以打断等待（`bash` 与 `bash_wait` 都可被 steer）：命令留在后台，返回句柄让模型处理新消息后再等。
 
 ### grep / find
 
@@ -77,7 +99,7 @@
 | `grep` / `find` | 无 | `grep` / `find` |
 | `ls` | `list_files` | `ls` |
 
-`bash` 为什么保留三个：Pi 在本地跑，可以一直等到命令结束；我们的命令在远端沙箱，HTTP 请求不能挂 10 分钟。`exec` 的 `yield_seconds`（≤120）+ 句柄轮询是现有唯一能撑过长命令的机制，改名但不改协议。同理 `bash` 不设默认超时，由 `run_max_seconds` 兜底。
+`bash` 为什么保留三个：Pi 在本地跑，一个调用可以一直等到命令结束；我们的命令在远端沙箱，单次 HTTP 请求不能挂那么久。区别只在传输层：Agent 在一次工具调用内部发多次有界的等待请求，模型看到的仍然是"一次调用 —— 完成或一个检查点"。等待窗口、平台期限与恢复边界见上面「bash 的等待窗口与平台期限」。
 
 ### 2. 重活放在哪一侧
 
@@ -140,9 +162,10 @@ Pi 的测试就是规格，可以逐条搬过来（`packages/coding-agent/test/`
 
 性能验收：`read` 10MB 文件的峰值内存、`edit` 10MB 文件耗时、`edit` 20MB 的 diff 内存上限、`grep` 在大目录上的耗时与 Broker 阻塞时间、前缀缓存 `cached_tokens / prompt_tokens` 复测（ADR 0030 要求 ≥95%）。
 
-## 未决
+## 已定（2026-11-11）
 
-1. `read` 是否返回行号（Pi 不返回；`edit` 用 `oldText` 定位不需要行号，但模型引用行号时更省事）。
-2. `edit` 的展示 diff 是否进模型上下文（建议进），Portal 是否渲染（建议另一步）。
-3. `grep`/`find` 是否只给 Work。Chat 没有 shell 也没有 `rg` 镜像，默认只 Work。
-4. `list_files`→`ls` 是否照 Pi 的"字母序 + 目录带 `/`"改输出格式（现在返回 JSON 结构，前端可能在用）。
+1. `read` 不返回行号；需要行号时用 `grep -n` 或 `bash`。
+2. `edit` 的展示 diff 不进模型上下文，也暂不渲染；`domain/text_edit.py` 只实现了匹配与写回。
+3. `grep`/`find` 只给 Work。
+4. `ls` 照 Pi：字母序、目录带 `/`、含点文件、上限 500。
+5. bash 的等待与期限按上面「等待窗口与平台期限」执行，不再由模型设置终止时间。

@@ -34,12 +34,15 @@ TOOL = {
 
 ALLOWED = frozenset(
     {
-        "list_files",
-        "read_file",
-        "write_file",
-        "exec",
-        "exec_wait",
-        "exec_kill",
+        "ls",
+        "read",
+        "write",
+        "edit",
+        "grep",
+        "find",
+        "bash",
+        "bash_wait",
+        "bash_kill",
         "search_library",
         "read_library_file",
         "web_search",

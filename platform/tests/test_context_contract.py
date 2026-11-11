@@ -24,7 +24,7 @@ from ailab_platform.llm import LLMError, LLMResponse
 from tests.test_agent_loop import FakePlatform, ScriptedLLM
 
 
-def pair(name="exec"):
+def pair(name="bash"):
     return [
         {"role": "assistant", "tool_calls": [{"id": "call", "function": {"name": name, "arguments": "{}"}}]},
         {"role": "tool", "tool_call_id": "call", "name": name, "content": '{"handle":"job_1","running":true}'},

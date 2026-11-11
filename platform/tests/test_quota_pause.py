@@ -44,7 +44,7 @@ class Broker(SnapshotBroker):
     async def refresh_previews(self, lease_id):
         return [PREVIEW]
 
-    async def list_files(self, *args):
+    async def ls(self, *args):
         return [{"path": "/workspace/outputs/extra.txt", "size": 1}]
 
     async def commit(self, *args, **kwargs):
@@ -264,7 +264,7 @@ def test_run_token_cap_releases_conversation_and_permits_inbox_resume(api, monke
     queued = enqueue(api, conv).json()
 
     monkeypatch.setattr(settings, "run_max_tokens", 100)
-    model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("more", "list_files", {})], usage={"prompt_tokens": 101})])
+    model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("more", "ls", {})], usage={"prompt_tokens": 101})])
     process(rid, token, model)
     result = api.get(f"/v1/runs/{rid}", headers=AUTH).json()
     assert result["status"] == "failed" and not result["resumable"]

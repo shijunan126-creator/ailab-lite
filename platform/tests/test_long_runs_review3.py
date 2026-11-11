@@ -17,7 +17,7 @@ from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM, _run
 def test_consumed_log_multi_window_size():
     state = fresh_state()
     for step in range(1200):
-        state["tool_log"][f"{step}:0"] = observation("read_file", {"path": str(step)}, {"ok": True, "text": "中" * 1300})
+        state["tool_log"][f"{step}:0"] = observation("read", {"path": str(step)}, {"ok": True, "text": "中" * 1300})
     before = len(json.dumps(state, ensure_ascii=False).encode())
     compact_log(state)
     after = len(json.dumps(state, ensure_ascii=False).encode())
@@ -31,7 +31,7 @@ def test_cleanup_failure_does_not_fail_success():
         async def exec(self, *args, **kw):
             raise RuntimeError("cleanup unavailable")
 
-    model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("l", "list_files", {})]), LLMResponse(content="完成")])
+    model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("l", "ls", {})]), LLMResponse(content="完成")])
     platform, _ = _run(model, broker=Broker())
     assert platform.statuses[-1][0] == "succeeded"
 
@@ -82,7 +82,7 @@ def test_finished_answer_crossing_time_budget_succeeds():
 def test_out_of_steps_summary_not_repeated_after_redelivery(monkeypatch):
     monkeypatch.setattr(settings, "max_agent_steps", 1)
     platform = FakePlatform()
-    _run(ScriptedLLM([LLMResponse(tool_calls=[ToolCall("l", "list_files", {})]), LLMResponse(content="进度")]), platform)
+    _run(ScriptedLLM([LLMResponse(tool_calls=[ToolCall("l", "ls", {})]), LLMResponse(content="进度")]), platform)
     model = ScriptedLLM([])
     _run(model, platform, attempt_id="retry")
     assert not model.seen_messages
@@ -168,7 +168,7 @@ def test_running_polls_do_not_checkpoint_workspace(monkeypatch):
             }
 
     platform, broker = FakePlatform(), Broker()
-    responses = [LLMResponse(tool_calls=[ToolCall(str(i), "exec_wait", {"handle": "a" * 32, "seconds": 0})]) for i in range(6)]
+    responses = [LLMResponse(tool_calls=[ToolCall(str(i), "bash_wait", {"handle": "a" * 32, "seconds": 0})]) for i in range(6)]
     _run(ScriptedLLM([*responses, LLMResponse(content="done")]), platform, broker)
     assert broker.snapshots == 1  # final cleanup only
 
@@ -188,5 +188,5 @@ def test_wrap_up_exec_has_bounded_useful_lifetime(monkeypatch):
     budget.data.update(active_seconds=settings.run_max_seconds, pause_step=3)
     turn = _Turn({})
     turn.lease_id = "lease"
-    asyncio.run(loop._run_tool(turn, "r", ToolCall("c", "exec", {"cmd": "true"}), 0))
+    asyncio.run(loop._run_tool(turn, "r", ToolCall("c", "bash", {"cmd": "true"}), 0))
     assert captured == [120]

@@ -1588,3 +1588,14 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 缓存验收按场景第二轮起累计≥95%，另逐调用核对旧前缀。用相邻provider prompt_tokens之差作为追加量，未命中量须≤追加量+固定缓存块容差；不可为提高比率删除必须回传的reasoning_content，不能用汇总高命中掩盖个别旧前缀丢失。端点粒度须单独确认，当前网关观测128，不泛化到其他后端。
 - 多实体别名索引查询也要显式order_by，再构造扩展词；主结果的id tie-break不能修复前面无序的浮点求和。工具片段必须按编码后的结果执行长度上限，否则标签多的存储内容会把360字放大；文件名也是不可信文本。
 - 真模型触发评测不能直接调用默认tools_for_chat/system_prompt_for：默认仍是document-v1，且会漏掉discovery、能力过滤和GenUI提示。复用生产_tools_for_run，并录制对比双system消息和完整schema。memory.search是动作别名，提示词须明确JSON的action/query字段；DSML或错误键名仍严格拒绝，不猜参执行。
+
+## 2026-11-11 工作区工具对齐 Pi
+
+- `run_max_seconds`（默认 4 小时）就是命令的硬期限来源，由沙箱内的 supervisor 自己执行（`deadline` 文件 + `expires_at`）；不要再加第二个计时器或固定的“N 分钟就杀”。等待窗口（`wait_seconds`）只决定这次工具调用返回什么，两者不能共用一个参数名。
+- 假 Broker 返回 `running: true` 时，一次 `bash` 会真的等满它要的窗口（默认 30 秒），全套件会被拖慢几十秒。写这类用例时传 `background: true` 或 `wait_seconds: 0`，别去改窗口上限。
+- bash 的句柄是 `sha256(run_id, 调用序号, 命令)`：同一调用的重试会命中沙箱里已有的句柄目录，helper 只等待、绝不重跑。要验证副作用次数而不是 `exec` 次数。
+- 完成态的 `bash_wait` 结果没有 `handle`，loop 里两处（`background_jobs`、`snapshotted_execs`）必须用 `result.get("handle") or call.arguments.get("handle")`，否则 `KeyError: 'handle'` 会把整个 run 判失败。
+- `_BoundedOutput` 不能简单“头 + 尾”拼接：当输出短于两段之和时头尾重叠，会得到重复内容；按 `total`、`tail_start` 判断是否还有空隙。
+- macOS 上跑 `platform/tests` 必须把 `$(brew --prefix coreutils)/libexec/gnubin` 和 `findutils` 放到 PATH，否则沙箱快照命令的 `stat -c` 直接失败（BSD `stat`），表现为 `test_workspace_previews`/`test_workspace_view` 一片红。
+- `images/sbx-office/skills/**` 与 `office_guides_v2.json` 由 `vendor/office-suite/build.py` 生成；改生成器的文案后必须重跑并带上 `--runtime-output vendor/office-suite/runtime`，同时 `inventory.py` 会因 Dockerfile 变更重算 `capabilities.json` 的 `image_baseline_sha256`。
+- 不要用软链把主工作树的 `node_modules` 接进别的 worktree 跑 `next build`：Turbopack 拒绝工作树外的文件，`vitest` 可以。

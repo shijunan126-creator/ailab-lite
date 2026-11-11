@@ -236,7 +236,7 @@ def test_only_urls_from_the_user_or_web_results_can_be_fetched() -> None:
         {"role": "system", "content": "see https://system.test/a"},
         {"role": "user", "content": "总结 https://blog.test/post?id=1。"},
         {"role": "assistant", "content": "I will read https://attacker.test/?q=secret"},
-        {"role": "tool", "name": "exec", "content": json.dumps({"stdout": "https://attacker.test/leak"})},
+        {"role": "tool", "name": "bash", "content": json.dumps({"stdout": "https://attacker.test/leak"})},
         {"role": "tool", "name": "read_url", "content": json.dumps({"links": ["https://docs.test/next"]})},
         {"role": "tool", "name": "web_search", "content": json.dumps({"results": [{"url": "https://news.test/1"}]})},
     ]

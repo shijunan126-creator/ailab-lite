@@ -223,7 +223,7 @@ def navigation(fmt: str, modules: list[dict]) -> str:
     text += f"根目录 /opt/skills/platform.{fmt}/；先 copy_library_file 到 /workspace/inputs，原件只读，"
     text += "新版本写 /workspace/outputs。依赖应预装；缺失则报告，不联网安装。"
     text += "工作区用 office-read SOURCE NEW_OUTPUT_DIRECTORY 重读（输出目录须不存在）。"
-    text += "exec(cmd=...) 执行，后台用 exec_wait；先 scripts/check.py，再 view_workspace_file 核对，最后 deliver_file。\n"
+    text += "bash(cmd=...) 执行，后台用 bash_wait；先 scripts/check.py，再 view_workspace_file 核对，最后 deliver_file。\n"
     text += (
         f"兼容 JSON 规格入口：/opt/skills/platform.{fmt}/scripts/"
         + {
@@ -279,7 +279,7 @@ def document_guide(fmt: str, mode: str, resources: list[str]) -> str:
             "再按任务读取编号文本块，部分结果不当全文。\n"
             "草稿放/workspace/work，成品放/workspace/outputs。编辑用预装Python办公库，转换/渲染用LibreOffice/Poppler；依赖缺失如实报告，不联网安装。\n"
             "布局、图表和嵌图用view_workspace_file检查；要识别图片或扫描页文字时，先在沙箱生成所需页图，再调用ocr_workspace_image。\n"
-            "exec执行，长任务用exec_wait；先scripts/check.py，再view_workspace_file核对，最后deliver_file。子任务只汇报，主任务交付。\n"
+            "bash执行，长任务用bash_wait；先scripts/check.py，再view_workspace_file核对，最后deliver_file。子任务只汇报，主任务交付。\n"
             f"资源根目录/opt/skills/platform.{fmt}/；兼容JSON规格入口scripts/"
             + {"docx": "build_docx.py", "xlsx": "build_xlsx.py", "pptx": "build.py", "pdf": "pdf_tool.py"}[fmt]
             + "。\n"

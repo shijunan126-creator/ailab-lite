@@ -248,7 +248,7 @@ def test_quota_rejections_are_counted(api, monkeypatch) -> None:
 
 
 def test_labels_that_come_from_outside_are_bounded() -> None:
-    assert metrics.tool_label("exec") == "exec"
+    assert metrics.tool_label("bash") == "bash"
     assert metrics.tool_label("rm -rf / # injected by the model") == "other"
     assert metrics.model_label("test-pro") == "test-pro"
     assert metrics.model_label("whatever-the-run-says") == "other"

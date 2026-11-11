@@ -7,7 +7,7 @@ from copy import deepcopy
 from ..contracts.model_context import CONTEXT_ABI_VERSION
 
 RUNTIME_VERSION = 1
-NON_REPLAYABLE = frozenset({"exec"})
+NON_REPLAYABLE = frozenset({"bash"})
 UNCERTAIN_EXEC = "此命令在中断前可能已部分执行，未重跑；请先检查工作区。"
 
 

@@ -84,7 +84,7 @@ def test_catalog_selection_leaves_legacy_objects_and_fixed_checkpoint_exact():
     v2_work, v2_chat = tools_for_turn(2), tools_for_chat(2)
     assert not names(v2_work) & (LEGACY_DOCUMENT_TOOLS | CHAT_DOCUMENT_TOOLS)
     assert CHAT_DOCUMENT_TOOLS <= names(v2_chat) and not names(v2_chat) & LEGACY_DOCUMENT_TOOLS
-    assert {"exec", "copy_library_file", "resolve_attachment", "view_workspace_file"} <= names(v2_work)
+    assert {"bash", "copy_library_file", "resolve_attachment", "view_workspace_file"} <= names(v2_work)
     assert tools_for_turn() == work and tools_for_chat() == chat
     assert _tools_for_run({"options": {"mode": "work", "document_tools_version": 2}, "_fixed_catalog": work}) is work
     assert allowed() == ALLOWED and "read_library_file" in ALLOWED

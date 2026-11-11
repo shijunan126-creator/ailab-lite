@@ -59,13 +59,13 @@ def test_discovery_keeps_request_prefix_and_tools():
 def test_clipped_tool_result_stays_identical_on_later_calls():
     class Broker(FakeBroker):
         async def get_file(self, lease_id, path):
-            return b"x" * 100_000
+            return (b"x" * 100 + b"\n") * 1000  # 1000 lines, ~98KB: over the byte cap, under the line cap
 
     def tool_call(call_id, name, arguments):
         return {"tool_calls": [{"index": 0, "id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}]}
 
     responses = [
-        tool_call("read", "read_file", '{"path":"/workspace/work/large.txt"}'),
+        tool_call("read", "read", '{"path":"/workspace/work/large.txt"}'),
         tool_call("plan", "update_plan", '{"steps":["finish"]}'),
         {"content": "done"},
     ]
@@ -77,7 +77,7 @@ def test_clipped_tool_result_stays_identical_on_later_calls():
     assert_extension(requests[0], requests[1])
     assert_extension(requests[1], requests[2])
     result = next(message for message in requests[1]["messages"] if message.get("tool_call_id") == "read")
-    assert '"next_offset"' in result["content"] and len(result["content"]) < 100_000  # read_file returns a bounded window
+    assert '"next_offset"' in result["content"] and len(result["content"]) < 100_000  # read returns a bounded window
 
 
 def test_reasoning_is_echoed_without_rewriting_earlier_messages():
@@ -457,9 +457,9 @@ def test_revoked_parent_rebuilds_valid_history_without_replaying_tools(monkeypat
                         {"role": "system", "content": "old"},
                         {
                             "role": "assistant",
-                            "tool_calls": [{"id": "exec", "type": "function", "function": {"name": "exec", "arguments": "{}"}}],
+                            "tool_calls": [{"id": "bash", "type": "function", "function": {"name": "bash", "arguments": "{}"}}],
                         },
-                        {"role": "tool", "name": "exec", "tool_call_id": "exec", "content": "already executed"},
+                        {"role": "tool", "name": "bash", "tool_call_id": "bash", "content": "already executed"},
                         {
                             "role": "assistant",
                             "tool_calls": [{"id": "delivery", "type": "function", "function": {"name": "deliver_file", "arguments": "{}"}}],
@@ -535,7 +535,7 @@ def test_legacy_checkpoint_rebuilds_once_and_preserves_tool_fences(split):
     ) + [{"role": "user", "content": "current task"}]
     state["user_message_index"] = len(state["messages"]) - 1
     state["delivered"] = {"/workspace/out.txt": 12}
-    state["tool_log"] = {"0:0": {"name": "exec", "status": "started"}}
+    state["tool_log"] = {"0:0": {"name": "bash", "status": "started"}}
     platform, broker = FakePlatform(), FakeBroker()
     platform.checkpoint = {"step": 1, "state": state}
     with scripted_server([{"content": "done"}]) as (url, requests):
@@ -1147,7 +1147,7 @@ def test_file_skill_reuses_text_but_revalidates_and_installs_current_version(mod
                 }
             return run
 
-    execute = {"tool_calls": [{"index": 0, "id": "exec", "type": "function", "function": {"name": "exec", "arguments": '{"cmd":"true"}'}}]}
+    execute = {"tool_calls": [{"index": 0, "id": "bash", "type": "function", "function": {"name": "bash", "arguments": '{"cmd":"true"}'}}]}
     responses = [{"content": "first"}, *([execute] if mode == "work" else []), {"content": "second"}]
     with scripted_server(responses) as (url, requests):
         platform, broker = Platform(), FakeBroker()
@@ -1245,7 +1245,7 @@ def test_office_module_wire_load_reread_and_checkpoint_prefix(mode, fmt):
     assert prohibited not in json.dumps(requests, ensure_ascii=False).lower()
 
 
-@pytest.mark.parametrize("context_tokens, refused", [(24000, True), (32000, False), (64000, False)])
+@pytest.mark.parametrize("context_tokens, refused", [(24000, True), (40000, False), (64000, False)])
 def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatch, context_tokens, refused):
     from ailab_platform.agent.skill_modules import read_module
     from ailab_platform.agent.tools import tool_result_message

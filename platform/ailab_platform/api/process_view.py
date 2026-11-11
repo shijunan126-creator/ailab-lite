@@ -45,6 +45,16 @@ LABELS = {
     "search_capabilities": "查找可用能力",
     "run_js": "运行 JavaScript",
     "search_images": "搜索图片",
+    "bash": "运行命令",
+    "bash_wait": "查看命令进度",
+    "bash_kill": "停止命令",
+    "write": "写入文件",
+    "read": "读取文件",
+    "edit": "修改文件",
+    "ls": "查看目录",
+    "grep": "搜索内容",
+    "find": "查找文件",
+    # Names used before the Pi alignment: persisted events still have to render.
     "exec": "运行命令",
     "exec_wait": "查看命令进度",
     "exec_kill": "停止命令",
@@ -82,10 +92,12 @@ def describe_tool(name, args):
         detail = a.get("query")
     elif name == "run_js":
         detail = next((line.strip()[:120] for line in str(a.get("code") or "").splitlines() if line.strip()), None)
-    elif name == "exec":
+    elif name in {"bash", "exec"}:
         detail = str(a.get("cmd") or a.get("command") or "")[:160]
-    elif name in {"write_file", "read_file", "list_files"}:
+    elif name in {"write", "read", "ls", "find", "write_file", "read_file", "list_files"}:
         detail = a.get("path")
+    elif name in {"edit", "grep"}:
+        detail = a.get("pattern") or a.get("path")
     elif name == "deliver_file":
         detail = a.get("filename") or str(a.get("path") or "").split("/")[-1]
     elif name in {"read_url", "download_url"}:

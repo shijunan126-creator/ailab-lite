@@ -34,7 +34,7 @@ def test_children_fork_the_parent_prefix_run_concurrently_and_report_back():
         [LLMResponse(tool_calls=[ToolCall("s", "run_subtasks", {"tasks": TASKS})]), LLMResponse(content="汇总完成")],
         {
             "甲": [
-                LLMResponse(tool_calls=[ToolCall("w", "write_file", {"path": "/workspace/work/a.txt", "content": "甲的资料"})]),
+                LLMResponse(tool_calls=[ToolCall("w", "write", {"path": "/workspace/work/a.txt", "content": "甲的资料"})]),
                 LLMResponse(tool_calls=[ToolCall("d", "deliver_file", {"path": "/workspace/outputs/x.pptx"})]),
                 LLMResponse(content="甲：已写 a.txt"),
             ],

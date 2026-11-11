@@ -19,8 +19,8 @@ from tests.runtime_fakes import background_request
 from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
 
 TERMINAL = {"succeeded", "failed", "canceled"}
-WRITE = ToolCall("c_write", "write_file", {"path": "/workspace/outputs/a.md", "content": "a"})
-EXEC = ToolCall("c_exec", "exec", {"cmd": "build"})
+WRITE = ToolCall("c_write", "write", {"path": "/workspace/outputs/a.md", "content": "a"})
+EXEC = ToolCall("c_exec", "bash", {"cmd": "build"})
 DELIVER = ToolCall("c_deliver", "deliver_file", {"path": "/workspace/outputs/a.md", "filename": "a.md"})
 
 
@@ -87,14 +87,22 @@ class SandboxSpy(FakeBroker):
             self._step("write", write)
 
     async def exec(self, lease_id, cmd, timeout=None):
-        if background_request(self, cmd)["action"] == "kill_all":
+        request = background_request(self, cmd)
+        if request["action"] == "kill_all":
             return {"exit_code": 0, "stdout": json.dumps({"ok": True, "running": False, "killed": 0})}
+        if request["action"] != "start":
+            # A resumed run re-attaches to the handle; this sandbox no longer has that job, which is the
+            # realistic case after a lease is rebuilt (the /tmp job registry does not survive it).
+            return {
+                "exit_code": 0,
+                "stdout": json.dumps({"ok": False, "running": False, "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}),
+            }
 
         def run():
-            self.execs.append(background_request(self, cmd)["cmd"])
+            self.execs.append(request["cmd"])
             return {"exit_code": 0, "stdout": json.dumps({"exit_code": 0, "stdout": "built", "stderr": "", "duration_ms": 1})}
 
-        return self._step("exec", run)
+        return self._step("bash", run)
 
     async def commit(self, lease_id, path, filename=None, role="output"):
         def deliver():
@@ -138,8 +146,8 @@ def test_a_killed_agent_resumes_without_repeating_or_losing_work(crash_at, when)
     }  # writes are idempotent overwrites
     state = platform.checkpoint["state"]
     assert {call_id: rec["name"] for call_id, rec in state["tool_log"].items()} == {
-        "0:0": "write_file",
-        "1:0": "exec",
+        "0:0": "write",
+        "1:0": "bash",
         "2:0": "deliver_file",
     }
     assert broker.execs == EXECS_AFTER_RESUME[(crash_at, when)]
@@ -279,8 +287,8 @@ def test_reused_provider_call_id_does_not_deduplicate_a_later_tool_invocation():
     platform, broker = FakePlatform(), SandboxSpy()
     llm = ScriptedLLM(
         [
-            LLMResponse(tool_calls=[ToolCall("reused", "exec", {"cmd": "first"})]),
-            LLMResponse(tool_calls=[ToolCall("reused", "exec", {"cmd": "second"})]),
+            LLMResponse(tool_calls=[ToolCall("reused", "bash", {"cmd": "first"})]),
+            LLMResponse(tool_calls=[ToolCall("reused", "bash", {"cmd": "second"})]),
             LLMResponse(content="done"),
         ]
     )

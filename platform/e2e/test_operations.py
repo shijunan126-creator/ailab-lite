@@ -54,7 +54,7 @@ def test_every_service_reports_its_own_metrics_after_a_run(stack) -> None:
     assert grew("api", 'ailab_model_tokens_total{kind="prompt",model="test-fast"}')
     assert grew("agent", 'ailab_agent_run_seconds_count{outcome="succeeded"}')
     assert grew("agent", 'ailab_llm_calls_total{model="test-fast",outcome="ok"}')
-    assert grew("agent", 'ailab_tool_calls_total{ok="true",tool="exec"}')
+    assert grew("agent", 'ailab_tool_calls_total{ok="true",tool="bash"}')
     assert grew("broker", "ailab_sandbox_acquire_seconds_count")
     assert grew("broker", 'ailab_sandbox_exec_seconds_count{provider="mock"}')
     assert run_id not in after["api"] + after["agent"] + after["broker"], "ids must never become label values"

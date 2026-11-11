@@ -111,7 +111,7 @@ class QuestionThenAnswer(LLMClient):
 
             turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
             results = [m for m in messages[turn + 1 :] if m.get("role") == "tool"]
-            if not any(m.get("name") == "exec" for m in results):
+            if not any(m.get("name") == "bash" for m in results):
                 office_release.clear()
                 source = (
                     "from openpyxl import Workbook; w=Workbook(); s=w.active; s.title='销售'; "
@@ -119,7 +119,7 @@ class QuestionThenAnswer(LLMClient):
                 )
                 return LLMResponse(
                     tool_calls=[
-                        ToolCall("fallback_create", "exec", {"cmd": "mkdir -p /workspace/outputs && python -c " + shlex.quote(source)})
+                        ToolCall("fallback_create", "bash", {"cmd": "mkdir -p /workspace/outputs && python -c " + shlex.quote(source)})
                     ]
                 )
             await asyncio.wait_for(office_release.wait(), timeout=45)
@@ -144,7 +144,7 @@ class QuestionThenAnswer(LLMClient):
             workspace = prompt.startswith("原生工作区")
             work_mode = "view_workspace_file" in offered or any(m.get("name") == "copy_library_file" for m in results)
             if workspace:
-                if not any(m.get("name") == "exec" for m in results):
+                if not any(m.get("name") == "bash" for m in results):
                     import shlex
 
                     script = (
@@ -153,7 +153,7 @@ class QuestionThenAnswer(LLMClient):
                     )
                     office_release.clear()
                     command = "mkdir -p /workspace/outputs && python -c " + shlex.quote(script)
-                    return LLMResponse(tool_calls=[ToolCall("office_create", "exec", {"cmd": command})])
+                    return LLMResponse(tool_calls=[ToolCall("office_create", "bash", {"cmd": command})])
                 await asyncio.wait_for(office_release.wait(), timeout=45)
                 target_path = "/workspace/outputs/draft.docx"
             elif work_mode:
@@ -176,7 +176,7 @@ class QuestionThenAnswer(LLMClient):
         if prompt.startswith("PPT模板链路"):
             current_turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
             results = [
-                json.loads(m["content"]) for m in messages[current_turn + 1 :] if m.get("role") == "tool" and m.get("name") == "exec"
+                json.loads(m["content"]) for m in messages[current_turn + 1 :] if m.get("role") == "tool" and m.get("name") == "bash"
             ]
             if results:
                 return LLMResponse(content="模板检查：" + json.dumps(results[-1], ensure_ascii=False))
@@ -184,21 +184,21 @@ class QuestionThenAnswer(LLMClient):
                 cmd = "test ! -e /workspace/.template/template.pptx && echo TEMPLATE_ABSENT"
             else:
                 cmd = "test -s /workspace/.template/template.pptx && test -s /workspace/.template/analysis.json && echo TEMPLATE_PRESENT"
-            return LLMResponse(tool_calls=[ToolCall("template_probe", "exec", {"cmd": cmd})])
+            return LLMResponse(tool_calls=[ToolCall("template_probe", "bash", {"cmd": cmd})])
         if original:
             workspace_seen[original] = messages
             if original.startswith("工作区保持") and not any(
                 m.get("role") == "tool" and m.get("name") != "search_capabilities" for m in messages
             ):
                 offered = {t["function"]["name"] for t in tools or []}
-                if "exec" not in offered and "search_capabilities" in offered:
+                if "bash" not in offered and "search_capabilities" in offered:
                     return LLMResponse(
-                        tool_calls=[ToolCall("discover_exec", "search_capabilities", {"query": "exec", "kind": "tool", "limit": 1})]
+                        tool_calls=[ToolCall("discover_exec", "search_capabilities", {"query": "bash", "kind": "tool", "limit": 1})]
                     )
                 workspace_release.clear()
                 await asyncio.wait_for(workspace_release.wait(), timeout=45)
                 return LLMResponse(
-                    tool_calls=[ToolCall("workspace_step", "exec", {"cmd": "echo workspace"})],
+                    tool_calls=[ToolCall("workspace_step", "bash", {"cmd": "echo workspace"})],
                     usage={"prompt_tokens": 20, "completion_tokens": 10},
                 )
             if original.startswith("工作区失败"):
@@ -246,7 +246,7 @@ class QuestionThenAnswer(LLMClient):
         answered = {m["tool_call_id"]: m for m in messages if m.get("role") == "tool"}
         if BEFORE_ID not in answered:
             return LLMResponse(
-                content="先检查环境。", tool_calls=[ToolCall(BEFORE_ID, "exec", {"cmd": "echo before-question > /workspace/note.txt"})]
+                content="先检查环境。", tool_calls=[ToolCall(BEFORE_ID, "bash", {"cmd": "echo before-question > /workspace/note.txt"})]
             )
         if ASK_ID not in answered:
             question = {"question": "要哪个版本？", "options": OPTIONS, "allow_text": False}

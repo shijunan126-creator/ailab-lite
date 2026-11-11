@@ -95,7 +95,7 @@ def test_truncated_output_is_an_error() -> None:
 
 
 def test_malformed_tool_arguments_are_flagged_not_guessed() -> None:
-    call = {"id": "c1", "function": {"name": "write_file", "arguments": '{"path": "/workspace/a", "content": "unterminated'}}
+    call = {"id": "c1", "function": {"name": "write", "arguments": '{"path": "/workspace/a", "content": "unterminated'}}
     client, _ = _client(lambda n, r: _ok(content="", tool_calls=[call]))
     resp = _chat(client)
     assert INVALID_ARGUMENTS_KEY in resp.tool_calls[0].arguments
@@ -125,7 +125,7 @@ def test_streaming_hands_over_thinking_then_text_and_assembles_tool_calls() -> N
                     {
                         "delta": {
                             "content": "lo",
-                            "tool_calls": [{"index": 0, "id": "c1", "function": {"name": "exec", "arguments": '{"cmd"'}}],
+                            "tool_calls": [{"index": 0, "id": "c1", "function": {"name": "bash", "arguments": '{"cmd"'}}],
                         }
                     }
                 ]
@@ -145,7 +145,7 @@ def test_streaming_hands_over_thinking_then_text_and_assembles_tool_calls() -> N
     r = asyncio.run(client.chat_stream([{"role": "user", "content": "x"}], [], "m", on_text=text, on_reasoning=thinking))
     assert seen == [("think", "let me "), ("think", "think"), ("text", "Hel"), ("text", "lo")]
     assert r.content == "Hello" and r.reasoning_content == "let me think"
-    assert r.tool_calls[0].name == "exec" and r.tool_calls[0].arguments == {"cmd": "ls"}
+    assert r.tool_calls[0].name == "bash" and r.tool_calls[0].arguments == {"cmd": "ls"}
     assert r.usage == {"prompt_tokens": 5, "completion_tokens": 7, "cached_tokens": 2}
 
 

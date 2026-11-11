@@ -1,3 +1,12 @@
+# 工作区工具对齐 Pi（2026-11-11）
+
+- 用户要求：把 `read_file`/`write_file`/`list_files`/`exec` 换成 Pi 的 `read`/`write`/`edit`/`bash`（另补 `grep`/`find`，底层 `rg`/`fd`），逻辑与性能优化照 Pi 源码做；随后临时调整 bash 的等待与期限。分支 `feat/pi-aligned-workspace-tools`，base `origin/main@7d17db92`，工作树 `.worktrees/pi-aligned-workspace-tools`；未授权推送、合并、部署。
+- 已完成：九个工具落地（行窗口、容错 `edit`、FIFO 文件锁、沙箱内 `ls`/`grep`/`find`）；bash 把「等待窗口 / 平台期限 / HTTP 单次等待」分成三件事，一次工具调用内部多段有界等待、不忙轮询、不按 idle 杀进程，期限由沙箱 supervisor 到点强制，句柄确定化使重启后接管原执行而不是重跑；提示词、技能生成物、Portal 步骤名同步。
+- 验证：[记录](updates/2026-11-11-pi-aligned-workspace-tools.md)。ruff 通过；单元套件 3002 项、16 失败（与未改基线逐条相同，缺 OCR/渲染环境）、189 跳过；Portal 286 项 + `tsc` 干净；未跑 Next 构建、contracts、E2E 与真模型。
+- 下一步：等用户决定是否推送/开 PR；镜像重建（`ripgrep`/`fd-find`）与前缀缓存真模型复测在 PR 后补。
+
+---
+
 # 记忆页不再显示来源对话（2026-11-11）
 
 - 用户要求：记忆行去掉「来源对话 / 等 N 段对话」，后端保留来源数据并保证删除链正确。分支 `feat/memory-hide-sources`，base `main@bc5c5b5c`；未授权部署。

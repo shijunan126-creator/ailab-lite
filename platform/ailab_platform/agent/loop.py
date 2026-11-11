@@ -39,7 +39,7 @@ from ..skill_registry import BASE_SKILLS, resolve_name
 from ..telemetry import span
 from ..title_text import normalize_title
 from . import discovery, net_tools, subtasks, watchdog
-from .background_exec import background_exec
+from .background_exec import background_exec, command_handle
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, ContextPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
 from .context import ContextManager
@@ -73,13 +73,13 @@ CANCEL_POLL_SECONDS = 2.0
 SANDBOX_RETRY_SECONDS = 3.0
 DELTA_FLUSH_SECONDS = 0.25  # how often streamed text is written as an agent.delta event
 DELTA_FLUSH_CHARS = 120
-PREVIEW_AFTER = {"exec", "exec_wait", "exec_kill", "write_file", "run_subtasks"}  # tools that can change files in /workspace/outputs
+PREVIEW_AFTER = {"bash", "bash_wait", "bash_kill", "write", "edit", "run_subtasks"}  # tools that can change files in /workspace/outputs
 THINKING_KEEP_CHARS = 20_000  # of the reasoning stored with the run (the events keep all of it)
 WRAP_UP_STEPS = 3  # this many steps before the limit the model is told to finish up
 WRAP_UP_NOTE = "（平台提示：本轮只剩 {n} 次工具调用。请尽快收尾：生成并交付文件，然后用文字回复用户。）"
 OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调用工具，直接用文字告诉用户已经完成了什么、还有什么没完成、下一轮可以怎么继续。）"
 FILE_TOOLS = frozenset(
-    {"copy_library_file", "write_file", "exec", "deliver_file", "run_subtasks", *net_tools.NAMES}
+    {"copy_library_file", "write", "edit", "bash", "deliver_file", "run_subtasks", *net_tools.NAMES}
 )  # tools that change /workspace or its outputs
 WORKSPACE_DEBOUNCE_SECONDS = 60  # between workspace snapshots while the run is busy
 WORKSPACE_LAG_NOTE = "（平台提示：工作区快照落后于执行记录；部分文件变更可能丢失。请先检查工作区，不要假定已执行命令的文件仍在。）"
@@ -215,12 +215,15 @@ def _full_skill_visible(turn, name):
 _OFFICE_VIEW_SKILLS = {"platform.pptx", "platform.docx", "platform.xlsx"}
 
 _FILE_TOOLS = {
-    "list_files",
-    "read_file",
-    "write_file",
-    "exec",
-    "exec_wait",
-    "exec_kill",
+    "ls",
+    "read",
+    "write",
+    "edit",
+    "grep",
+    "find",
+    "bash",
+    "bash_wait",
+    "bash_kill",
     "deliver_file",
     "download_url",
     "copy_library_file",
@@ -1152,13 +1155,13 @@ class AgentLoop:
                 status = "done"
                 break
             child_images = []
-            for c in response.tool_calls:
+            for ordinal, c in enumerate(response.tool_calls):
                 version = catalog_version(run.get("options"))
                 available = c.name in subtasks.allowed(version)
                 if version == 2:
                     available = available and c.name in {t["function"]["name"] for t in offered}
                 if available:
-                    result = await self._subtask_tool(turn, run_id, lease_id, c, messages)
+                    result = await self._subtask_tool(turn, run_id, lease_id, c, messages, f"sub{index}:{used}:{ordinal}")
                 else:
                     result = {"ok": False, "error": subtasks.REFUSED.format(name=c.name)}
                 child_images.extend(result.pop("_child_images", []))
@@ -1170,7 +1173,7 @@ class AgentLoop:
         await self._event(run_id, "agent.subtask", {"index": index, "title": task["title"], "status": status, "steps": used})
         return {"title": task["title"], "status": status, "steps": used, "report": report[: subtasks.REPORT_CHARS]}
 
-    async def _subtask_tool(self, turn: _Turn, run_id: str, lease_id: str, call, messages: list[dict]) -> dict:
+    async def _subtask_tool(self, turn: _Turn, run_id: str, lease_id: str, call, messages: list[dict], invocation: str = "") -> dict:
         ctx = ToolContext(
             run_id,
             self.platform,
@@ -1182,6 +1185,8 @@ class AgentLoop:
         budget = self._budgets[run_id]
         budget.update()
         ctx.exec_lifetime_seconds = max(1, settings.run_max_seconds - budget.data["active_seconds"])
+        if call.name == "bash":
+            ctx.command_handle = command_handle(run_id, invocation, str(call.arguments.get("cmd") or ""))
         try:
             if call.name == "view_workspace_file" and ctx.document_tools_version == 2:
                 import base64
@@ -1365,7 +1370,7 @@ class AgentLoop:
                 }
             )
 
-    async def _run_tool(self, turn: _Turn, run_id: str, call, step: int) -> dict:
+    async def _run_tool(self, turn: _Turn, run_id: str, call, step: int, invocation: str = "") -> dict:
         image_start = len(self._states[run_id].get("pending_image_inputs", []))
         await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
         tool = metrics.tool_label(call.name)
@@ -1602,21 +1607,23 @@ class AgentLoop:
                 ctx.exec_lifetime_seconds = (
                     120 if budget.data.get("pause_step") is not None else max(1, settings.run_max_seconds - budget.data["active_seconds"])
                 )
+                if call.name == "bash":
+                    ctx.command_handle = command_handle(run_id, invocation, str(call.arguments.get("cmd") or ""))
                 with span("agent.tool", tool=tool):
                     try:
                         result = await self._interruptible(
                             run_id,
                             execute_tool(call.name, call.arguments, lease_id, self.broker, ctx),
-                            steerable=call.name == "exec_wait",
+                            steerable=call.name in {"bash", "bash_wait"},
                         )
                     except SteerArrived:
                         # Only the wait is abandoned: the command keeps running and its unread output stays behind the same offset.
                         result = {
                             "ok": True,
-                            "handle": call.arguments.get("handle"),
+                            "handle": call.arguments.get("handle") or ctx.command_handle,
                             "running": True,
                             "steered": True,
-                            "hint": "用户发来新消息，已停止等待；命令仍在后台运行。先处理新消息，需要时用相同 offset 继续 exec_wait。",
+                            "hint": "用户发来新消息，已停止等待；命令仍在后台运行。先处理新消息，需要时用相同 offset 继续 bash_wait。",
                         }
         except (RunCanceled, LeaseInterrupted, BudgetPause, FileDependencyPending):
             raise
@@ -1722,7 +1729,7 @@ class AgentLoop:
                         "job_key": hashlib.sha256(result["handle"].encode()).hexdigest() if result.get("handle") else None,
                         "idle_seconds": result.get("idle_seconds"),
                     }
-                    if call.name in {"exec", "exec_wait", "exec_kill"}
+                    if call.name in {"bash", "bash_wait", "bash_kill"}
                     else {}
                 ),
                 "stderr": (result.get("stderr") or "")[:2000],
@@ -1884,9 +1891,23 @@ class AgentLoop:
         if record and "result" in record:
             return record["result"]
         if record and call.name in NON_REPLAYABLE:
-            return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True}
+            handle = record.get("handle") or (
+                command_handle(run_id, invocation, str(call.arguments.get("cmd") or "")) if call.name == "bash" else ""
+            )
+            if not handle:
+                return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True}
+            # The command may still be running in this sandbox: continue waiting on that execution.
+            # If the sandbox lost it, the helper says so and nothing is started again.
+            resumed = await self._run_tool(turn, run_id, ToolCall(call.id, "bash_wait", {"handle": handle}), step, invocation)
+            if resumed.get("ok") is False and not resumed.get("running"):
+                return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True, "handle": handle}
+            return {**resumed, "resumed": True}
         if not record:
-            state["tool_log"][invocation] = {"name": call.name, "started": True}
+            record = {"name": call.name, "started": True}
+            if call.name == "bash":
+                # Deterministic, so a resumed run can wait on the same execution.
+                record["handle"] = command_handle(run_id, invocation, str(call.arguments.get("cmd") or ""))
+            state["tool_log"][invocation] = record
             if call.name in FILE_TOOLS:
                 state["workspace_dirty"] = True
             await self._checkpoint(run_id, turn)
@@ -2051,7 +2072,7 @@ class AgentLoop:
         else:
             identity = delivery_id_var.set(f"{run_id}:{invocation}")
             try:
-                result = await self._run_tool(turn, run_id, call, step)
+                result = await self._run_tool(turn, run_id, call, step, invocation)
             finally:
                 delivery_id_var.reset(identity)
         return result
@@ -2393,25 +2414,26 @@ class AgentLoop:
                     if call.name == "memory":
                         self._context(run_id).observe_memory_result(result, call.id)
                     state["pending"].pop(0)
-                    if call.name in {"exec", "exec_wait", "exec_kill"} and result.get("handle"):
+                    job_handle = result.get("handle") or call.arguments.get("handle")
+                    if call.name in {"bash", "bash_wait", "bash_kill"} and job_handle:
                         jobs = set(state.get("background_jobs", []))
                         if result.get("running"):
-                            jobs.add(result["handle"])
+                            jobs.add(job_handle)
                         else:
-                            jobs.discard(result["handle"])
+                            jobs.discard(job_handle)
                         state["background_jobs"] = sorted(jobs)
                     if call.name == "finish" and result.get("ok"):
                         state.update(finished=True, final_summary=result.get("summary") or state["final_summary"])
                     changed = call.name in FILE_TOOLS or (
-                        call.name in {"exec_wait", "exec_kill"}
+                        call.name in {"bash_wait", "bash_kill"}
                         and not result.get("running")
                         and result.get("exit_code") is not None
                         and result.get("handle") not in state.get("snapshotted_execs", [])
                     )
                     if changed:
                         state["workspace_dirty"] = True
-                        if call.name in {"exec_wait", "exec_kill"}:
-                            state["snapshotted_execs"] = [*state.get("snapshotted_execs", [])[-7:], result["handle"]]
+                        if call.name in {"bash_wait", "bash_kill"}:
+                            state["snapshotted_execs"] = [*state.get("snapshotted_execs", [])[-7:], job_handle]
                     await self._checkpoint(run_id, turn)
                     if changed:
                         await self._workspace_checkpoint(run_id, turn)

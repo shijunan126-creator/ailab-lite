@@ -71,24 +71,24 @@ def test_background_tools_start_wait_kill_and_cap(tmp_path, monkeypatch):
     broker = LocalBroker(tmp_path)
 
     async def scenario():
-        start = await execute_tool("exec", {"cmd": "printf 'first'; sleep 10", "background": True}, "lease", broker)
+        start = await execute_tool("bash", {"cmd": "printf 'first'; sleep 10", "background": True}, "lease", broker)
         assert start["ok"] and start["running"] and len(start["handle"]) == 32
         try:
-            full = await execute_tool("exec", {"cmd": "true", "background": True}, "lease", broker)
+            full = await execute_tool("bash", {"cmd": "true", "background": True}, "lease", broker)
             assert not full["ok"] and "上限" in full["error"]
-            waited = await execute_tool("exec_wait", {"handle": start["handle"], "seconds": 1}, "lease", broker)
+            waited = await execute_tool("bash_wait", {"handle": start["handle"], "seconds": 1}, "lease", broker)
             assert waited["running"] and waited["output_tail"] == "first"
             again = await execute_tool(
-                "exec_wait", {"handle": start["handle"], "seconds": 0, "offset": waited["total_bytes"]}, "lease", broker
+                "bash_wait", {"handle": start["handle"], "seconds": 0, "offset": waited["total_bytes"]}, "lease", broker
             )
             assert again["output_tail"] == ""
         finally:
-            killed = await execute_tool("exec_kill", {"handle": start["handle"]}, "lease", broker)
+            killed = await execute_tool("bash_kill", {"handle": start["handle"]}, "lease", broker)
         assert not killed["running"] and killed["exit_code"] == -9
-        assert (await execute_tool("exec_kill", {"handle": start["handle"]}, "lease", broker))["exit_code"] == -9
+        assert (await execute_tool("bash_kill", {"handle": start["handle"]}, "lease", broker))["exit_code"] == -9
         command = shlex.join([sys.executable, "-c", "print('a'*20000); print('TAIL')"])
-        start = await execute_tool("exec", {"cmd": command, "background": True}, "lease", broker)
-        waited = await execute_tool("exec_wait", {"handle": start["handle"], "seconds": 5}, "lease", broker)
+        start = await execute_tool("bash", {"cmd": command, "background": True}, "lease", broker)
+        waited = await execute_tool("bash_wait", {"handle": start["handle"], "seconds": 5}, "lease", broker)
         assert waited["exit_code"] == 0 and waited["total_bytes"] > 20000
         assert waited["truncated"] and waited["output_tail"].endswith("TAIL\n") and len(waited["output_tail"]) <= 4000
         assert sum(p.stat().st_size for p in broker.root.glob("*/log")) <= 4096
@@ -120,13 +120,13 @@ def test_new_tools_only_in_work_mode():
     def names(tools):
         return {t["function"]["name"] for t in tools}
 
-    assert {"exec_wait", "exec_kill"} <= names(tools_for_turn())
-    assert not {"exec", "exec_wait", "exec_kill"} & names(tools_for_chat())
+    assert {"bash_wait", "bash_kill"} <= names(tools_for_turn())
+    assert not {"bash", "bash_wait", "bash_kill"} & names(tools_for_chat())
 
 
 def test_short_exec_single_roundtrip_preserves_streams_and_exit(tmp_path):
     broker = LocalBroker(tmp_path)
-    result = asyncio.run(execute_tool("exec", {"cmd": "printf out; printf err >&2; exit 7"}, "lease", broker))
+    result = asyncio.run(execute_tool("bash", {"cmd": "printf out; printf err >&2; exit 7"}, "lease", broker))
     assert len(broker.commands) == 1
     assert result == {"ok": False, "exit_code": 7, "stdout": "out", "stderr": "err", "duration_ms": result["duration_ms"]}
 
@@ -135,13 +135,13 @@ def test_unified_exec_yields_waits_and_reports_idle(tmp_path):
     broker = LocalBroker(tmp_path)
 
     async def scenario():
-        result = await execute_tool("exec", {"cmd": "printf first; sleep 2; printf last", "yield_seconds": 1}, "lease", broker)
+        result = await execute_tool("bash", {"cmd": "printf first; sleep 2; printf last", "yield_seconds": 1}, "lease", broker)
         assert len(broker.commands) == 1 and result["running"]
         assert result["output_tail"] == "first" and result["total_bytes"] == 5
         assert result["idle_seconds"] >= 0.5
-        again = await execute_tool("exec_wait", {"handle": result["handle"], "seconds": 0}, "lease", broker)
+        again = await execute_tool("bash_wait", {"handle": result["handle"], "seconds": 0}, "lease", broker)
         assert again["idle_seconds"] >= result["idle_seconds"]
-        completed = await execute_tool("exec_wait", {"handle": result["handle"], "seconds": 300, "offset": 5}, "lease", broker)
+        completed = await execute_tool("bash_wait", {"handle": result["handle"], "seconds": 300, "offset": 5}, "lease", broker)
         assert completed["exit_code"] == 0 and not completed["running"]
         assert completed["output_tail"] == "last" and completed["total_bytes"] == 9
         assert completed["idle_seconds"] < 1
@@ -156,7 +156,7 @@ def test_pruning_keeps_running_and_recent_completed_handles(tmp_path, monkeypatc
     broker = LocalBroker(tmp_path)
 
     async def scenario():
-        active = await execute_tool("exec", {"cmd": "sleep 30", "background": True}, "lease", broker)
+        active = await execute_tool("bash", {"cmd": "sleep 30", "background": True}, "lease", broker)
 
         # A start that finds its job already finished returns the result without a handle (by design), so `true` got a
         # handle only when it lost the race against the start check. Each job here waits for its own release file.
@@ -166,12 +166,12 @@ def test_pruning_keeps_running_and_recent_completed_handles(tmp_path, monkeypatc
         try:
             finished = []
             for index in range(2):
-                started = await execute_tool("exec", gated(f"go-{index}"), "lease", broker)
+                started = await execute_tool("bash", gated(f"go-{index}"), "lease", broker)
                 finished.append(started["handle"])
                 (tmp_path / f"go-{index}").touch()
-                done = await execute_tool("exec_wait", {"handle": started["handle"], "seconds": 60}, "lease", broker)
+                done = await execute_tool("bash_wait", {"handle": started["handle"], "seconds": 60}, "lease", broker)
                 assert not done["running"] and done["exit_code"] == 0, done
-            latest = await execute_tool("exec", gated("go-latest"), "lease", broker)
+            latest = await execute_tool("bash", gated("go-latest"), "lease", broker)
             (tmp_path / "go-latest").touch()
             assert (broker.root / active["handle"]).exists()
             assert not (broker.root / finished[0]).exists()
@@ -179,7 +179,7 @@ def test_pruning_keeps_running_and_recent_completed_handles(tmp_path, monkeypatc
             assert (broker.root / latest["handle"]).exists()
             assert len(list(broker.root.glob("*/meta"))) == 3
         finally:
-            await execute_tool("exec_kill", {"handle": active["handle"]}, "lease", broker)
+            await execute_tool("bash_kill", {"handle": active["handle"]}, "lease", broker)
         assert json.loads((broker.root / active["handle"] / "exit").read_text())["exit_code"] == -9
 
     asyncio.run(scenario())
@@ -203,7 +203,7 @@ def test_pause_kills_jobs_before_snapshot(tmp_path, legacy_registry):
     order = []
 
     async def snapshot(*args, **kwargs):
-        status = await execute_tool("exec_wait", {"handle": handle[0], "seconds": 0}, "lease", broker)
+        status = await execute_tool("bash_wait", {"handle": handle[0], "seconds": 0}, "lease", broker)
         assert not status["running"] and status["exit_code"] == -9
         order.append("snapshot")
 
@@ -211,7 +211,7 @@ def test_pause_kills_jobs_before_snapshot(tmp_path, legacy_registry):
     handle = []
 
     async def scenario():
-        start = await execute_tool("exec", {"cmd": "sleep 30", "background": True}, "lease", broker)
+        start = await execute_tool("bash", {"cmd": "sleep 30", "background": True}, "lease", broker)
         handle.append(start["handle"])
         if not legacy_registry:
             state["background_jobs"] = ["f" * 32] * settings.exec_background_max_jobs + handle[:]
@@ -219,31 +219,36 @@ def test_pause_kills_jobs_before_snapshot(tmp_path, legacy_registry):
             await loop._budget_pause("r", turn, "测试暂停")
             assert state["background_jobs"] == []
         finally:
-            await execute_tool("exec_kill", {"handle": start["handle"]}, "lease", broker)
+            await execute_tool("bash_kill", {"handle": start["handle"]}, "lease", broker)
 
     asyncio.run(scenario())
     assert order == ["snapshot"]
 
 
-@pytest.mark.parametrize("args", [{"cmd": "true", "yield_seconds": 121}, {"cmd": "true", "yield_seconds": True}])
-def test_invalid_yield_is_rejected_before_start(tmp_path, args):
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"cmd": "true", "wait_seconds": 0},  # bash must wait at least a moment, or use background
+        {"cmd": "true", "wait_seconds": 301},
+        {"cmd": "true", "wait_seconds": True},
+        {"cmd": "true", "timeout_seconds": 5},  # no longer a wait window, and never a kill deadline
+    ],
+)
+def test_invalid_wait_window_is_rejected_before_start(tmp_path, args):
     from ailab_platform.agent.tools import ToolError
 
     broker = LocalBroker(tmp_path)
     with pytest.raises(ToolError):
-        asyncio.run(execute_tool("exec", args, "lease", broker))
+        asyncio.run(execute_tool("bash", args, "lease", broker))
     assert not broker.commands
 
 
-def test_timeout_alias_and_legacy_settings_are_compatible(tmp_path, monkeypatch):
+def test_legacy_settings_are_ignored(tmp_path, monkeypatch):
     from ailab_platform.config import Settings
 
     monkeypatch.setenv("AILAB_RUN_SOFT_BUDGET_SECONDS", "old-value-is-ignored")
     monkeypatch.setenv("AILAB_RUN_REVIEW_INTERVAL_SECONDS", "ignored")
     assert Settings(_env_file=None).run_max_seconds == 14400
-    broker = LocalBroker(tmp_path)
-    result = asyncio.run(execute_tool("exec", {"cmd": "printf ok", "timeout_seconds": 1}, "lease", broker))
-    assert result["stdout"] == "ok" and len(broker.commands) == 1
 
 
 def test_killed_supervisor_reaper_stops_orphaned_process_group(tmp_path, monkeypatch):
@@ -254,7 +259,7 @@ def test_killed_supervisor_reaper_stops_orphaned_process_group(tmp_path, monkeyp
     broker = LocalBroker(tmp_path)
 
     async def scenario():
-        job = await background_exec("exec", {"cmd": "sleep 120 & sleep 120 & wait", "yield_seconds": 1}, "lease", broker)
+        job = await background_exec("bash", {"cmd": "sleep 120 & sleep 120 & wait", "yield_seconds": 1}, "lease", broker)
         meta = json.loads((broker.root / job["handle"] / "meta").read_text())
         os.kill(meta["pid"], signal.SIGKILL)
         failed = await background_exec("exec_wait", {"handle": job["handle"], "seconds": 1}, "lease", broker)
@@ -272,7 +277,7 @@ def test_killed_supervisor_reaper_stops_orphaned_process_group(tmp_path, monkeyp
             await asyncio.sleep(0.05)
         else:
             pytest.fail("reaper left the killed supervisor's process group alive")
-        assert (await background_exec("exec", {"cmd": "true", "yield_seconds": 1}, "lease", broker))["exit_code"] == 0
+        assert (await background_exec("bash", {"cmd": "true", "yield_seconds": 1}, "lease", broker))["exit_code"] == 0
 
     asyncio.run(scenario())
 
@@ -298,7 +303,7 @@ def test_large_short_output_survives_provider_control_transport(tmp_path, monkey
     broker = Broker()
     command = shlex.join([sys.executable, "-c", "import sys; print('中'*4500); sys.stderr.write('\\x00'*4500)"])
     try:
-        result = asyncio.run(execute_tool("exec", {"cmd": command}, lease, broker))
+        result = asyncio.run(execute_tool("bash", {"cmd": command}, lease, broker))
         assert broker.calls == 1 and result["ok"]
         assert result["stdout"] == "中" * 4500 + "\n"
         assert result["stderr"] == "\x00" * 4500
@@ -310,7 +315,7 @@ def test_command_lifetime_is_clamped_to_remaining_budget(tmp_path):
     broker = LocalBroker(tmp_path)
 
     async def scenario():
-        result = await background_exec("exec", {"cmd": "sleep 20", "background": True}, "lease", broker, max_seconds=0.5)
+        result = await background_exec("bash", {"cmd": "sleep 20", "background": True}, "lease", broker, max_seconds=0.5)
         completed = await background_exec("exec_wait", {"handle": result["handle"], "seconds": 2}, "lease", broker)
         assert completed["exit_code"] == -9 and not completed["running"]
 
@@ -322,7 +327,7 @@ def test_legacy_immediate_yield_preserves_output_if_command_already_exited(tmp_p
     broker.source_transform = lambda source: source.replace(
         b"def process_starttime(pid):", b"def process_starttime(pid):\n    time.sleep(0.2)"
     )
-    result = asyncio.run(execute_tool("exec", {"cmd": "printf quick", "background": True}, "lease", broker))
+    result = asyncio.run(execute_tool("bash", {"cmd": "printf quick", "background": True}, "lease", broker))
     assert len(broker.commands) == 1
     assert result["exit_code"] == 0 and result["stdout"] == "quick"
 
@@ -352,7 +357,7 @@ def test_foreground_keeps_head_and_failure_tail_with_cjk_transport(tmp_path, mon
         ]
     )
     try:
-        result = asyncio.run(execute_tool("exec", {"cmd": command}, lease, Broker()))
+        result = asyncio.run(execute_tool("bash", {"cmd": command}, lease, Broker()))
         for stream, ending in [("stdout", "FAILURE\n"), ("stderr", "ERROR")]:
             assert result[stream].endswith(ending) and "elided" in result[stream]
             assert result[stream].startswith("HEAD") and len(result[stream]) >= 9000
@@ -379,10 +384,10 @@ def test_finish_kills_legacy_registry_jobs_missing_from_checkpoint(tmp_path):
     broker, handle = Broker(), []
 
     async def scenario():
-        started = await background_exec("exec", {"cmd": "sleep 30", "background": True}, "lease_1", broker)
+        started = await background_exec("bash", {"cmd": "sleep 30", "background": True}, "lease_1", broker)
         handle.append(started["handle"])
         try:
-            llm = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("c", "list_files", {})]), LLMResponse(content="done")])
+            llm = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("c", "ls", {})]), LLMResponse(content="done")])
             platform = FakePlatform()
             await AgentLoop(platform, broker, llm).process("run_1", attempt_id="a")
             status = await background_exec("exec_wait", {"handle": handle[0], "seconds": 0}, "lease_1", broker)
@@ -397,7 +402,7 @@ def test_finish_kills_legacy_registry_jobs_missing_from_checkpoint(tmp_path):
 @pytest.mark.parametrize("text", ["a" * 19990, "中" * 19990, "'" * 19990], ids=["ascii", "cjk", "quotes"])
 def test_old_command_capacity_survives_transport(tmp_path, text):
     broker = LocalBroker(tmp_path)
-    result = asyncio.run(background_exec("exec", {"cmd": "true # " + text}, "lease", broker))
+    result = asyncio.run(background_exec("bash", {"cmd": "true # " + text}, "lease", broker))
     assert result["exit_code"] == 0
     assert all(len(cmd) < 20000 for cmd in broker.commands)
     assert len(list(broker.root.glob("helper-*.py"))) == 1
@@ -413,7 +418,7 @@ def test_supervisor_disappearing_without_exit_is_failed_and_prunable(tmp_path, m
     (directory / "meta").write_text(json.dumps({"pid": os.getpid(), "starttime": "not-this-process", "log_bytes": 4096}))
     result = asyncio.run(background_exec("exec_wait", {"handle": "a" * 32, "seconds": 0}, "lease", broker))
     assert result["running"] is False and result["exit_code"] == -1 and result["error"]
-    assert asyncio.run(background_exec("exec", {"cmd": "true"}, "lease", broker))["exit_code"] == 0
+    assert asyncio.run(background_exec("bash", {"cmd": "true"}, "lease", broker))["exit_code"] == 0
 
 
 def test_linux_zombie_is_not_alive(monkeypatch):
@@ -427,15 +432,15 @@ def test_linux_zombie_is_not_alive(monkeypatch):
 def test_helper_is_installed_once_verified_and_reinstalled_on_agent_resume(tmp_path):
     broker = LocalBroker(tmp_path)
     for _ in range(2):
-        assert asyncio.run(background_exec("exec", {"cmd": "true"}, "lease", broker))["exit_code"] == 0
+        assert asyncio.run(background_exec("bash", {"cmd": "true"}, "lease", broker))["exit_code"] == 0
     assert sum(".ailab-helper-" in path for path in broker.uploads) == 1
     resumed = LocalBroker(tmp_path)
-    assert asyncio.run(background_exec("exec", {"cmd": "true"}, "lease", resumed))["exit_code"] == 0
+    assert asyncio.run(background_exec("bash", {"cmd": "true"}, "lease", resumed))["exit_code"] == 0
     assert len(list(broker.root.glob("helper-*.py"))) == 1
     helper = next(broker.root.glob("helper-*.py"))
     helper.write_text("raise RuntimeError('tampered')")
     with pytest.raises(ValueError, match="控制失败"):
-        asyncio.run(background_exec("exec", {"cmd": "true"}, "lease", resumed))
+        asyncio.run(background_exec("bash", {"cmd": "true"}, "lease", resumed))
 
 
 def test_mock_translates_command_paths_inside_file_payload(tmp_path, monkeypatch):
@@ -454,7 +459,7 @@ def test_mock_translates_command_paths_inside_file_payload(tmp_path, monkeypatch
             return {"exit_code": result.exit_code, "stdout": result.stdout, "stderr": result.stderr}
 
     try:
-        result = asyncio.run(background_exec("exec", {"cmd": "printf output > /workspace/outputs/result.txt"}, lease, Broker()))
+        result = asyncio.run(background_exec("bash", {"cmd": "printf output > /workspace/outputs/result.txt"}, lease, Broker()))
         assert result["exit_code"] == 0, result
         assert provider.get_file(lease, "/workspace/outputs/result.txt") == b"output"
     finally:
@@ -464,7 +469,7 @@ def test_mock_translates_command_paths_inside_file_payload(tmp_path, monkeypatch
 def test_model_commands_run_in_bash_like_every_sandbox_backend(tmp_path, monkeypatch):
     # Dash (Debian /bin/sh) rejects process substitution; the model writes bash.
     command = "set -o pipefail; diff <(printf 'a\\n') <(printf 'a\\n') && [[ -n x ]] && echo same"
-    result = asyncio.run(execute_tool("exec", {"cmd": command}, "lease", LocalBroker(tmp_path)))
+    result = asyncio.run(execute_tool("bash", {"cmd": command}, "lease", LocalBroker(tmp_path)))
     assert result["exit_code"] == 0 and result["stdout"] == "same\n", result
     from ailab_platform.sandbox.mock import MockSandbox
 

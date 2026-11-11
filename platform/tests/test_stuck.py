@@ -16,9 +16,9 @@ def log_for(items):
 @pytest.mark.parametrize(
     "items,reason",
     [
-        ([("read_file", {"path": "/workspace/a"}, {"ok": True, "content": "same"})] * 4, "identical_call_result"),
-        ([("exec", {"cmd": "false"}, {"ok": False, "error": str(i)}) for i in range(3)], "repeated_call_error"),
-        ([("read_file", {"path": path}, {"ok": True}) for path in ("a", "b") * 6], "alternating_call_result"),
+        ([("read", {"path": "/workspace/a"}, {"ok": True, "content": "same"})] * 4, "identical_call_result"),
+        ([("bash", {"cmd": "false"}, {"ok": False, "error": str(i)}) for i in range(3)], "repeated_call_error"),
+        ([("read", {"path": path}, {"ok": True}) for path in ("a", "b") * 6], "alternating_call_result"),
     ],
 )
 def test_patterns_and_user_boundary(items, reason):
@@ -30,15 +30,15 @@ def test_patterns_and_user_boundary(items, reason):
 
 def test_timings_are_volatile_but_advancing_output_is_not():
     args = {"handle": "a" * 32, "seconds": 1}
-    same = [("exec_wait", args, {"ok": True, "running": True, "total_bytes": 5, "idle_seconds": i}) for i in range(4)]
+    same = [("bash_wait", args, {"ok": True, "running": True, "total_bytes": 5, "idle_seconds": i}) for i in range(4)]
     assert detect_loop(log_for(same)) is None
-    advancing = [("exec_wait", args, {"ok": True, "running": True, "total_bytes": i, "output_tail": str(i)}) for i in range(20)]
+    advancing = [("bash_wait", args, {"ok": True, "running": True, "total_bytes": i, "output_tail": str(i)}) for i in range(20)]
     assert detect_loop(log_for(advancing)) is None
 
 
 @pytest.mark.parametrize("error", [False, True])
 def test_agent_nudges_once_then_pauses_and_persists_reason(error):
-    name, args = ("read_file", {"path": "/workspace/missing"}) if error else ("list_files", {})
+    name, args = ("read", {"path": "/workspace/missing"}) if error else ("ls", {})
     model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall(str(i), name, args)]) for i in range(10)])
     platform, _ = _run(model)
     events = [payload for topic, payload in platform.events if topic == "agent.budget"]
@@ -66,7 +66,7 @@ def test_user_steer_resets_observations_and_nudge():
     from ailab_platform.agent.loop import AgentLoop, _Turn
 
     state = fresh_state()
-    state["tool_log"] = log_for([("list_files", {}, {"ok": True})] * 4)
+    state["tool_log"] = log_for([("ls", {}, {"ok": True})] * 4)
     state["loop_nudge"] = {"at": 4, "reason": "identical_call_result"}
     loop = AgentLoop(platform, None)
     loop._states["run_1"], loop._steps["run_1"] = state, 0
@@ -81,8 +81,8 @@ def test_compact_observations_bound_large_payloads_and_keep_identity():
     from ailab_platform.agent.stuck import compact_log, observation
 
     items = [
-        ("write_file", {"path": "a", "content": "w" * 100000}, {"ok": True}),
-        ("read_file", {"path": "a"}, {"ok": True, "content": "r" * 100000}),
+        ("write", {"path": "a", "content": "w" * 100000}, {"ok": True}),
+        ("read", {"path": "a"}, {"ok": True, "content": "r" * 100000}),
     ] * 150
     old = log_for(items)
     state = {"next_step": 300, "pending": [], "tool_log": old}
@@ -96,22 +96,22 @@ def test_compact_observations_bound_large_payloads_and_keep_identity():
 def test_legacy_pending_result_is_preserved_until_consumed():
     from ailab_platform.agent.stuck import compact_log
 
-    log = log_for([("exec", {"cmd": "script"}, {"ok": True, "stdout": "x" * 100000})])
+    log = log_for([("bash", {"cmd": "script"}, {"ok": True, "stdout": "x" * 100000})])
     state = {"next_step": 0, "pending": [{"ordinal": 0}], "tool_log": log}
     compact_log(state)
     assert log["0:0"]["result"]["stdout"] == "x" * 100000
     state["pending"] = []
     compact_log(state)
     assert log["0:0"]["result"]["compacted"]
-    assert detect_loop({"0:0": {"name": "exec", "result": {"ok": True}}}) is None
+    assert detect_loop({"0:0": {"name": "bash", "result": {"ok": True}}}) is None
 
 
 def test_silent_running_waits_break_identical_and_alternating_patterns():
     args = {"handle": "a" * 32}
     for names in [("a",) * 20, ("a", "b") * 10]:
         log = log_for(
-            [("exec_wait", {**args, "handle": name}, {"ok": True, "running": True, "idle_seconds": i}) for i, name in enumerate(names)]
+            [("bash_wait", {**args, "handle": name}, {"ok": True, "running": True, "idle_seconds": i}) for i, name in enumerate(names)]
         )
         assert detect_loop(log) is None
-    finished = log_for([("exec_wait", args, {"ok": True, "running": False, "exit_code": 0})] * 4)
+    finished = log_for([("bash_wait", args, {"ok": True, "running": False, "exit_code": 0})] * 4)
     assert detect_loop(finished) == "identical_call_result"

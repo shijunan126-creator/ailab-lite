@@ -14,11 +14,14 @@ from ..config import settings
 from ..contracts.genui import component_docs_for, component_names, core_names, guide_for
 from ..contracts.workspace_ocr import WorkspaceOcr
 from ..domain.document_tools import CHAT_DOCUMENT_TOOLS, permitted
+from ..domain.text_edit import EditError, edit_text
+from ..domain.text_truncate import read_lines
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
-from . import net_tools, subtasks
+from . import net_tools, subtasks, workspace_query
 from .background_exec import background_exec
 from .document_tools import TOOLS as DOCUMENT_TOOLS
+from .file_mutation_queue import with_file_mutation_queue
 from .prompts import load_skill
 from .skill_verification import SkillRefused, verify_sandbox_skills
 
@@ -50,25 +53,17 @@ TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "list_files",
-            "description": "列出沙箱目录中的文件（最多 500 个）。",
-            "parameters": {
-                "type": "object",
-                "properties": {"path": {"type": "string", "default": "/workspace"}},
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": "读取沙箱中的文本文件。长文件分段返回，有 next_offset 时用它作为 offset 继续读。",
+            "name": "read",
+            "description": (
+                "读取 /workspace 下的文本文件。offset 是起始行号（从 1 开始），limit 是行数；"
+                "一次最多返回 2000 行或 50KB，被截断时正文末尾给出继续读的 offset 提示。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
-                    "offset": {"type": "integer", "minimum": 0, "default": 0},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 30000, "default": 30000},
+                    "offset": {"type": "integer", "minimum": 1},
+                    "limit": {"type": "integer", "minimum": 1},
                 },
                 "required": ["path"],
             },
@@ -77,8 +72,8 @@ TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "write_file",
-            "description": "把文本内容写入沙箱文件。",
+            "name": "write",
+            "description": "把内容整份写入 /workspace 文件：不存在则创建（含父目录），已存在则覆盖。",
             "parameters": {
                 "type": "object",
                 "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
@@ -89,16 +84,96 @@ TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "exec",
-            "description": "在沙箱内执行 shell 命令，默认等待30秒，未结束则返回句柄；"
-            "用 exec_wait 监测输出和 idle_seconds，仅确认停滞时 exec_kill。",
+            "name": "edit",
+            "description": (
+                "按原文精确替换文件内容：每个 oldText 必须在原文件中唯一、且同一次调用内互不重叠，"
+                "所有 oldText 都对同一份原始内容匹配；同一文件的多处修改放在一次调用里。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "edits": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "properties": {"oldText": {"type": "string"}, "newText": {"type": "string"}},
+                            "required": ["oldText", "newText"],
+                        },
+                    },
+                },
+                "required": ["path", "edits"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ls",
+            "description": "列出 /workspace 下的目录内容（一层）：按字母序，目录名以 / 结尾，含点文件，最多 500 项。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "default": "/workspace"},
+                    "limit": {"type": "integer", "minimum": 1},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": (
+                "在沙箱内执行 shell 命令。wait_seconds 是本次等待窗口（1-300 秒）：窗口内跑完就直接返回结果，"
+                "到点仍在运行则返回句柄和已有输出。窗口结束不是超时，命令会继续跑；"
+                "要立即拿句柄不等，用 background=true。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "cmd": {"type": "string"},
-                    "yield_seconds": {"type": "integer", "minimum": 1, "maximum": 120, "default": 30},
+                    "wait_seconds": {"type": "integer", "minimum": 1, "maximum": 300, "default": 30},
+                    "background": {"type": "boolean", "default": False},
                 },
                 "required": ["cmd"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "grep",
+            "description": "用 rg 搜索 /workspace 下的文件内容，返回 “路径:行号: 内容”的匹配行；默认最多 100 条，长行截断到 500 字符。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string"},
+                    "path": {"type": "string", "default": "/workspace"},
+                    "glob": {"type": "string"},
+                    "ignore_case": {"type": "boolean"},
+                    "literal": {"type": "boolean"},
+                    "context": {"type": "integer", "minimum": 0},
+                    "limit": {"type": "integer", "minimum": 1},
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find",
+            "description": "用 fd 按 glob 查找 /workspace 下的文件，返回相对搜索目录的路径；默认最多 1000 条。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string"},
+                    "path": {"type": "string", "default": "/workspace"},
+                    "limit": {"type": "integer", "minimum": 1},
+                },
+                "required": ["pattern"],
             },
         },
     },
@@ -143,13 +218,33 @@ TOOLS.append(
     }
 )
 
-for _name, _description in (
+for _name, _description, _properties in (
     (
-        "exec_wait",
-        "等待后台命令，返回新增 output_tail、累计 total_bytes、idle_seconds、是否运行和退出码。传上次 total_bytes 为 offset；先监测进展。",
+        "bash_wait",
+        "继续等待后台命令最多 wait_seconds 秒（0-300，0 只查看当前状态）。命令完成或窗口结束就返回；"
+        "继续等待不会延长命令的期限。offset 传上次的 total_bytes 只取新增输出。长时间没输出不等于卡死。",
+        {
+            "handle": {"type": "string"},
+            "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 300, "default": 30},
+            "offset": {"type": "integer", "minimum": 0},
+        },
     ),
-    ("exec_kill", "终止确认无进展的后台命令及其子进程；可安全重复调用。"),
+    (
+        "bash_kill",
+        "终止后台命令及其子进程；可安全重复调用。只在确认要终止时使用，不要仅凭 idle_seconds 杀进程。",
+        {"handle": {"type": "string"}},
+    ),
 ):
+    TOOLS.append(
+        {
+            "type": "function",
+            "function": {
+                "name": _name,
+                "description": _description,
+                "parameters": {"type": "object", "properties": _properties, "required": ["handle"]},
+            },
+        }
+    )
     TOOLS.append(
         {
             "type": "function",
@@ -346,12 +441,15 @@ SANDBOX_TOOLS = {
     "view_workspace_file",
     "ocr_workspace_image",
     "copy_library_file",
-    "list_files",
-    "read_file",
-    "write_file",
-    "exec",
-    "exec_wait",
-    "exec_kill",
+    "ls",
+    "read",
+    "write",
+    "edit",
+    "grep",
+    "find",
+    "bash",
+    "bash_wait",
+    "bash_kill",
     "deliver_file",
     "search_images",
     "load_skill",
@@ -666,8 +764,11 @@ class ToolContext:
         *,
         mode="work",
         document_tools_version=1,
+        command_handle="",
     ):
         self.mode, self.document_tools_version = mode, document_tools_version
+        # Stable per tool call, so a resumed run waits on the command it already started.
+        self.command_handle = command_handle
         self.run_id, self.platform = run_id, platform
         self.messages = messages if messages is not None else []
         self.budget = budget or net_tools.Budget()
@@ -688,9 +789,6 @@ def _workspace_path(path: str, under: str = WORKSPACE) -> str:
         raise ToolError(str(exc)) from exc
 
 
-READ_LIMIT_CHARS = 30_000
-
-
 def _looks_binary(data: bytes) -> bool:
     head = data[:8192]
     if b"\x00" in head:
@@ -701,25 +799,6 @@ def _looks_binary(data: bytes) -> bool:
         # a multibyte character cut by the 8 KiB window is fine; anything else is not text
         return exc.start < len(head) - 4
     return False
-
-
-def _text_window(text: str, offset, limit) -> dict:
-    """One bounded window of a text file; the rest stays in the sandbox behind next_offset instead of being cut off."""
-    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
-        raise ToolError("offset 须是非负整数")
-    if limit is None:
-        limit = READ_LIMIT_CHARS
-    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= READ_LIMIT_CHARS:
-        raise ToolError(f"limit 须在 1 到 {READ_LIMIT_CHARS} 之间")
-    if offset > len(text):
-        raise ToolError(f"offset 超出文件长度（共 {len(text)} 字符）")
-    end = min(len(text), offset + limit)
-    window = {"content": text[offset:end]}
-    if offset or end < len(text):
-        window.update(offset=offset, total_chars=len(text))
-    if end < len(text):
-        window["next_offset"] = end
-    return window
 
 
 async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: AsyncBrokerClient, ctx: ToolContext | None = None) -> dict:
@@ -813,31 +892,122 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             return await net_tools.save_skill(args, ctx.run_id, lease_id, broker, ctx.platform)
     except net_tools.NetToolError as exc:
         raise ToolError(str(exc)) from exc
-    if name in {"exec", "exec_wait", "exec_kill"}:
-        if name == "exec" and not str(args.get("cmd") or args.get("command") or "").strip():
-            raise ToolError("exec requires cmd")
+    if name in {"bash", "bash_wait", "bash_kill"}:
+        if name == "bash" and not str(args.get("cmd") or args.get("command") or "").strip():
+            raise ToolError("bash requires cmd")
         try:
-            return await background_exec(name, args, lease_id, broker, max_seconds=ctx.exec_lifetime_seconds)
+            return await background_exec(
+                name, args, lease_id, broker, max_seconds=ctx.exec_lifetime_seconds, handle=ctx.command_handle or None
+            )
         except ValueError as exc:
             raise ToolError(str(exc)) from exc
-    if name == "write_file":
+    if name == "write":
         path = _workspace_path(str(args.get("path") or ""))
         content = str(args.get("content") or "")
-        await broker.put_file(lease_id, path, content.encode("utf-8"))
-        return {"ok": True, "path": path, "bytes": len(content.encode("utf-8"))}
+        data = content.encode("utf-8")
+        await broker.put_file(lease_id, path, data)
+        return {"ok": True, "path": path, "bytes": len(data)}
 
-    if name == "read_file":
+    if name == "read":
         path = _workspace_path(str(args.get("path") or ""))
-        data = await broker.get_file(lease_id, path)
+        offset, limit = args.get("offset"), args.get("limit")
+        for label, value in (("offset", offset), ("limit", limit)):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+                raise ToolError(f"{label} 须是正整数")
+        try:
+            data = await broker.get_file(lease_id, path)
+        except ClientError as exc:
+            if exc.status != 400:  # a 400 is the broker's "the path is not there"
+                raise
+            raise ToolError(f"Could not read file: {path}. Error code: ENOENT.") from exc
         if _looks_binary(data):
             # Decoding an image/zip as text would put ~100k characters of noise into the context.
-            return {"ok": False, "path": path, "error": f"binary file ({len(data)} bytes); read_file only reads text files"}
-        return {"ok": True, "path": path, **_text_window(data.decode("utf-8", "replace"), args.get("offset", 0), args.get("limit"))}
+            return {
+                "ok": False,
+                "path": path,
+                "error": f"二进制文件（{len(data)} 字节）；read 只读文本，看图片或版式用 view_workspace_file",
+            }
+        try:
+            window = read_lines(data.decode("utf-8", "replace"), path, offset, limit)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        result = {"ok": True, "path": path, "content": window.text, "total_lines": window.total_lines}
+        if window.next_offset is not None:
+            result["next_offset"] = window.next_offset
+        if window.truncation.truncated:
+            result["truncated"] = True
+        return result
 
-    if name == "list_files":
-        path = _workspace_path(str(args.get("path") or "/workspace"))
-        files = await broker.list_files(lease_id, path)
-        return {"ok": True, "path": path, "files": files}
+    if name == "edit":
+        path = _workspace_path(str(args.get("path") or ""))
+        edits = args.get("edits")
+        if not isinstance(edits, list) or not edits:
+            raise ToolError("edit 需要至少一项 edits")
+        pairs: list[tuple[str, str]] = []
+        for item in edits:
+            if not isinstance(item, dict) or not isinstance(item.get("oldText"), str) or not isinstance(item.get("newText"), str):
+                raise ToolError("每项 edits 都要有字符串 oldText 和 newText")
+            pairs.append((item["oldText"], item["newText"]))
+        async with with_file_mutation_queue(f"{lease_id}:{path}"):
+            try:
+                data = await broker.get_file(lease_id, path)
+            except ClientError as exc:
+                if exc.status != 400:  # a 400 is the broker's "the path is not there"
+                    raise
+                raise ToolError(f"Could not edit file: {path}. Error code: ENOENT.") from exc
+            if _looks_binary(data):
+                raise ToolError(f"Could not edit file: {path}. It is not a UTF-8 text file.")
+            try:
+                raw = data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ToolError(f"Could not edit file: {path}. It is not a UTF-8 text file.") from exc
+            try:
+                final = edit_text(raw, pairs, path)
+            except EditError as exc:
+                raise ToolError(str(exc)) from exc
+            await broker.put_file(lease_id, path, final.encode("utf-8"))
+        return {"ok": True, "path": path, "replaced": len(pairs)}
+
+    if name == "ls":
+        path = _workspace_path(str(args.get("path") or WORKSPACE))
+        try:
+            output = await workspace_query.list_directory(broker, lease_id, path, args.get("limit"))
+        except workspace_query.QueryError as exc:
+            raise ToolError(str(exc)) from exc
+        return {"ok": True, "path": path, "output": output}
+
+    if name == "grep":
+        pattern = str(args.get("pattern") or "")
+        if not pattern:
+            raise ToolError("grep requires pattern")
+        path = _workspace_path(str(args.get("path") or WORKSPACE))
+        glob = args.get("glob")
+        try:
+            output = await workspace_query.search_text(
+                broker,
+                lease_id,
+                pattern,
+                path,
+                glob=glob if isinstance(glob, str) and glob else None,
+                ignore_case=args.get("ignore_case") is True,
+                literal=args.get("literal") is True,
+                context=args.get("context"),
+                limit=args.get("limit"),
+            )
+        except workspace_query.QueryError as exc:
+            raise ToolError(str(exc)) from exc
+        return {"ok": True, "path": path, "output": output}
+
+    if name == "find":
+        pattern = str(args.get("pattern") or "")
+        if not pattern:
+            raise ToolError("find requires pattern")
+        path = _workspace_path(str(args.get("path") or WORKSPACE))
+        try:
+            output = await workspace_query.find_files(broker, lease_id, pattern, path, args.get("limit"))
+        except workspace_query.QueryError as exc:
+            raise ToolError(str(exc)) from exc
+        return {"ok": True, "path": path, "output": output}
 
     if name == "deliver_file":
         path = _workspace_path(str(args.get("path") or ""), OUTPUTS)

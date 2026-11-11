@@ -28,8 +28,8 @@ REDUCED_V1 = frozenset(
         "recall_history",
         "ask_user",
         "update_plan",
-        "exec",
-        "exec_wait",
+        "bash",
+        "bash_wait",
         "deliver_file",
         "review_artifact",
     }
@@ -63,13 +63,13 @@ def catalog_for_budget(catalog, budget_tokens, version=1):
 
 
 ALIASES = {
-    "执行": "exec",
+    "执行": "bash",
     "计算": "run_js",
     "json": "run_js",
     "正则": "run_js",
     "csv": "run_js",
     "js": "run_js",
-    "代码": "exec",
+    "代码": "bash",
     "网页": "web",
     "搜索": "search",
     "文件": "library",

@@ -48,6 +48,9 @@ def supervise(payload, directory):
     # dash rejects common bash forms such as <(...) and [[ ]].
     child = subprocess.Popen(["/bin/bash", "-c", payload["cmd"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     deadline = started + min(payload["max_seconds"], max(0, payload["expires_at"] - time.time()))
+    # Published so the Agent can report the remaining hard limit; the supervisor enforces it
+    # itself at this deadline, whether or not anyone is polling.
+    put(directory / "deadline", {"deadline_at": time.time() + max(0.0, deadline - time.monotonic())})
     streams = {child.stdout: "stdout", child.stderr: "stderr"}
     tails = {"stdout": "", "stderr": ""}
     prefixes, counts = {"stdout": "", "stderr": ""}, {"stdout": 0, "stderr": 0}
@@ -88,7 +91,17 @@ def supervise(payload, directory):
             if streams:
                 raise subprocess.TimeoutExpired(payload["cmd"], payload["max_seconds"])
         except subprocess.TimeoutExpired:
-            put(directory / "exit", {"exit_code": -9})
+            # The platform deadline, not a wait window: the command is killed here even if nothing polls.
+            put(
+                directory / "exit",
+                {
+                    "exit_code": -9,
+                    "killed_by": "deadline",
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                    "stdout": tails["stdout"],
+                    "stderr": tails["stderr"],
+                },
+            )
             os.killpg(os.getpgrp(), signal.SIGKILL)
         result = {"exit_code": code, "duration_ms": int((time.monotonic() - started) * 1000)}
         for name, prefix in prefixes.items():
@@ -199,7 +212,10 @@ def control(payload):
                     killed += 1
                 put(candidate.parent / "exit", {"exit_code": -9})
         return {"ok": True, "running": False, "killed": killed}
-    if payload["action"] == "start":
+    if payload["action"] == "start" and (directory / "meta").exists():
+        # A retried start for the same handle: the command already runs here. Never launch it twice.
+        payload = {**payload, "action": "wait", "initial": True}
+    elif payload["action"] == "start":
         with (ROOT / "lock").open("w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             import shutil
@@ -228,7 +244,7 @@ def control(payload):
     if payload["action"] == "kill" and not (directory / "exit").exists():
         if alive(meta):
             os.killpg(meta["pid"], signal.SIGKILL)
-        put(directory / "exit", {"exit_code": -9})
+        put(directory / "exit", {"exit_code": -9, "killed_by": "caller"})
     deadline = time.monotonic() + min(payload["seconds"], 300)
     while payload["action"] == "wait" and not (directory / "exit").exists() and alive(meta) and time.monotonic() < deadline:
         time.sleep(min(0.25, max(0, deadline - time.monotonic())))
@@ -251,6 +267,13 @@ def control(payload):
     completed = json.loads((directory / "exit").read_text()) if (directory / "exit").exists() else {}
     if isinstance(completed, int):  # v1 handles may finish while an Agent is being upgraded.
         completed = {"exit_code": completed}
+    timing = {}
+    if isinstance(meta.get("started_at"), (int, float)):
+        timing["elapsed_seconds"] = round(max(0.0, time.time() - meta["started_at"]), 3)
+    if (directory / "deadline").exists():
+        deadline_at = json.loads((directory / "deadline").read_text()).get("deadline_at")
+        if isinstance(deadline_at, (int, float)):
+            timing["remaining_seconds"] = round(max(0.0, deadline_at - time.time()), 3)
     code = completed.get("exit_code")
     running = code is None and alive(meta)
     if code is None and not running:
@@ -267,9 +290,16 @@ def control(payload):
         "exit_code": code,
         "output_tail": output.decode(errors="replace"),
         "idle_seconds": round(max(0, time.time() - last_output_at), 3),
-        "hint": "命令仍在运行；用 exec_wait 等待并检查输出进展。" if running else "",
+        "hint": "命令仍在运行；用 bash_wait 等待并检查输出进展。" if running else "",
         "total_bytes": total,
         "truncated": start > payload["offset"],
+        **timing,
+        # The supervisor keeps each stream separately; hand them over when the job is done.
+        **(
+            {key: completed[key] for key in ("stdout", "stderr", "duration_ms", "killed_by") if key in completed}
+            if code is not None
+            else {}
+        ),
     }
 
 

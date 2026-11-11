@@ -1,0 +1,179 @@
+"""Exact-text editing, matching Pi's ``edit`` behaviour case for case."""
+
+from __future__ import annotations
+
+import re
+
+import pytest
+
+from ailab_platform.domain.text_edit import (
+    EditError,
+    TextReplacement,
+    apply_edits,
+    apply_replacements_to_original,
+    edit_text,
+    normalize_to_lf,
+)
+
+
+def edit(content: str, edits, path: str = "/workspace/work/a.txt") -> str:
+    return edit_text(content, edits, path)
+
+
+def test_replaces_a_unique_region():
+    assert edit("const x = 'exact';\nconst y = 'other';\n", [("const x = 'exact';", "const x = 'changed';")]) == (
+        "const x = 'changed';\nconst y = 'other';\n"
+    )
+
+
+def test_rejects_text_that_occurs_twice():
+    with pytest.raises(EditError, match=re.escape("Found 2 occurrences of the text in /workspace/work/a.txt")):
+        edit("same\nsame\n", [("same", "other")])
+
+
+def test_names_the_edit_when_several_are_sent():
+    with pytest.raises(EditError, match=r"Found 2 occurrences of edits\[1\]"):
+        edit("a1\na2\nb\nb\n", [("a1", "A1"), ("b", "B")])
+
+
+def test_rejects_text_that_is_absent():
+    with pytest.raises(EditError, match="Could not find the exact text"):
+        edit("completely different content\n", [("this does not exist", "replacement")])
+
+
+def test_rejects_an_empty_old_text():
+    with pytest.raises(EditError, match="oldText must not be empty"):
+        edit("content\n", [("", "x")])
+
+
+def test_rejects_overlapping_edits():
+    with pytest.raises(EditError, match=r"edits\[0\] and edits\[1\] overlap"):
+        edit("one\ntwo\nthree\n", [("one\ntwo\n", "ONE\nTWO\n"), ("two\nthree\n", "TWO\nTHREE\n")])
+
+
+def test_every_edit_matches_the_original_not_the_running_result():
+    # "bar" also appears in the result of the first edit, so an incremental implementation would misplace it.
+    assert edit("foo\nbar\nbaz\n", [("foo\n", "foo bar\n"), ("bar\n", "BAR\n")]) == "foo bar\nBAR\nbaz\n"
+
+
+def test_no_partial_write_when_one_edit_fails():
+    with pytest.raises(EditError):
+        edit("keep me\n", [("keep", "KEEP"), ("missing", "x")])
+
+
+def test_identical_replacement_is_refused():
+    with pytest.raises(EditError, match="No changes made to"):
+        edit("content\n", [("content", "content")])
+
+
+def test_multiple_disjoint_edits_in_one_call():
+    assert edit("a\nb\nc\nd\n", [("a", "A"), ("c", "C")]) == "A\nb\nC\nd\n"
+
+
+class TestFuzzyMatching:
+    def test_trailing_whitespace(self):
+        assert edit("line one   \nline two  \nline three\n", [("line one\nline two\n", "replaced\n")]) == ("replaced\nline three\n")
+
+    def test_fullwidth_punctuation(self):
+        assert edit("你好，世界\n你好（世界）\n", [("你好,世界\n你好(世界)\n", "你好，pi\n你好(pi)\n")]) == "你好，pi\n你好(pi)\n"
+
+    def test_compatibility_forms(self):
+        assert edit("ＡＢＣ１２３\ncafe\u0301\n", [("ABC123\ncafé\n", "XYZ789\ncoffee\n")]) == "XYZ789\ncoffee\n"
+
+    def test_smart_quotes(self):
+        assert "world" in edit("console.log(\u2018hello\u2019);\n", [("console.log('hello');", "console.log('world');")])
+        assert "Goodbye" in edit("const msg = \u201cHello World\u201d;\n", [('const msg = "Hello World";', 'const msg = "Goodbye";')])
+
+    def test_unicode_dashes(self):
+        assert "10-50" in edit("range: 1\u20135\nbreak\u2014here\n", [("range: 1-5\nbreak-here", "range: 10-50\nbreak--here")])
+
+    def test_non_breaking_space(self):
+        assert "universe" in edit("hello\u00a0world\n", [("hello world", "hello universe")])
+
+    def test_exact_match_wins_over_fuzzy(self):
+        assert edit("const x = 'exact';\n", [("const x = 'exact';", "const x = 'changed';")]) == "const x = 'changed';\n"
+
+    def test_duplicates_are_detected_after_normalization(self):
+        with pytest.raises(EditError, match="Found 2 occurrences"):
+            edit("hello world   \nhello world\n", [("hello world", "replaced")])
+
+    def test_untouched_lines_keep_their_bytes(self):
+        original = "keep before  \nfirst target  \nfirst after\nkeep middle   \nsecond target  \nsecond after\nkeep after  \n"
+        result = edit(
+            original,
+            [("first target\nfirst after", "FIRST\nFIRST2"), ("second target\nsecond after", "SECOND\nSECOND2")],
+        )
+        assert result == "keep before  \nFIRST\nFIRST2\nkeep middle   \nSECOND\nSECOND2\nkeep after  \n"
+
+    def test_the_matched_occurrence_is_the_one_replaced(self):
+        result = edit("replace me   \nafter   \n", [("replace me\n", "after\n")])
+        assert result == "after\nafter   \n"
+
+
+class TestLineEndings:
+    def test_lf_old_text_matches_a_crlf_file(self):
+        assert edit("first\r\nsecond\r\nthird\r\n", [("second\n", "REPLACED\n")]) == "first\r\nREPLACED\r\nthird\r\n"
+
+    def test_lf_file_stays_lf(self):
+        assert edit("first\nsecond\nthird\n", [("second\n", "REPLACED\n")]) == "first\nREPLACED\nthird\n"
+
+    def test_duplicates_across_line_endings_are_detected(self):
+        with pytest.raises(EditError, match="Found 2 occurrences"):
+            edit("hello\r\nworld\r\n---\r\nhello\nworld\n", [("hello\nworld\n", "replaced\n")])
+
+    def test_bom_survives(self):
+        assert edit("\ufefffirst\r\nsecond\r\nthird\r\n", [("second\n", "REPLACED\n")]) == "\ufefffirst\r\nREPLACED\r\nthird\r\n"
+
+    def test_bom_and_crlf_survive_multiple_edits(self):
+        assert edit("\ufefffirst\r\nsecond\r\nthird\r\nfourth\r\n", [("second\n", "SECOND\n"), ("fourth\n", "FOURTH\n")]) == (
+            "\ufefffirst\r\nSECOND\r\nthird\r\nFOURTH\r\n"
+        )
+
+    def test_inserted_lines_take_the_replaced_line_ending(self):
+        assert edit("first\r\nsecond\r\nthird", [("second\nthird", "2a\r\n2b\nthird!")]) == "first\r\n2a\r\n2b\r\nthird!"
+        assert edit("first\nsecond\nthird", [("second\nthird", "2a\r\n2b\nthird!")]) == "first\n2a\n2b\nthird!"
+
+    def test_a_mixed_file_keeps_its_other_line_endings(self):
+        assert edit("a\nb\r\nX = 1\r\n", [("X = 1", "X = 2")]) == "a\nb\r\nX = 2\r\n"
+        assert edit("a\r\nb\nc", [("c", "C")]) == "a\r\nb\nC"
+
+    def test_a_lone_cr_in_an_untouched_line_is_kept(self):
+        assert edit("a\rb\nX = 1\n", [("X = 1", "X = 2")]) == "a\rb\nX = 2\n"
+
+    def test_multiple_edits_take_their_own_line_endings(self):
+        assert edit("lf1\nlf2\ncr1\r\ncr2\r\n", [("lf1\n", "A\nB\n"), ("cr1\n", "C\nD\n")]) == "A\nB\nlf2\nC\r\nD\r\ncr2\r\n"
+
+    def test_fuzzy_widening_keeps_untouched_endings(self):
+        assert edit("a\r\nfoo   \r\nb\n", [("foo\n", "FOO\n")]) == "a\r\nFOO\r\nb\n"
+
+    def test_a_kept_lone_cr_does_not_merge_with_an_inserted_lf(self):
+        assert edit("a\rb\nc", [("b", "\nB")]) == "a\r\n\nB\nc"
+        assert edit("a\rb\nc", [("b", "")]) == "a\r\n\nc"
+
+    def test_inserted_cr_does_not_merge_with_a_kept_lf(self):
+        written = apply_replacements_to_original("a\rb\nc", [TextReplacement(2, 1, "\r")])
+        assert normalize_to_lf(written) == "a\n\n\nc"
+
+
+def test_random_mixed_endings_always_normalize_to_the_diffed_content():
+    """Pi's invariant over 3000 random files: the written file must equal the computed one when normalized."""
+    endings = ["\n", "\r\n", "\r", ""]
+    seed = 1
+
+    def random(n: int) -> int:
+        nonlocal seed
+        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+        return (seed * n) // 0x80000000
+
+    for _ in range(3000):
+        original = "".join(f"w{random(100)}{'  ' if random(5) == 0 else ''}{endings[random(4)]}" for _ in range(random(12) + 1))
+        normalized = normalize_to_lf(original)
+        start = random(len(normalized))
+        old_text = normalized[start : start + 1 + random(12)]
+        new_text = ["", "\n", "X\n", "\nY", "\r", "Z"][random(6)]
+        try:
+            applied = apply_edits(normalized, [(old_text, new_text)], "/workspace/work/a.txt")
+        except EditError:
+            continue  # duplicate, not found or no change
+        written = apply_replacements_to_original(original, applied.replacements)
+        assert normalize_to_lf(written) == applied.new_content
