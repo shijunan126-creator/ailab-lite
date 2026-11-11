@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import re
 
 import pytest
@@ -105,6 +106,21 @@ class TestFuzzyMatching:
         )
         assert result == "keep before  \nFIRST\nFIRST2\nkeep middle   \nSECOND\nSECOND2\nkeep after  \n"
 
+    def test_a_fuzzy_edit_does_not_rewrite_the_rest_of_the_line(self):
+        """NFKC on the whole file would turn every full-width mark on the touched lines into half width."""
+        original = "第一段：价格（含税）为１００元，“推荐”。\n第二段：保持不变（全角）。\n"
+        result = edit("".join([original]), [('"推荐"', '"首选"'), ("第二段", "第2段")])
+        assert result == '第一段：价格（含税）为１００元，"首选"。\n第2段：保持不变（全角）。\n'
+
+    def test_a_fuzzy_edit_keeps_untouched_punctuation_inside_the_matched_line(self):
+        original = "备注（内部）：请勿外传 — 老版本。\n"
+        assert edit(original, [("备注(内部)", "备注(公开)")]) == "备注(公开)：请勿外传 — 老版本。\n"
+
+    def test_overlapping_occurrences_are_refused(self):
+        """``str.count`` is non-overlapping, so "}\n}\n" in "}\n}\n}\n" used to look unique."""
+        with pytest.raises(EditError, match="Found 2 occurrences"):
+            edit("}\n}\n}\n", [("}\n}\n", "X\n")])
+
     def test_the_matched_occurrence_is_the_one_replaced(self):
         result = edit("replace me   \nafter   \n", [("replace me\n", "after\n")])
         assert result == "after\nafter   \n"
@@ -153,6 +169,25 @@ class TestLineEndings:
     def test_inserted_cr_does_not_merge_with_a_kept_lf(self):
         written = apply_replacements_to_original("a\rb\nc", [TextReplacement(2, 1, "\r")])
         assert normalize_to_lf(written) == "a\n\n\nc"
+
+
+def test_every_short_mixed_ending_file_is_written_consistently():
+    """Exhaustive over {a, \r, \n} up to length 6: the seam rule must hold everywhere, not just randomly."""
+    alphabet = ["a", "\r", "\n"]
+    for size in range(1, 7):
+        for combination in itertools.product(alphabet, repeat=size):
+            original = "".join(combination)
+            normalized = normalize_to_lf(original)
+            for start in range(len(normalized)):
+                for length in range(1, len(normalized) - start + 1):
+                    old_text = normalized[start : start + length]
+                    for new_text in ("", "\n", "X\n", "\nY", "\rZ"):
+                        try:
+                            applied = apply_edits(normalized, [(old_text, new_text)], "/workspace/work/a.txt")
+                        except EditError:
+                            continue
+                        written = apply_replacements_to_original(original, applied.replacements)
+                        assert normalize_to_lf(written) == applied.new_content, (original, old_text, new_text, written)
 
 
 def test_random_mixed_endings_always_normalize_to_the_diffed_content():
