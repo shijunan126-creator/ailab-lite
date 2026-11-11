@@ -9,6 +9,31 @@ from ailab_platform.agent import main
 from ailab_platform.clients import ClientError
 
 
+class VirtualTimeLoop(asyncio.SelectorEventLoop):
+    """Timers fire in order on a virtual clock: lease arithmetic is checked, not the runner's scheduling lag."""
+
+    def __init__(self):
+        super().__init__()
+        self._now = 0.0
+        select = self._selector.select
+
+        def advance(timeout=None):
+            events = select(0)  # nothing here does real I/O except the loop's self-pipe
+            if not events and timeout:
+                self._now += timeout
+            return events
+
+        self._selector.select = advance
+
+    def time(self):
+        return self._now
+
+
+def run(coro):
+    with asyncio.Runner(loop_factory=VirtualTimeLoop) as runner:
+        return runner.run(coro)
+
+
 @pytest.mark.parametrize("failures", [1, 2])
 def test_transient_renew_errors_recover_and_refresh_deadline(monkeypatch, failures):
     monkeypatch.setattr(main, "settings", SimpleNamespace(job_lease_seconds=0.3))
@@ -29,7 +54,7 @@ def test_transient_renew_errors_recover_and_refresh_deadline(monkeypatch, failur
         await main._with_job_heartbeat(work(), Platform(), "job", "token")
         assert calls > failures + 1
 
-    asyncio.run(scenario())
+    run(scenario())
 
 
 @pytest.mark.parametrize("failure", ["stale", "outage", "hang"])
@@ -66,7 +91,7 @@ def test_ownership_loss_or_renew_deadline_stops_work_before_expiry(monkeypatch, 
         else:
             assert calls >= 2 and stopped >= lease * 0.7
 
-    asyncio.run(scenario())
+    run(scenario())
 
 
 def test_claim_response_time_is_not_added_to_ownership(monkeypatch):
@@ -92,4 +117,4 @@ def test_claim_response_time_is_not_added_to_ownership(monkeypatch):
             await main._with_job_heartbeat(work(), Platform(), "job", "token", lease_started_at=started - 0.18)
         assert 0.04 < stopped < 0.12
 
-    asyncio.run(scenario())
+    run(scenario())

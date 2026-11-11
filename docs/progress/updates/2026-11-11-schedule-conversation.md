@@ -23,7 +23,7 @@
 
 - `ruff check` / `ruff format --check` 通过；定向 `pytest -n auto`（schedule_conversation、schedules_citations、conversation_mode_fixed、net_tools、web、migrations、prefix_cache）310 passed / 50 skipped（PG/后端未设置的用例）。
 - Portal：`tsc --noEmit` 通过，vitest 48 文件 286 passed。
-- CI 首轮（`fb1e042`）3 项失败：迁移链测试仍断言 head 0070、Chat 工具列表断言缺 `schedule`，均为测试未随改动更新，已修正。随后 E2E 仍点已删除的「模式」下拉（改为断言「工作」标签）；`test_lifecycle_assets` 资产清扫用例依赖 worker 内前序测试的残留（与本改动无关的既有不稳定），改为循环清扫到 0。
+- CI 首轮（`fb1e042`）3 项失败：迁移链测试仍断言 head 0070、Chat 工具列表断言缺 `schedule`，均为测试未随改动更新，已修正。随后 E2E 仍点已删除的「模式」下拉（改为断言「工作」标签）；`test_lifecycle_assets` 资产清扫用例依赖 worker 内前序测试的残留（与本改动无关的既有不稳定），改为循环清扫到 0。PG 一轮又遇两个既有实时钟用例：job heartbeat（0.3s 租约下事件循环停顿 146ms 越界）改为虚拟时钟事件循环，去掉 margin 时三项失败、恢复后通过，用时约 1.5s；broker Redis flush 重建的轮询期限由固定 2s 改为按心跳周期推导（ttl×2）。
 - 真实模型（DeepSeek Flash 经 OpenCode，临时 host 栈 + mock 沙箱）：
   - Chat 里创建、到点触发、修改为一次性、删除并 list：均正确；多步轮次缓存 95–97%。
   - “20 分钟后提醒”：模型先 list 取 `now`，再建 once 当日对应时间。
