@@ -569,20 +569,17 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .memory-item:last-child { border-bottom: 0; }
 .memory-item-text { flex: 1; min-width: 0; font-size: var(--text-ui); line-height: 1.6; overflow-wrap: anywhere; }
 .memory-item .row-more { align-self: center; flex: none; }
-.memory-meta { flex: none; display: inline-flex; gap: 6px; max-width: 45%; color: var(--faint-foreground); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.memory-meta > * + *::before { content: "·"; margin-right: 6px; }
-.memory-meta a { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-foreground); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
-.memory-meta a:hover { color: var(--foreground); }
+.memory-meta { flex: none; color: var(--faint-foreground); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .memory-settings { margin-top: 40px; }
 .memory-item.editing { display: block; }
 .memory-edit { display: flex; flex-direction: column; gap: 8px; }
 .memory-edit textarea { width: 100%; min-height: 64px; max-height: 200px; field-sizing: content; resize: none; font-size: var(--text-ui); line-height: 1.6; }
 .memory-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 640px) {
-  /* text and its menu share the first row; where it came from sits under the text */
+  /* text and its menu share the first row; the date sits under the text */
   .memory-item:not(.editing) { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; }
   .memory-item:not(.editing) .row-more { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
-  .memory-meta { grid-column: 1; max-width: none; }
+  .memory-meta { grid-column: 1; }
   .memory-section { padding-inline: 14px; }
 }
 .memory-thread { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }

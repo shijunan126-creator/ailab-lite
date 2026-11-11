@@ -8,12 +8,10 @@ import { confirmDialog } from "../lib/dialog";
 
 vi.mock("../lib/api", () => ({ api: vi.fn(), errorMessage: String }));
 vi.mock("../lib/dialog", () => ({ confirmDialog: vi.fn(async () => true) }));
-vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a> }));
 
 const item = (id: string, content: string, extra: Partial<MemoryItem> = {}): MemoryItem => ({
   id, project_id: null, kind: "preference", content,
-  observed_at: "2026-11-03T08:00:00Z", updated_at: "2026-11-03T08:00:00Z",
-  sources: [{ run_id: "run_1", conversation_id: "conv_1", conversation_title: "周报", date: "2026-11-03" }], ...extra,
+  observed_at: "2026-11-03T08:00:00Z", updated_at: "2026-11-03T08:00:00Z", ...extra,
 });
 const view: MemoryView = {
   project_id: null, enabled: true, memory_mode: null, merge_pending: false, revision: 7, active: null, used_chars: 40, max_chars: 6000,
@@ -37,14 +35,13 @@ test("dates and organize notes", () => {
   assert.equal(organizeNote({ id: "d", status: "applied", report: { runs_seen: 0, added: 1, changed: 3 } }), "新增 1 条，整理了 2 处记忆");
 });
 
-test("shows the whole document by kind, each line with its source conversation, from one read", async () => {
+test("shows the whole document by kind from one read", async () => {
   vi.mocked(api).mockResolvedValue(view);
   render(<MemoryPanel projectId={null} title="记忆" />);
   await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
   assert.ok(screen.getByText("关注乐信季度业绩"));
   // the sections the API sends, in its order; a kind without lines is a quiet card that only says so
   assert.deepEqual([...document.querySelectorAll(".memory-section-title")].map((h) => h.textContent), ["偏好1", "在做的事1", "关注的话题1"]);
-  assert.equal(screen.getAllByText("周报")[0].closest("a")?.getAttribute("href"), "/c/conv_1");
   assert.deepEqual(vi.mocked(api).mock.calls.map(([path]) => path), ["/v1/memory/view"]);
   assert.equal(screen.queryByText(/快满了/), null);
 });
@@ -146,14 +143,11 @@ test("an item is edited in place and saved with the revision it was read at", as
   await waitFor(() => assert.equal(screen.queryByLabelText("编辑记忆"), null));
 });
 
-test("a line without a source shows only its date", async () => {
-  vi.mocked(api).mockResolvedValue({
-    ...view,
-    sections: [{ kind: "fact", items: [item("mem_gone", "在券商做量化", { sources: [] }), item("mem_typed", "住在上海", { sources: [] })] }],
-  });
+test("a line shows only its date, never the conversations it was learned in", async () => {
+  vi.mocked(api).mockResolvedValue({ ...view, sections: [{ kind: "fact", items: [item("mem_q", "在券商做量化", { observed_at: null })] }] });
   render(<MemoryPanel projectId={null} title="记忆" />);
   await waitFor(() => assert.ok(screen.getByText("在券商做量化")));
-  const meta = (text: string) => screen.getByText(text).closest("li")!.querySelector(".memory-meta")!.textContent;
-  assert.equal(meta("在券商做量化"), "11-03");
-  assert.equal(meta("住在上海"), "11-03");
+  const row = screen.getByText("在券商做量化").closest("li")!;
+  assert.equal(row.querySelector(".memory-meta")!.textContent, "11-03");
+  assert.equal(row.querySelector("a"), null);
 });

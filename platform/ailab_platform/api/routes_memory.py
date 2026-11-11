@@ -717,33 +717,6 @@ def memory_invalidations(run_id: str, body: KnownMemory, db: Session = Depends(g
     return current_memory_context(run_id, db, body.known_ids)
 
 
-@router.get("/v1/memory/{entry_id}/sources")
-def memory_sources(entry_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    from ..models import Conversation
-
-    entry = next((e for e in memory_for(user)["entries"] if e["id"] == entry_id), None)
-    if not entry:
-        raise HTTPException(404, "记忆不存在")
-    rows = db.execute(
-        select(Run.id, Run.conversation_id, Run.created_at, Conversation.title)
-        .outerjoin(Conversation, Conversation.id == Run.conversation_id)
-        .where(Run.id.in_(entry["evidence_run_ids"]), Run.user_id == user.id, Conversation.deleted_at.is_(None))
-    ).all()
-    return {
-        "quote": entry["source_quote"],
-        "evidence_deleted": entry["evidence_deleted"],
-        "sources": [
-            {
-                "run_id": r.id,
-                "conversation_id": r.conversation_id,
-                "date": r.created_at.replace(tzinfo=UTC).isoformat(),
-                "title": r.title or "历史对话",
-            }
-            for r in rows
-        ],
-    }
-
-
 @router.post("/internal/runs/{run_id}/recall", dependencies=[Depends(require_scope("memory:recall_for_run"))])
 def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
     """Search the run owner's earlier conversations. Read-only, so no attempt fence or delivery id."""
@@ -892,45 +865,9 @@ def clear_summary_scope(
     return memory_view(project_id, user, db)
 
 
-def _sources_for(db, user, rows):
-    from ..models import Conversation
-    from .source_lifecycle import invalid_sources_query
-
-    sources = db.execute(
-        select(Run.id, Run.conversation_id, Run.created_at, Conversation.title)
-        .outerjoin(Conversation, Conversation.id == Run.conversation_id)
-        .where(
-            Run.user_id == user.id,
-            Run.id.in_({rid for row in rows for rid in row.source_run_ids}),
-            Run.id.not_in(invalid_sources_query(user.id)),
-            Conversation.deleted_at.is_(None),
-            Run.superseded_by_run_id.is_(None),
-        )
-    ).all()
-    return {
-        r.id: {"run_id": r.id, "conversation_id": r.conversation_id, "conversation_title": r.title or "历史对话", "date": r.created_at}
-        for r in sources
-    }
-
-
-def _item_out(db, user, row, sources=None):
-    if sources is None:
-        sources = _sources_for(db, user, [row])
-    return {
-        **{
-            key: getattr(row, key)
-            for key in (
-                "id",
-                "project_id",
-                "kind",
-                "created_by",
-                "content",
-                "observed_at",
-                "updated_at",
-            )
-        },
-        "sources": [sources[rid] for rid in row.source_run_ids[:50] if rid in sources],
-    }
+def _item_out(row):
+    # Sources stay in the database for organizing and source deletion; the page shows only the line and its date.
+    return {key: getattr(row, key) for key in ("id", "project_id", "kind", "created_by", "content", "observed_at", "updated_at")}
 
 
 def _scope_items(db, user, project_id):
@@ -965,7 +902,6 @@ def memory_view(
     rows = [r for r in rows if not r.valid_to and not r.superseded_by]
     job = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, active_job()).limit(1))
     document = memory_for(user)
-    sources = _sources_for(db, user, rows)
     return {
         "project_id": project_id,
         "enabled": document["enabled"],
@@ -975,7 +911,7 @@ def memory_view(
         "active": {"id": job.id, "status": job.status, "trigger": job.trigger} if job else None,
         "used_chars": used_chars([legacy(r) for r in rows]),
         "max_chars": settings.memory_doc_max_chars,
-        "sections": [{"kind": k, "items": [_item_out(db, user, r, sources) for r in rows if r.kind == k]} for k in SECTIONS],
+        "sections": [{"kind": k, "items": [_item_out(r) for r in rows if r.kind == k]} for k in SECTIONS],
     }
 
 
@@ -1012,7 +948,7 @@ def patch_memory_item(item_id: str, body: MemoryItemPatch, user: User = Depends(
         )
         db.commit()
         db.refresh(row)
-        return _item_out(db, user, row)
+        return _item_out(row)
 
 
 @router.delete("/v1/memory/items/{item_id}")

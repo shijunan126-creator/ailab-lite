@@ -1,3 +1,11 @@
+# 记忆页不再显示来源对话（2026-11-11）
+
+- 用户要求：记忆行去掉「来源对话 / 等 N 段对话」，后端保留来源数据并保证删除链正确。分支 `feat/memory-hide-sources`，base `main@bc5c5b5c`；未授权部署。
+- 已完成：Portal 只显示内容与日期；API 视图不再返回 `sources`，删除无调用方的来源接口；删除链核对并补测试。详见[记录](updates/2026-11-11-memory-hide-sources.md)。
+- 下一步：推送、开 PR、CI 全绿后合并；部署需用户当次明确要求（API + Portal）。
+
+---
+
 # Outbox 提交即派发（2026-11-11）
 
 - 用户授权：按讨论实现“提交后直接叫醒派发”，不改变 outbox 可靠性契约。分支 `perf/outbox-wake`，base `origin/main@c8f93131`；改动只在 `/tmp/ailab-outbox-wake` 工作树，主工作区既有改动未动。

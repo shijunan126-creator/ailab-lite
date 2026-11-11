@@ -475,7 +475,6 @@ export type MemoryItem = {
   content: string;
   observed_at: string | null;
   updated_at: string;
-  sources: { run_id: string; conversation_id: string | null; conversation_title: string | null; date: string }[];
 };
 
 /** GET /v1/memory/view: one scope's whole memory document (the account, or one project), by kind. It is bounded, so it is never paged. */
