@@ -389,6 +389,7 @@ def select_model(page, model):
     menu.click()
     page.get_by_role("listbox", name="模型", exact=True).get_by_role("option").filter(has_text=name).click()
     expect(menu).to_contain_text(name)
+    menu.click()  # a pick leaves the menu open; the click that closes it is the caller's next one here
 
 
 def confirm_action(page):

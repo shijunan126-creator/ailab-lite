@@ -288,13 +288,14 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .model-check-gap { width: 14px; flex: none; }
 .model-btn-level { flex: none; color: var(--faint-foreground); }
 .model-btn:hover .model-btn-level, .model-btn[aria-expanded="true"] .model-btn-level { color: var(--muted-foreground); }
-/* models | 思考强度: the right column lists the levels of the model under the pointer */
+/* models | 思考强度: the right column lists the levels of the model this menu has chosen */
 .pop-menu.right-up.model-pop.split { display: flex; padding: 0; overflow: hidden; max-width: min(400px, calc(100vw - 24px)); }
 .model-pop.split .model-list { flex: 1 1 auto; min-width: 0; padding: 4px; overflow-y: auto; }
-.model-pop.split .model-item.shown { background: var(--popover-hover); }
 .model-levels { flex: none; width: 128px; padding: 4px; border-left: 1px solid var(--border); }
 .model-levels-head { padding: 8px 10px 6px; color: var(--faint-foreground); font-size: var(--text-xs); font-weight: 500; }
-.model-levels-none { padding: 6px 10px; color: var(--faint-foreground); font-size: var(--text-ui); }
+/* a model without levels still takes a level row, so the column keeps the height of a levels list */
+.model-levels-none { color: var(--faint-foreground); font-size: var(--text-ui); pointer-events: none; }
+.model-levels-gap { pointer-events: none; }
 .model-level[aria-selected="true"] { color: var(--selected-foreground); }
 .model-level svg { color: var(--primary); }
 

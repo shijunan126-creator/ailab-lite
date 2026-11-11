@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import { ModelInfo } from "../../lib/api";
 import { usePopover } from "../../lib/use-popover";
 import { IconCheck, IconChevronDown, IconImage } from "../icons";
 
-/** The model and its thinking strength for the next message, in one menu: models on the left, the levels of the model
- * under the pointer on the right (each model keeps its own level). */
+/** The model and its thinking strength for the next message, in one menu: models on the left, the levels of the chosen
+ * model on the right (each model keeps its own level). Picking a model or a level leaves the menu open; a click
+ * elsewhere or Escape closes it. */
 export default function ModelMenu({
   models,
   value,
@@ -19,24 +19,25 @@ export default function ModelMenu({
   onChange: (id: string, level?: string) => void;
 }) {
   const { open, setOpen, box } = usePopover();
-  const [shown, setShown] = useState(value); // whose levels the right column shows
-  const current = models.find((m) => m.id === value);
   if (!models.length) return null;
+  const current = models.find((m) => m.id === value);
   const level = current?.reasoning?.levels.find((l) => l.id === levelOf(current.id));
-  const target = models.find((m) => m.id === shown) || current;
   const thinking = models.some((m) => m.reasoning);
-  const pick = (id: string, next?: string) => {
+  // The levels column keeps the height of the tallest levels list: the menu grows from its bottom edge, so a shorter
+  // column would pull the model rows up from under the pointer that just picked one.
+  const levelRows = Math.max(0, ...models.map((m) => m.reasoning?.levels.length ?? 0));
+  const shownRows = current?.reasoning?.levels.length || 1; // the "—" of a model without levels is one row
+  // The right column follows the model this menu has chosen, never the row under the pointer: a hover that resizes the
+  // menu moves the rows, the pointer lands on the other model, and the choice flips back and forth.
+  const choose = (id: string, next?: string) => {
     onChange(id, next);
-    setOpen(false);
+    if (!thinking) setOpen(false); // a plain list has nothing else to pick
   };
   return (
     <div className="model-menu" ref={box}>
       <button
         className="model-btn"
-        onClick={() => {
-          setShown(value);
-          setOpen(!open);
-        }}
+        onClick={() => setOpen(!open)}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="模型"
@@ -53,11 +54,9 @@ export default function ModelMenu({
                 key={m.id}
                 role="option"
                 aria-selected={m.id === value}
-                className={`menu-item model-item ${m.id === target?.id ? "shown" : ""}`}
+                className="menu-item model-item"
                 title={m.description || undefined}
-                onMouseEnter={() => setShown(m.id)}
-                onFocus={() => setShown(m.id)}
-                onClick={() => pick(m.id)}
+                onClick={() => choose(m.id)}
               >
                 <span className="grow">{m.name}</span>
                 {m.capabilities?.includes("vision") ? <span role="img" aria-label="支持图片" title="支持图片"><IconImage size={14} /></span> : null}
@@ -69,19 +68,22 @@ export default function ModelMenu({
           {thinking ? (
             <div className="model-levels" role="listbox" aria-label="思考强度">
               <div className="model-levels-head" aria-hidden="true">思考强度</div>
-              {target?.reasoning ? (
-                target.reasoning.levels.map((l) => {
-                  const on = l.id === levelOf(target.id); // the level this model runs with, picked now or last time
+              {current?.reasoning ? (
+                current.reasoning.levels.map((l) => {
+                  const on = l.id === levelOf(current.id); // the level this model runs with, picked now or last time
                   return (
-                    <button key={l.id} role="option" aria-selected={on} className="menu-item model-level" onClick={() => pick(target.id, l.id)}>
+                    <button key={l.id} role="option" aria-selected={on} className="menu-item model-level" onClick={() => choose(current.id, l.id)}>
                       <span className="grow">{l.name}</span>
                       {on ? <IconCheck size={14} /> : <span className="model-check-gap" />}
                     </button>
                   );
                 })
               ) : (
-                <div className="model-levels-none">—</div>
+                <div className="menu-item model-level model-levels-none">—</div>
               )}
+              {Array.from({ length: Math.max(0, levelRows - shownRows) }, (_, i) => (
+                <div key={`gap-${i}`} className="menu-item model-level model-levels-gap" aria-hidden="true" />
+              ))}
             </div>
           ) : null}
         </div>

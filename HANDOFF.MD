@@ -18,6 +18,7 @@
 
 ## 2026-11-11 思考强度
 
+- 菜单不要在悬停时改变自身高度：弹层从下边缘往上长，行会被顶到指针下面，指针落到另一行又把它撑高，选择就在两个选项之间反复横跳。一栏内容跟着指针走时，另加等高占位；或者干脆只跟已选定项走。
 - DeepSeek（经 OpenCode 网关）按 `reasoning_effort` 分开缓存：换档那一轮 cached=0，再换回旧档也不能复用新前缀。档位必须在一次回答内固定，旁路调用（摘要、收尾）带同一档位；只有用户换档才多一轮冷启动。
 - 深色主题 `--subtle`（#212124）几乎等于弹层 `--popover`（#222225），在弹层里用 `--subtle` 做悬停/选中背景看不见；菜单行用 `--popover-hover`。
 - 本机 `.venv` 由 uv 创建、没有 pip，装 E2E 依赖用 `uv pip install --python .venv/bin/python -c constraints.txt playwright`。本机缺 `vendor/office-suite/runtime` 时，只跑不涉及 Office 的 E2E 可设 `AILAB_VIEWER_READER_PATH` 指向任意存在的文件。
