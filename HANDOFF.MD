@@ -1663,4 +1663,4 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 测 OpenSandbox 的 provider 代码时，SDK 文件对象的替身要照上面的语义实现（`tests/test_sandbox_file_transfers.py:Files`），真实服务契约是 `tests/contracts/test_sandbox_transfer.py` 与 `test_sandbox_lifecycle.py`（`AILAB_TEST_OSB_URL`）。
 - CI 不装 OpenSandbox SDK：provider 里对 SDK 的 import 要放在用到它、且失败有退路的地方（`MoveEntry` 放在 `move_files` 的 try 里，失败退回 `mv`）；单测替身在 SDK 缺失时自己注入 `MoveEntry`。
 - 在本地目录里模拟沙箱路径时，`/workspace`、`/tmp/` 的替换要一次完成且只匹配路径起点：Linux 上 pytest 的临时目录本身就在 `/tmp` 下，逐个 `replace` 会把刚插入的根目录再改一遍（macOS 是 `/private/var/...`，看不出来）。
-- 性能用例不要断言绝对墙钟：同一段线性代码本机 0.21 s，CI（xdist 多 worker 共享 CPU）0.73–0.84 s。断言规模关系（行数翻倍、耗时 < 3 倍）并用 `time.thread_time()`。
+- 性能用例不要断言绝对墙钟：同一段线性代码本机 0.21 s，CI（xdist 多 worker 共享 CPU）0.73–0.84 s。断言规模关系（行数翻倍、耗时 < 3 倍）并用 `time.thread_time()`。检查"不持有 GIL"时量另一线程看到的最长间隔，不数它醒来几次（操作很快时次数本来就少）。

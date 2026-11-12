@@ -298,4 +298,5 @@ A–F 通过；问题都出在上一轮新加的"只读并行"和"`read` 按字�
 - `test_sandbox_file_transfers.py` 8 项错误：把沙箱路径映射到本地目录时逐个 `replace`，Linux 上临时目录本身在 `/tmp` 下，根目录被改了两遍；改为一次、只匹配路径起点的替换（本地用 `--basetemp=/tmp/...` 复现并验证）。
 - `test_osb_transfer.py` 2 项：`put_file_from_path` 在方法开头 import SDK 的 `MoveEntry`，CI 不装 SDK；import 移到 `move_files` 的 try 里，失败退回 `mv`。
 - `test_a_csv_of_repeated_lines_edits_in_linear_time`：0.5 s 墙钟上限在 CI 上是 0.73/0.84 s（本机 0.21 s，覆盖率不影响）。这个上限从没对应过真实回归（被替换的旧实现在这个输入上也只要 0.17 s），改成断言"行数翻倍、线程 CPU 时间 < 3 倍"。
+- 第二轮 CI（`dc108083`）SQLite 只剩 `test_the_worst_case_does_not_hold_the_gil` 1 项（上一轮通过）：它数另一线程在搜索期间醒来几次，而线性搜索只要约 6 ms，繁忙的 runner 上两次之间就跑完了，和是否持有 GIL 无关。改为断言另一线程看到的最长间隔 < 1 s；持锁 2 s 的正则会产生 2.06 s 的间隔，回归仍会失败。
 

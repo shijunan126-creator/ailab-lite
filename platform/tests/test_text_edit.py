@@ -315,28 +315,31 @@ def test_a_csv_of_repeated_lines_edits_in_linear_time():
 
 
 def test_the_worst_case_does_not_hold_the_gil():
-    """``asyncio.to_thread`` cannot help if the search itself keeps the interpreter lock."""
+    """``asyncio.to_thread`` cannot help if the search itself keeps the interpreter lock.
+
+    Measured as the longest gap another thread sees: the regex this replaced held the lock for its whole
+    14 s search. Counting that thread's ticks failed on a busy CI runner, where the 6 ms search fits
+    between two ticks, which says nothing about the lock.
+    """
     content = "a" * (2 * 1024 * 1024)
-    ticks = 0
+    stamps: list[float] = []
     done = threading.Event()
 
     def heartbeat() -> None:
-        nonlocal ticks
         while not done.is_set():
-            ticks += 1
+            stamps.append(time.perf_counter())
             time.sleep(0.001)
 
     thread = threading.Thread(target=heartbeat, daemon=True)
     thread.start()
-    time.sleep(0.02)  # let the heartbeat settle into its sleep cycle
-    before = ticks
+    time.sleep(0.02)  # the heartbeat is ticking before the search starts
     with pytest.raises(EditError):
         edit_text(content, [("a" * 1000 + "b", "x")], "/workspace/work/a.txt")
-    during = ticks - before
+    time.sleep(0.02)  # and ticks again after it, so a gap spanning the search is measured
     done.set()
     thread.join(timeout=1)
-    # A 14 s search lets this counter advance once; a linear one is over in milliseconds.
-    assert during >= 2, during
+    longest = max(later - earlier for earlier, later in itertools.pairwise(stamps))
+    assert longest < 1.0, longest
 
 
 def test_a_two_megabyte_chinese_edit_stays_inside_the_agent_memory_budget():
