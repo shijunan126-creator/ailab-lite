@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from ailab_platform.broker import main
 from ailab_platform.broker.service import BrokerOwnershipError, LeaseCanceledError
 from ailab_platform.config import settings
+from ailab_platform.contracts.files import FILE_NOT_FOUND, FILE_TOO_LARGE, FILE_UNREADABLE
 
 from .test_broker_lease import _manager
 
@@ -129,14 +130,27 @@ def test_file_errors_carry_the_reason_the_agent_needs(broker, monkeypatch):
     lease_id = client.post("/internal/leases", headers=headers, json={"run_id": "files"}).json()["lease_id"]
 
     missing = client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/none.csv"})
-    assert missing.status_code == 404 and "no such file" in missing.json()["detail"]
+    assert missing.status_code == FILE_NOT_FOUND and "no such file" in missing.json()["detail"]
 
     provider.put_file(lease_id, "/workspace/work/big.csv", b"x" * 2048)
     monkeypatch.setattr(settings, "max_sandbox_read_bytes", 1024)
     too_large = client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/big.csv"})
-    assert too_large.status_code == 413
+    assert too_large.status_code == FILE_TOO_LARGE
     monkeypatch.setattr(settings, "max_sandbox_read_bytes", 4096)
     assert manager.get_file(lease_id, "/workspace/work/big.csv")  # the file is there; only the read was refused
 
     directory = client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work"})
-    assert directory.status_code == 400 and "not a regular file" in directory.json()["detail"]
+    assert directory.status_code == FILE_UNREADABLE and "not a regular file" in directory.json()["detail"]
+
+    # A caller with its own tighter budget (edit: 2 MiB) is refused before anything is transferred.
+    provider.put_file(lease_id, "/workspace/work/mid.csv", b"x" * 2048)
+    tighter = client.get(
+        f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/mid.csv", "max_bytes": 1024}
+    )
+    assert tighter.status_code == FILE_TOO_LARGE and "1024" in tighter.json()["detail"]
+    assert (
+        client.get(
+            f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/mid.csv", "max_bytes": 4096}
+        ).content
+        == b"x" * 2048
+    )

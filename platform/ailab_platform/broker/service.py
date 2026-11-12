@@ -1291,12 +1291,28 @@ class LeaseManager:
         self._provider_call("put_file_from_path", lease["sandbox_id"], path, local, max_bytes=settings.web_download_max_bytes)
 
     @_operation
-    def get_file(self, lease_id: str, path: str) -> bytes:
+    def get_file(self, lease_id: str, path: str, *, max_bytes: int | None = None, offset: int = 0, length: int | None = None) -> bytes:
+        """The file, a byte range of it, or 413 before the transfer when the caller's limit is tighter.
+
+        ``edit`` says it can only hold 2 MiB; transferring 10 MiB first and refusing after
+        would pay for the copy the caller just said it cannot afford. ``read`` asks for a
+        window, so the Agent never holds a whole 10 MiB file to show 2000 lines of it.
+        """
         lease = self._load(lease_id)
         path = self._checked(path)
+        limit = settings.max_sandbox_read_bytes
+        if max_bytes is not None:
+            limit = min(max_bytes, limit)
+            size = self._provider_call("file_size", lease["sandbox_id"], path)
+            if size > limit:
+                raise TransferLimitError(f"file is {size} bytes; the limit is {limit}")
         with self.transfer_file() as local:
-            self._download(lease, path, local, settings.max_sandbox_read_bytes)
-            return local.read_bytes()
+            self._download(lease, path, local, limit)
+            if not offset and length is None:
+                return local.read_bytes()
+            with local.open("rb") as handle:
+                handle.seek(offset)
+                return handle.read() if length is None else handle.read(length)
 
     @_operation
     def list_files(self, lease_id: str, path: str) -> list[dict]:

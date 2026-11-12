@@ -12,6 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from ..config import settings
+from ..contracts.files import FILE_NOT_FOUND, FILE_TOO_LARGE, FILE_UNREADABLE
 from ..deps import metrics_auth
 from ..metrics import BrokerStateCollector, metrics_response, register_once
 from ..obs import RequestContextMiddleware, setup_logging
@@ -371,15 +372,21 @@ def copy_library_file(lease_id: str, body: dict):
 
 
 @router.get("/leases/{lease_id}/files", dependencies=[Depends(require_scope("sandbox:use"))])
-def get_file(lease_id: str, path: str = Query(..., min_length=1)) -> Response:
+def get_file(
+    lease_id: str,
+    path: str = Query(..., min_length=1),
+    max_bytes: int | None = Query(None, ge=1),
+    offset: int = Query(0, ge=0),
+    length: int | None = Query(None, ge=1),
+) -> Response:
     try:
-        data = get_manager().get_file(lease_id, path)
+        data = get_manager().get_file(lease_id, path, max_bytes=max_bytes, offset=offset, length=length)
     except SandboxFileNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=FILE_NOT_FOUND, detail=str(exc)) from exc
     except TransferLimitError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
+        raise HTTPException(status_code=FILE_TOO_LARGE, detail=str(exc)) from exc
     except SandboxError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=FILE_UNREADABLE, detail=str(exc)) from exc
     return Response(content=data, media_type="application/octet-stream")
 
 
