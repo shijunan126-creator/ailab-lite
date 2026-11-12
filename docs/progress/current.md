@@ -17,7 +17,8 @@
 - 验收：全量 **3202 项 / 0 失败 / 252 跳过**（先按 CI 方式构建 `vendor/office-suite/runtime/runner.mjs`；此前记的"16 项既有失败"是缺这个构建产物，已在 dated update 更正）；Portal 290 项 + `tsc` 干净；整栈 E2E 211 项 0 失败。真模型 ADR 0030：Work 13 次调用 `cached/prompt` **95.9%**、Chat 5 次 **96.6%**，每次调用都是上一请求的逐字节前缀；真模型崩溃恢复里后台命令只启动一次，恢复用原 handle 等到了结果。
 - 第六轮审查（2026-11-12）：上一轮的范围读在真实沙箱里不可用（Docker/OpenSandbox 的下载只收 `/workspace`，切片却写在 `/tmp`；mock 重写了该方法，所有测试都没执行到）。已改为 provider 各自实现的按行窗口（`tail -n +N | head -c L`），`read` 任意 offset 都能读、到末尾才报总行数；另修 `edit` 行尾判断与 checkpoint 锁清理。真实 Docker 容器 52 MB 文件第 350 万行 63 ms。详见 dated update 第六轮。
 - 真实 OpenSandbox + 真模型（2026-11-12）：按行窗口在真实 OpenSandbox 上可用；调用链路优化后 `write`/`read`/`edit` 从 1–3 秒降到 0.04–0.1 秒，续轮第一个工具等沙箱从 9–13 秒降到约 1 秒，快照 4.1 → 1.1 秒；真模型 Work 缓存 98.5%、Chat 99.1%；真实契约 27 passed。详见 dated update 最后一节。
-- 下一步：PR 的 CI 全绿后由用户决定合并；镜像重建与部署需用户当次明确要求。
+- PR #188：CI 在 `41113c2c` 15 项全绿（SQLite 3006 / PostgreSQL 3140 / E2E 196 passed）；首轮失败均为测试问题，已修，见 dated update。
+- 下一步：合并由用户决定；合并后需重建 `sbx-office` 镜像（`rg`/`fd`），部署需用户当次明确要求。
 
 ---
 
