@@ -28,7 +28,7 @@ RUN rm -f /etc/apt/sources.list.d/* \
  && set -- \
       libreoffice-impress-nogui libreoffice-writer-nogui libreoffice-calc-nogui \
       poppler-utils fonts-noto-cjk fonts-noto-core fonts-wqy-zenhei fontconfig tini \
-      libatomic1 libstdc++6 python3-uno zip unzip chromium pandoc imagemagick tesseract-ocr \
+      libatomic1 libstdc++6 python3-uno zip unzip chromium pandoc imagemagick tesseract-ocr ripgrep fd-find \
       texlive-xetex texlive-latex-extra texlive-science texlive-lang-chinese texlive-fonts-recommended \
  && python /opt/office-production/fetch_snapshot.py "$@" \
  && apt-get install -y --no-download --no-install-recommends "$@" \

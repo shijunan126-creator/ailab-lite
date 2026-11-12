@@ -182,7 +182,7 @@ ZIP = _zip({"SKILL.md": SKILL_MD.format(name="weekly").encode(), "scripts/fill.p
 def test_the_model_sees_personal_skills_and_reads_one_whose_files_reach_the_sandbox() -> None:
     platform = _Platform({"f1": ZIP}, personal_skills=[SKILL])
     read = ToolCall(id="c1", name="load_skill", arguments={"name": "weekly"})
-    run = ToolCall(id="c2", name="exec", arguments={"cmd": "python /workspace/.ailab/skills/weekly/scripts/fill.py"})
+    run = ToolCall(id="c2", name="bash", arguments={"cmd": "python /workspace/.ailab/skills/weekly/scripts/fill.py"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[read]), LLMResponse(tool_calls=[run]), LLMResponse(content="done")])
     broker = FakeBroker()
     asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id="att_1"))

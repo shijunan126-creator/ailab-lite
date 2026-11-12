@@ -18,7 +18,17 @@ from pathlib import Path
 
 from ..config import settings
 from ..paths import PathError, normalize_path
-from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
+from .base import (
+    SANDBOX_EXPIRY_GRACE_SECONDS,
+    ExecResult,
+    SandboxError,
+    SandboxFileNotFound,
+    SandboxProvider,
+    SandboxResource,
+    SandboxSpec,
+    lines_error,
+    lines_script,
+)
 from .transfer import TRANSFER_SECONDS, TransferLimitError
 
 _NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]")
@@ -249,15 +259,33 @@ class DockerSandbox(SandboxProvider):
         script = (
             f'parent=$(dirname {q}); rp=$(realpath -m "$parent") || exit 1; '
             'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; '
-            f"[ ! -L {q} ] && [ -f {q} ] && head -c {max_bytes + 1} -- {q}"
+            f"[ ! -L {q} ] || exit 3; "
+            f"[ -e {q} ] || exit 4; "  # 4 = absent (404), 3 = present but not a regular file (400)
+            f"[ -f {q} ] || exit 3; "
+            f"head -c {max_bytes + 1} -- {q}"
         )
         with target.open("wb") as stream:
-            self._transfer(["docker", "exec", "-u", "10001", sandbox_id, "sh", "-c", script], stdout=stream)
+            try:
+                self._transfer(["docker", "exec", "-u", "10001", sandbox_id, "sh", "-c", script], stdout=stream, missing_exit=4)
+            except SandboxFileNotFound as exc:
+                raise SandboxFileNotFound(f"no such file in the sandbox: {path}") from exc
         if target.stat().st_size > max_bytes:
             raise TransferLimitError("file exceeds transfer limit")
 
+    def get_file_lines_to_path(self, sandbox_id: str, path: str, target: Path, *, line: int, max_bytes: int) -> None:
+        # One exec whose stdout is the window: no temporary file, no second round trip.
+        path = self._check_path(path)
+        args = ["docker", "exec", "-u", "10001", sandbox_id, "sh", "-c", lines_script(path, line, max_bytes)]
+        with target.open("wb") as stream:
+            try:
+                proc = subprocess.run(args, stdout=stream, stderr=subprocess.PIPE, timeout=TRANSFER_SECONDS)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise SandboxError("docker file transfer failed or timed out") from exc
+        if proc.returncode:
+            raise lines_error(proc.returncode, path)
+
     @staticmethod
-    def _transfer(args: list[str], *, stdin=None, stdout=None) -> None:
+    def _transfer(args: list[str], *, stdin=None, stdout=None, missing_exit: int | None = None) -> None:
         try:
             # File descriptors go directly to the child: communicate() must not
             # retain an entire input or output in the Broker heap.
@@ -271,6 +299,8 @@ class DockerSandbox(SandboxProvider):
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise SandboxError("docker file transfer failed or timed out") from exc
         if proc.returncode:
+            if missing_exit is not None and proc.returncode == missing_exit:
+                raise SandboxFileNotFound("no such file in the sandbox")
             raise SandboxError("docker file transfer failed")
 
     def list_files(self, sandbox_id: str, path: str) -> list[dict]:

@@ -83,7 +83,7 @@ def test_hard_cap_wraps_but_a_finished_answer_succeeds(monkeypatch):
     platform, broker = FakePlatform(), FakeBroker()
     model = Model(
         [
-            LLMResponse(tool_calls=[ToolCall("w", "write_file", {"path": "/workspace/outputs/a", "content": "a"})]),
+            LLMResponse(tool_calls=[ToolCall("w", "write", {"path": "/workspace/outputs/a", "content": "a"})]),
             LLMResponse(content="已保存，仍需检查"),
         ]
     )
@@ -105,9 +105,7 @@ def test_hourly_self_check_reaches_model_without_event():
             loop._budgets["run_1"].data["active_seconds"] = 3600
             return response
 
-    model = Model(
-        [LLMResponse(tool_calls=[ToolCall("w", "write_file", {"path": "/workspace/a", "content": "a"})]), LLMResponse(content="完成")]
-    )
+    model = Model([LLMResponse(tool_calls=[ToolCall("w", "write", {"path": "/workspace/a", "content": "a"})]), LLMResponse(content="完成")])
     loop = AgentLoop(platform, FakeBroker(), model)
     asyncio.run(loop.process("run_1", attempt_id="a"))
     kinds = [p["kind"] for t, p in platform.events if t == "agent.budget"]
@@ -134,12 +132,13 @@ def test_stalled_tool_cancels_and_preserves_uncertain_intent(monkeypatch):
             finally:
                 canceled.append(True)
 
-    model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("e", "exec", {"cmd": "sleep 100"})])])
+    model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("e", "bash", {"cmd": "sleep 100"})])])
     platform, _broker = _run(model, broker=Hung())
     assert canceled and "长时间未收到" in platform.paused["error"]
     assert platform.paused["auto_resume"] is False
     state = platform.checkpoint["state"]
-    assert state["tool_log"]["0:0"] == {"name": "exec", "started": True}
+    record = state["tool_log"]["0:0"]
+    assert record["name"] == "bash" and record["started"] is True and len(record["handle"]) == 32
     assert state["workspace"] and state["pending"]
 
 
@@ -170,7 +169,7 @@ def test_step_budget_resumes_with_new_window_and_keeps_lifetime_usage(monkeypatc
             return {**await super().get_run(run_id), "budget_window_id": self.window}
 
     platform = Platform()
-    _run(ScriptedLLM([LLMResponse(tool_calls=[ToolCall("l", "list_files", {})]), LLMResponse(content="还需继续")]), platform)
+    _run(ScriptedLLM([LLMResponse(tool_calls=[ToolCall("l", "ls", {})]), LLMResponse(content="还需继续")]), platform)
     assert platform.paused["status"] == "interrupted"
     assert platform.checkpoint["state"]["next_step"] == 1
     platform.window = "j2"
@@ -199,7 +198,7 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
     for i in range(5):
         state["messages"].extend(
             [
-                {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "exec", "arguments": "{}"}}]},
+                {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "bash", "arguments": "{}"}}]},
                 {"role": "tool", "tool_call_id": str(i), "content": "x" * 7200},
             ]
         )
@@ -236,7 +235,7 @@ def test_stalled_model_is_canceled_metered_and_paused(monkeypatch):
     assert not broker.leases and platform.checkpoint
 
 
-@pytest.mark.parametrize("name", ["exec_wait", "exec_kill"])
+@pytest.mark.parametrize("name", ["bash_wait", "bash_kill"])
 def test_started_background_controls_can_replay_on_resume(name):
     class Broker(FakeBroker):
         controls = []
@@ -253,7 +252,7 @@ def test_started_background_controls_can_replay_on_resume(name):
     platform.checkpoint = {"step": 1, "state": state}
     broker = Broker()
     _run(ScriptedLLM([LLMResponse(content="已检查")]), platform, broker, attempt_id="next")
-    assert broker.controls == [{"exec_wait": "wait", "exec_kill": "kill"}[name], "kill_all"]
+    assert broker.controls == [{"bash_wait": "wait", "bash_kill": "kill"}[name], "kill_all"]
     assert platform.checkpoint["state"]["tool_log"]["0:0"]["result"]["ok"]
 
 
@@ -263,9 +262,9 @@ def test_v1_checkpoint_resumes_with_hourly_note_after_pending_tool_pair():
     state["progress_marks"] = ["old-file"]
     state["messages"] = [
         {"role": "user", "content": "继续检查"},
-        {"role": "assistant", "tool_calls": [{"id": "c", "type": "function", "function": {"name": "list_files", "arguments": "{}"}}]},
+        {"role": "assistant", "tool_calls": [{"id": "c", "type": "function", "function": {"name": "ls", "arguments": "{}"}}]},
     ]
-    state["pending"] = [{"id": "c", "name": "list_files", "arguments": {}, "ordinal": 0}]
+    state["pending"] = [{"id": "c", "name": "ls", "arguments": {}, "ordinal": 0}]
     platform = FakePlatform()
     platform.checkpoint = {"step": 1, "state": state}
     model = ScriptedLLM([LLMResponse(content="检查完成")])
@@ -290,7 +289,7 @@ def test_task_inside_kept_groups_is_pinned_by_the_next_compaction(monkeypatch):
 
     def group(i):
         return [
-            {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "exec", "arguments": "{}"}}]},
+            {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "bash", "arguments": "{}"}}]},
             {"role": "tool", "tool_call_id": str(i), "content": "x" * 7200},
         ]
 
@@ -349,7 +348,7 @@ def test_user_steer_ends_a_background_wait_but_not_the_command(monkeypatch):
 
     model = ScriptedLLM(
         [
-            LLMResponse(tool_calls=[ToolCall("w", "exec_wait", {"handle": handle, "seconds": 300})]),
+            LLMResponse(tool_calls=[ToolCall("w", "bash_wait", {"handle": handle, "seconds": 300})]),
             LLMResponse(content="好的，改用方案B"),
         ]
     )

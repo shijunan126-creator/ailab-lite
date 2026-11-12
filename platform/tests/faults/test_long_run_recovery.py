@@ -64,9 +64,9 @@ async def run():
     attempt_id_var.set(owned["token"])
     llm = ScriptedLLM([LLMResponse(tool_calls=[
         ToolCall("find-deliver","search_capabilities",{"query":"deliver_file","kind":"tool","limit":1}),
-        ToolCall("find-exec","search_capabilities",{"query":"exec","kind":"tool","limit":1})]),LLMResponse(tool_calls=[
+        ToolCall("find-exec","search_capabilities",{"query":"bash","kind":"tool","limit":1})]),LLMResponse(tool_calls=[
         ToolCall("deliver", "deliver_file", {"path": "/workspace/outputs/a.txt"}),
-        ToolCall("start", "exec", {"cmd": "slow build", "background": True})])])
+        ToolCall("start", "bash", {"cmd": "slow build", "background": True})])])
     await AgentLoop(platform, Broker(), llm).process(rid, attempt_id=owned["token"])
 asyncio.run(run())
 """

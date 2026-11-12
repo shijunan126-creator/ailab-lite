@@ -1588,3 +1588,79 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 缓存验收按场景第二轮起累计≥95%，另逐调用核对旧前缀。用相邻provider prompt_tokens之差作为追加量，未命中量须≤追加量+固定缓存块容差；不可为提高比率删除必须回传的reasoning_content，不能用汇总高命中掩盖个别旧前缀丢失。端点粒度须单独确认，当前网关观测128，不泛化到其他后端。
 - 多实体别名索引查询也要显式order_by，再构造扩展词；主结果的id tie-break不能修复前面无序的浮点求和。工具片段必须按编码后的结果执行长度上限，否则标签多的存储内容会把360字放大；文件名也是不可信文本。
 - 真模型触发评测不能直接调用默认tools_for_chat/system_prompt_for：默认仍是document-v1，且会漏掉discovery、能力过滤和GenUI提示。复用生产_tools_for_run，并录制对比双system消息和完整schema。memory.search是动作别名，提示词须明确JSON的action/query字段；DSML或错误键名仍严格拒绝，不猜参执行。
+
+## 2026-11-11 工作区工具对齐 Pi
+
+- `run_max_seconds`（默认 4 小时）就是命令的硬期限来源，由沙箱内的 supervisor 自己执行（`deadline` 文件 + `expires_at`）；不要再加第二个计时器或固定的“N 分钟就杀”。等待窗口（`wait_seconds`）只决定这次工具调用返回什么，两者不能共用一个参数名。
+- 假 Broker 返回 `running: true` 时，一次 `bash` 会真的等满它要的窗口（默认 30 秒），全套件会被拖慢几十秒。写这类用例时传 `background: true` 或 `wait_seconds: 0`，别去改窗口上限。
+- bash 的句柄是 `sha256(run_id, 调用序号, 命令)`：同一调用的重试会命中沙箱里已有的句柄目录，helper 只等待、绝不重跑。要验证副作用次数而不是 `exec` 次数。
+- 完成态的 `bash_wait` 结果没有 `handle`，loop 里两处（`background_jobs`、`snapshotted_execs`）必须用 `result.get("handle") or call.arguments.get("handle")`，否则 `KeyError: 'handle'` 会把整个 run 判失败。
+- `_BoundedOutput` 不能简单“头 + 尾”拼接：当输出短于两段之和时头尾重叠，会得到重复内容；按 `total`、`tail_start` 判断是否还有空隙。
+- macOS 上跑 `platform/tests` 必须把 `$(brew --prefix coreutils)/libexec/gnubin` 和 `findutils` 放到 PATH，否则沙箱快照命令的 `stat -c` 直接失败（BSD `stat`），表现为 `test_workspace_previews`/`test_workspace_view` 一片红。
+- `images/sbx-office/skills/**` 与 `office_guides_v2.json` 由 `vendor/office-suite/build.py` 生成；改生成器的文案后必须重跑并带上 `--runtime-output vendor/office-suite/runtime`，同时 `inventory.py` 会因 Dockerfile 变更重算 `capabilities.json` 的 `image_baseline_sha256`。
+- 不要用软链把主工作树的 `node_modules` 接进别的 worktree 跑 `next build`：Turbopack 拒绝工作树外的文件，`vitest` 可以。
+
+## 2026-11-11 真模型验收工具面
+
+- 默认模型是 DeepSeek V4.1 Flash，走 OpenCode Go 网关（`https://opencode.ai/inference/go/openai/v1`），**必须带 `x-opencode-session` 头**，否则 400 `MissingSessionID`；key 在 `~/AILabDisk/local/config/opencode.env`（`AILAB_KEY_OPENCODE`），只读进进程环境。`api.deepseek.com` 直连的那把 key 余额为 0，报 402。
+- 不写工具选择规则，模型会全程用 `bash` + `cat`/`sed`/`python3 - <<EOF`，一次都不用 `read`/`edit`/`write`，还会把改好的源码复制进 `outputs/` 再 `deliver_file`。规则要落到提示词，且明确 bash 只用于执行。
+- 裸 `No matches found` 会被模型当成"工具没跑完"，接着用 `bash grep` 复检两三次；无结果必须写清搜的是什么并给计数。
+- 模型习惯在命令尾部加 `echo $?` 看退出码，那会把真实的失败变成 `ok: true`；工具描述里要说明结果自带 `exit_code`。
+- 改 Work 提示词会打到 `tests/test_prefix_cache.py` 里按文案写的锚点断言（`assert "保留真实退出码" in system` 这类），一起改。
+- 提示词 tokens 直接看真实调用的 `usage.prompt_tokens`（system + "hi"），不要用字符数估算。
+- 容器里 `fd-find` 装出来的可执行名是 `fdfind`，`fd` 不存在；沙箱程序必须先探 `fd` 再探 `fdfind`，只用 `which fd` 会在真实镜像里失败。
+- 用 `docker exec` 造 broker 时写文件要加 `-i`（否则 stdin 不进去，文件是空的，`edit` 会报"找不到原文"）；colima 默认只挂家目录，`/tmp` 不共享。
+- helper 的工作目录取自它自己的 `__file__` 的父目录（生产里是 `/tmp/ailab-background`）；手动测试时必须把它放在那里，否则会在只读目录里建 `lock`。
+- `bash` 的短命令（helper short-command 形态）走 `_final` 的提前返回，任何加到最终结果里的判定都要在提前返回之前算好，否则失败命令只剩 `ok:false`。
+
+## 工作区工具（2026-11-12 第三轮）
+
+- `edit` 的容错匹配**不能**逐字符建立映射：5 MB 文件会吃掉 400 MiB。做法是把 `oldText` 编译成正则（1:1 折叠字符类 + 行尾空白），直接在原文上搜索；折叠表首次模糊匹配时才建（约 150 ms），不要在模块导入时扫 110 万码位。
+- `oldText` 末尾的空格若在匹配前被裁掉，原文的空格会留在结果里（`say “y” =  1`）。末行原本带尾空白时，正则要一直匹配到原文的空白为止。
+- Broker 的 `get_file` 必须把"文件不存在""超过传输上限""其他"分成 404 / 413 / 400。全都报 400、Agent 再一律当 `ENOENT`，模型会以为 12 MB 的文件不存在并用 `write` 覆盖它。
+- 恢复不能重新发 `agent.tool_call`：Portal 与 `process_view` 都会新建步骤，结果只关掉新的，崩溃前那一步永远转圈。用 `_run_tool(announce=False)`，结果事件沿用原工具名和 step。
+- 冻结在 checkpoint 里的 `tool_catalog_v1` 可能列着已退役的工具名；恢复时用 `tools.RETIRED_TOOLS` 检测并重建，记 `tool_catalog_changed`。不要为此升 `CONTEXT_ABI_VERSION`（Chat 也会白重建一次）。
+- 判断"命令结果丢失"只能看 helper 写的 `lost`，不能看 `exit_code == -1`：被 SIGHUP 杀掉的命令 returncode 也是 -1。
+- bash 输出缺口的字节数用 helper 返回的读取起点 `from` 算；用 `len(delta.encode())` 会在非法 UTF-8 上算错甚至为负。
+- 同一条回复里可能有多个 `run_subtasks`：子任务调用编号必须包含父调用（`{invocation}/sub{index}:…`），只用父 step 会让两批同槽位撞上同一个句柄。
+
+## 工作区工具（2026-11-12 第四轮）
+
+- `edit` 的容错匹配是"折叠后 `str.find`"，不是正则。字符类正则的耗时是"文件长度 × oldText 长度"，2 MB 重复内容要 14 s；CPython 的 `re` 全程持有 GIL，`to_thread` 救不了；`str.find` 是两路算法，线性。
+- 折叠用 `str.translate`（一对一，长度不变，下标即原文下标）。纯 ASCII 文件跳过折叠——所有折叠源都是非 ASCII，省 130 ms/2 MB。行尾空白用"删除点 + 累计删除量"两个 `array('l')` 加 `bisect` 映射回原文，不要建逐字符表。
+- `_file_error` 只映射 400/404/413。410（租约丢失）、503、401/403、5xx 必须原样抛给 `_run_tool`，否则 run 会在失效的租约上继续工作。
+- 改文件状态码契约时，搜遍所有调用方**和测试里的 fake**：`search_images` 曾把 400 当"不存在"，路由改成 404 后它在真实环境里第一次调用必失败，而 fake 仍抛 400，测试全绿。状态码常量放 `contracts/files.py`，路由与 fake 共用。
+- 提示词版本按模式拆：共用一个版本号，升它会让不该变的模式（Chat）整段重建、前缀缓存全丢。
+- 恢复时重建冻结目录要连 `messages[0]` 一起刷新，否则规则写着 `exec_wait`、工具里只有 `bash_wait`。重建在 `ContextManager.build` 里做，`messages[1:]` 不动。
+- 边界原因要区分：模型变 / 只有工具变 / 提示词变。只比较工具和提示词就把一切都记成 `model_changed`。
+- 只读工具（`read`/`ls`/`grep`/`find`）的连续前缀可以 `gather` 并发，结果必须按 ordinal 回填，`bash`/`write`/`edit` 仍串行。
+- `read` 用 Broker 的 `line`/`length` 取窗口（沙箱里 `tail -n +N | head -c L`，2 MiB + 1 字节区分"读到末尾"）；没到末尾时不报总行数，只给下一个 offset。
+
+## 工作区工具（2026-11-12 第五轮）
+
+- 并发写 checkpoint 必须串行：`expected_step` 的 CAS 只能有一个在途。`_checkpoint` 用按 run 的 `asyncio.Lock` 把"读 expected_step + 写"包住；heartbeat、预算暂停、并发工具都会走到这里。只读工具（read/ls/grep/find）不写 started 记录、也不单独 checkpoint，恢复时重跑。
+- 测试 fake 必须会让出执行权：`CheckpointFake.put_checkpoint` 在 CAS 前 `await asyncio.sleep(0)`。没有这一句，协程之间不会交错，并发缺陷在单测里完全看不见（上一轮的 409 stale_step 就是这样漏掉的）。
+- 事件配对要靠 id：`agent.tool_call`/`agent.tool_result` 带 `call_id`，Portal 与 `process_view` 按 id 找步骤；没有 id 的历史事件才按"最后一个同名同 step"回退，且已有行带 id 时不要回退（那说明原步骤已经不在了）。
+- `edit` 的行尾空白映射：起点落在删除点上要算这处删除（`bisect_right`），终点不算（`bisect_left`）；行中空白是内容，不是行尾空白，`oldText` 的尾部空格必须逐字符相同，不同就不算匹配。
+- 本地全量基线是 **0 失败**：先 `cd vendor/office-suite/runtime && npm ci --ignore-scripts && npm run build`。缺 `runner.mjs` 时 `tests/conftest.py` 的 autouse 检查会直接失败并提示这条命令——不要用 skip 盖住，也不要把这批失败记成"既有失败"。
+- OpenCode Go 网关**会**报缓存命中：整理后的 usage 里是 `cached_tokens`（`model_transport.py` → `llm._cached_tokens` → `model_usage.cached_tokens`），不要在事件或 `prompt_tokens_details` 里找。会话头取 `conversation_id or run_id`：只给 run 就没有跨轮缓存（实测每轮都整份未命中）。
+
+## 工作区工具（2026-11-12 第六轮）
+
+- provider 方法的测试必须执行**真实 provider 类**的代码，只替换最底层传输（Docker 的 `subprocess.run`、OpenSandbox 的 SDK 文件对象与 `exec`），见 `tests/test_sandbox_file_transfers.py`。mock 重写同名方法不算覆盖：上一轮基类的范围读把切片写到 `/tmp` 再走 `get_file_to_path`，而 Docker/OpenSandbox 的下载只收 `/workspace` 路径，真实沙箱里每次 `read` 都失败，单测、E2E（mock 沙箱）和真模型（本机映射目录）全部没看到。
+- provider 自己生成的临时路径不要再交给"模型路径"的入口（`get_file_to_path`/`file_size` 都校验 `/workspace`）；要么一次 exec 直接把字节写到 stdout（Docker），要么直接用 SDK 读这个内部路径（OpenSandbox）。临时文件放 `/tmp`，不放 `/workspace`，否则并行 `ls` 和快照会看到它。
+- 守卫脚本的退出码避开 1 和 125–127：`docker exec` 在容器不存在时返回 1，会被误读成"路径越界"。
+- `edit` 判断"匹配终点在行尾"要看去掉行尾空白后的文本：映射回原文的终点停在被去掉的空白之前，原文那里是空格不是换行，按原文判断会让行尾分支永远走不到（原文行尾多一个空格就"找不到"）。
+- Broker 测试 fake 共用 `tests/runtime_fakes.py:sandbox_window` 回答 `line`/`length`；只返回整份文件的 fake 会让窗口逻辑在单测里看起来全对。
+- 跑 `tests/test_sandbox_file_transfers.py` 需要 GNU `realpath -m`（macOS 先按 §9 把 coreutils 的 gnubin 放进 PATH），缺时测试直接失败并提示。
+
+## OpenSandbox 文件 API（2026-11-12 实测，server/SDK 1.1.1）
+
+- 一次 exec 固定约 1 秒，文件 API 几毫秒：多一次 exec 就是工具多一秒。读写守卫先问文件 API，证明不了再走 shell 守卫（`sandbox/opensandbox.py` 的 `_plain_size`/`_direct_write`）。
+- `get_file_info` 是 lstat（`type` 为 `symlink`/`file`/`directory`），批量里任一路径缺失整批报 `FILE_NOT_FOUND`。路径穿过链接父目录时它报的是最后一级的类型，所以要逐级问。SDK 对每次失败都打 ERROR 加 traceback，新文件写入会触发这个"缺失"，provider 装了只吞这一条的日志过滤。
+- `write_file` 会自动建缺失的父目录（属主是 execd 的用户），`move_files` 目标已存在时拒绝（不能用来原子替换）；`read_bytes_stream` 的 offset/limit 不可靠（offset=0 返回 400），不要用。
+- 上面"OSB 注入前先 mkdir 父目录"的坑仍然成立：快速写入只在父目录都已存在时才走，缺目录照旧 exec `mkdir -p`。
+- 测 OpenSandbox 的 provider 代码时，SDK 文件对象的替身要照上面的语义实现（`tests/test_sandbox_file_transfers.py:Files`），真实服务契约是 `tests/contracts/test_sandbox_transfer.py` 与 `test_sandbox_lifecycle.py`（`AILAB_TEST_OSB_URL`）。
+- CI 不装 OpenSandbox SDK：provider 里对 SDK 的 import 要放在用到它、且失败有退路的地方（`MoveEntry` 放在 `move_files` 的 try 里，失败退回 `mv`）；单测替身在 SDK 缺失时自己注入 `MoveEntry`。
+- 在本地目录里模拟沙箱路径时，`/workspace`、`/tmp/` 的替换要一次完成且只匹配路径起点：Linux 上 pytest 的临时目录本身就在 `/tmp` 下，逐个 `replace` 会把刚插入的根目录再改一遍（macOS 是 `/private/var/...`，看不出来）。
+- 性能用例不要断言绝对墙钟：同一段线性代码本机 0.21 s，CI（xdist 多 worker 共享 CPU）0.73–0.84 s。断言规模关系（行数翻倍、耗时 < 3 倍）并用 `time.thread_time()`。检查"不持有 GIL"时量另一线程看到的最长间隔，不数它醒来几次（操作很快时次数本来就少）。

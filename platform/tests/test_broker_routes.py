@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from ailab_platform.broker import main
 from ailab_platform.broker.service import BrokerOwnershipError, LeaseCanceledError
 from ailab_platform.config import settings
+from ailab_platform.contracts.files import FILE_NOT_FOUND, FILE_TOO_LARGE, FILE_UNREADABLE
 
 from .test_broker_lease import _manager
 
@@ -120,3 +121,62 @@ def test_fetched_downloads_stream_into_the_sandbox_within_the_limit(broker, monk
     outside = client.put(f"/internal/leases/{lease_id}/fetched", headers=headers, params={"path": "/etc/x"}, content=b"x")
     assert outside.status_code == 400
     assert not list(manager._transfer_root.glob("transfer-*"))  # spools are removed on every path
+
+
+def test_file_errors_carry_the_reason_the_agent_needs(broker, monkeypatch):
+    """404 / 413 / 400 instead of one 400: "missing" makes a model rewrite a file it cannot read."""
+    client, manager, provider = broker
+    headers = {"X-Service-Token": settings.service_token}
+    lease_id = client.post("/internal/leases", headers=headers, json={"run_id": "files"}).json()["lease_id"]
+
+    missing = client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/none.csv"})
+    assert missing.status_code == FILE_NOT_FOUND and "no such file" in missing.json()["detail"]
+
+    provider.put_file(lease_id, "/workspace/work/big.csv", b"x" * 2048)
+    monkeypatch.setattr(settings, "max_sandbox_read_bytes", 1024)
+    too_large = client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/big.csv"})
+    assert too_large.status_code == FILE_TOO_LARGE
+    monkeypatch.setattr(settings, "max_sandbox_read_bytes", 4096)
+    assert manager.get_file(lease_id, "/workspace/work/big.csv")  # the file is there; only the read was refused
+
+    directory = client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work"})
+    assert directory.status_code == FILE_UNREADABLE and "not a regular file" in directory.json()["detail"]
+
+    # A caller with its own tighter budget (edit: 2 MiB) is refused before anything is transferred.
+    provider.put_file(lease_id, "/workspace/work/mid.csv", b"x" * 2048)
+    tighter = client.get(
+        f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/mid.csv", "max_bytes": 1024}
+    )
+    assert tighter.status_code == FILE_TOO_LARGE and "1024" in tighter.json()["detail"]
+    assert (
+        client.get(
+            f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/mid.csv", "max_bytes": 4096}
+        ).content
+        == b"x" * 2048
+    )
+
+
+def test_a_window_is_bounded_by_its_length_not_by_the_file(broker, monkeypatch):
+    """A file over the read limit is refused whole but readable as a window, from any line."""
+    client, _manager, provider = broker
+    headers = {"X-Service-Token": settings.service_token}
+    lease_id = client.post("/internal/leases", headers=headers, json={"run_id": "window"}).json()["lease_id"]
+    provider.put_file(lease_id, "/workspace/work/big.log", b"".join(b"line %04d\n" % i for i in range(1, 301)))  # 3000 bytes
+    monkeypatch.setattr(settings, "max_sandbox_read_bytes", 1024)
+
+    def get(**params):
+        return client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/big.log", **params})
+
+    assert get().status_code == FILE_TOO_LARGE
+    first = get(line=1, length=20)
+    assert first.status_code == 200 and first.content == b"line 0001\nline 0002\n"
+    assert get(line=250, length=10).content == b"line 0250\n"
+    assert get(line=400, length=10).content == b""  # past the end is empty, not an error
+    assert get(line=1, length=2048).status_code == FILE_TOO_LARGE  # the window itself is still bounded
+    window = {"line": 1, "length": 9}
+    assert client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/none", **window}).status_code == (
+        FILE_NOT_FOUND
+    )
+    assert client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work", **window}).status_code == (
+        FILE_UNREADABLE
+    )

@@ -453,7 +453,12 @@ async def save_skill(args: dict, run_id: str, lease_id: str, broker, platform) -
             raise NetToolError(str(exc)) from exc
         if not path.endswith((".zip", ".md")):
             raise NetToolError("path must be a .zip (a skill folder with SKILL.md) or SKILL.md")
-        data = await broker.get_file(lease_id, path)
+        try:
+            data = await broker.get_file(lease_id, path)
+        except ClientError as exc:
+            if exc.status == 404:
+                raise NetToolError(f"文件不存在：{path}。先确认路径，或用 content 直接给 SKILL.md 正文") from exc
+            raise
         filename = f"{name}.zip" if path.endswith(".zip") else f"{name}.md"
     else:
         data, filename = str(content).encode("utf-8"), f"{name}.md"

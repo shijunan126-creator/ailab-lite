@@ -147,7 +147,8 @@ def test_office_detection_only_uses_file_fields_of_file_tools():
 
     assert _tool_office_skills("web_search", {}, {"results": [{"filename": "report.pdf"}]}) == []
     assert _tool_office_skills("read_library_file", {}, {"text": "report.pdf"}) == []
-    assert _tool_office_skills("list_files", {}, {"files": [{"path": "/workspace/report.pdf"}]}) == ["platform.pdf"]
+    assert _tool_office_skills("read", {"path": "/workspace/report.pdf"}, {}) == ["platform.pdf"]
+    assert _tool_office_skills("edit", {"path": "/workspace/work/report.docx", "edits": []}, {}) == ["platform.docx"]
     assert _tool_office_skills("deliver_file", {"path": "report.docx"}, {}) == ["platform.docx"]
 
 

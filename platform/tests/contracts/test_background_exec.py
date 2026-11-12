@@ -102,7 +102,7 @@ def test_real_exec_wait_output_kill_tree_and_supervisor_loss(provider, monkeypat
             silent = await call("exec_wait", handle=silent["handle"], seconds=1)
             polls += 1
             assert polls < 10
-        assert silent["exit_code"] == 0 and "silent-done" in silent["output_tail"]
+        assert silent["exit_code"] == 0 and "silent-done" in silent["stdout"]
         noisy = await call("exec", cmd="python3 -c \"print('HEAD' + 'x'*20000 + 'TAIL')\"", yield_seconds=1)
         assert noisy["exit_code"] == 0 and noisy["stdout"].startswith("HEAD") and noisy["stdout"].endswith("TAIL\n")
         command = "printf cjk-ok #" + "中" * (20000 - len("printf cjk-ok #"))

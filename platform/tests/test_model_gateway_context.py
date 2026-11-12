@@ -52,7 +52,7 @@ async def upstream(kind, seen):
                 await reader.read()
                 return
             delta = (
-                {"tool_calls": [{"index": 0, "id": "tc", "function": {"name": "exec", "arguments": "{"}}]}
+                {"tool_calls": [{"index": 0, "id": "tc", "function": {"name": "bash", "arguments": "{"}}]}
                 if kind == "tool-broken"
                 else {"content": "城市更新汇报" if kind == "title" else "hello"}
             )

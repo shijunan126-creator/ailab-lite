@@ -39,7 +39,7 @@ from ..skill_registry import BASE_SKILLS, resolve_name
 from ..telemetry import span
 from ..title_text import normalize_title
 from . import discovery, net_tools, subtasks, watchdog
-from .background_exec import background_exec
+from .background_exec import background_exec, command_handle, command_text
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, ContextPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
 from .context import ContextManager
@@ -64,7 +64,16 @@ from .skill_modules import ModuleVisibility, read_module
 from .skill_modules import identity as module_identity
 from .skill_verification import verify_sandbox_skills
 from .stuck import STUCK_ERROR, STUCK_NOTE, compact_log, detect_loop, observation
-from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn, ui_components
+from .tools import (
+    SANDBOX_TOOLS,
+    ToolContext,
+    ToolError,
+    execute_tool,
+    tool_result_message,
+    tools_for_chat,
+    tools_for_turn,
+    ui_components,
+)
 
 log = logging.getLogger("ailab.agent")
 
@@ -73,13 +82,16 @@ CANCEL_POLL_SECONDS = 2.0
 SANDBOX_RETRY_SECONDS = 3.0
 DELTA_FLUSH_SECONDS = 0.25  # how often streamed text is written as an agent.delta event
 DELTA_FLUSH_CHARS = 120
-PREVIEW_AFTER = {"exec", "exec_wait", "exec_kill", "write_file", "run_subtasks"}  # tools that can change files in /workspace/outputs
+PREVIEW_AFTER = {"bash", "bash_wait", "bash_kill", "write", "edit", "run_subtasks"}  # tools that can change files in /workspace/outputs
 THINKING_KEEP_CHARS = 20_000  # of the reasoning stored with the run (the events keep all of it)
 WRAP_UP_STEPS = 3  # this many steps before the limit the model is told to finish up
 WRAP_UP_NOTE = "（平台提示：本轮只剩 {n} 次工具调用。请尽快收尾：生成并交付文件，然后用文字回复用户。）"
 OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调用工具，直接用文字告诉用户已经完成了什么、还有什么没完成、下一轮可以怎么继续。）"
+# Read-only workspace lookups: the same turn may run several at once, each saving a sandbox round trip.
+# They never touch /workspace or the tool log's ordering, so results can be gathered and appended in ordinal order.
+READ_ONLY_TOOLS = frozenset({"read", "ls", "grep", "find"})
 FILE_TOOLS = frozenset(
-    {"copy_library_file", "write_file", "exec", "deliver_file", "run_subtasks", *net_tools.NAMES}
+    {"copy_library_file", "write", "edit", "bash", "deliver_file", "run_subtasks", *net_tools.NAMES}
 )  # tools that change /workspace or its outputs
 WORKSPACE_DEBOUNCE_SECONDS = 60  # between workspace snapshots while the run is busy
 WORKSPACE_LAG_NOTE = "（平台提示：工作区快照落后于执行记录；部分文件变更可能丢失。请先检查工作区，不要假定已执行命令的文件仍在。）"
@@ -215,12 +227,15 @@ def _full_skill_visible(turn, name):
 _OFFICE_VIEW_SKILLS = {"platform.pptx", "platform.docx", "platform.xlsx"}
 
 _FILE_TOOLS = {
-    "list_files",
-    "read_file",
-    "write_file",
-    "exec",
-    "exec_wait",
-    "exec_kill",
+    "ls",
+    "read",
+    "write",
+    "edit",
+    "grep",
+    "find",
+    "bash",
+    "bash_wait",
+    "bash_kill",
     "deliver_file",
     "download_url",
     "copy_library_file",
@@ -385,6 +400,7 @@ class AgentLoop:
         self._states: dict[str, dict] = {}
         self._turns: dict[str, _Turn] = {}
         self._steps: dict[str, int] = {}
+        self._checkpoint_locks: dict[str, asyncio.Lock] = {}
         self._lease_errors: dict[str, Exception] = {}
         self._steer_pending: set[str] = set()
         self._budgets: dict[str, WorkBudget] = {}
@@ -616,13 +632,15 @@ class AgentLoop:
             item["name"] in _OFFICE_VIEW_SKILLS for item in self._states[run_id].get("loaded_skills", [])
         )
 
-    def _prepare_office_turn(self, turn: _Turn, run_id: str) -> None:
-        """Every turn gets a fresh sandbox, so a follow-up edit would view through a cold LibreOffice (11+ s).
+    def _prepare_workspace_turn(self, turn: _Turn, run_id: str) -> None:
+        """Every turn gets a fresh sandbox, and setting one up with the previous workspace takes seconds.
 
-        A turn that continues an Office workspace takes its sandbox and starts the listener during the first model call.
-        It never queues for a sandbox; on any failure the first tool takes the lease as usual.
+        A Work turn that continues a workspace almost always works in it, so it takes its sandbox during
+        the first model call instead of at the first tool: about 10 s off that tool on OpenSandbox, and an
+        Office turn also starts its LibreOffice listener (11+ s cold). It never queues for a sandbox; on
+        any failure the first tool takes the lease as usual. A turn that ends without a tool releases it unsaved.
         """
-        if turn.lease_id or not turn.run.get("workspace_restore_key") or not self._views_office_work(turn, run_id):
+        if turn.lease_id or not turn.run.get("workspace_restore_key") or "bash" not in (turn.allowed_tools or ()):
             return
         turn.lease_task = asyncio.create_task(self._prepare_lease(turn, run_id))
 
@@ -1096,7 +1114,7 @@ class AgentLoop:
                 await self._event(run_id, "agent.budget", {"kind": "nudge", "reason": f"监督检查：{reason}"})
         await self._checkpoint(run_id, turn)
 
-    async def _subtasks(self, turn: _Turn, run_id: str, call, step: int) -> dict:
+    async def _subtasks(self, turn: _Turn, run_id: str, call, step: int, invocation: str = "") -> dict:
         try:
             tasks = subtasks.validate(call.arguments)
         except ValueError as exc:
@@ -1115,7 +1133,8 @@ class AgentLoop:
         lease_id = await self._ensure_lease(turn, run_id)
         llm = self.llm or llm_for(turn.run.get("model") or "")
         children = [
-            asyncio.create_task(self._subtask(turn, run_id, llm, base, lease_id, index, task, step)) for index, task in enumerate(tasks)
+            asyncio.create_task(self._subtask(turn, run_id, llm, base, lease_id, index, task, step, invocation))
+            for index, task in enumerate(tasks)
         ]
         try:
             results = await asyncio.gather(*children)
@@ -1126,7 +1145,9 @@ class AgentLoop:
             raise
         return {"ok": all(r["status"] == "done" for r in results), "results": results}
 
-    async def _subtask(self, turn: _Turn, run_id: str, llm, base: list[dict], lease_id: str, index: int, task: dict, step: int) -> dict:
+    async def _subtask(
+        self, turn: _Turn, run_id: str, llm, base: list[dict], lease_id: str, index: int, task: dict, step: int, invocation: str = ""
+    ) -> dict:
         run, model, offered = turn.run, turn.run.get("model") or "", turn.offered
         messages = [*base, {"role": "user", "content": subtasks.BRIEF.format(**task)}]
         await self._event(run_id, "agent.subtask", {"index": index, "title": task["title"], "status": "started"})
@@ -1152,13 +1173,15 @@ class AgentLoop:
                 status = "done"
                 break
             child_images = []
-            for c in response.tool_calls:
+            for ordinal, c in enumerate(response.tool_calls):
                 version = catalog_version(run.get("options"))
                 available = c.name in subtasks.allowed(version)
                 if version == 2:
                     available = available and c.name in {t["function"]["name"] for t in offered}
                 if available:
-                    result = await self._subtask_tool(turn, run_id, lease_id, c, messages)
+                    # The parent call is part of the invocation: the same command in the same slot of a
+                    # second run_subtasks is a different execution, not a retry of the first one.
+                    result = await self._subtask_tool(turn, run_id, lease_id, c, messages, f"{invocation}/sub{index}:{used}:{ordinal}")
                 else:
                     result = {"ok": False, "error": subtasks.REFUSED.format(name=c.name)}
                 child_images.extend(result.pop("_child_images", []))
@@ -1170,7 +1193,7 @@ class AgentLoop:
         await self._event(run_id, "agent.subtask", {"index": index, "title": task["title"], "status": status, "steps": used})
         return {"title": task["title"], "status": status, "steps": used, "report": report[: subtasks.REPORT_CHARS]}
 
-    async def _subtask_tool(self, turn: _Turn, run_id: str, lease_id: str, call, messages: list[dict]) -> dict:
+    async def _subtask_tool(self, turn: _Turn, run_id: str, lease_id: str, call, messages: list[dict], invocation: str = "") -> dict:
         ctx = ToolContext(
             run_id,
             self.platform,
@@ -1182,6 +1205,8 @@ class AgentLoop:
         budget = self._budgets[run_id]
         budget.update()
         ctx.exec_lifetime_seconds = max(1, settings.run_max_seconds - budget.data["active_seconds"])
+        if call.name == "bash":
+            ctx.command_handle = command_handle(run_id, invocation, command_text(call.arguments))
         try:
             if call.name == "view_workspace_file" and ctx.document_tools_version == 2:
                 import base64
@@ -1365,9 +1390,32 @@ class AgentLoop:
                 }
             )
 
-    async def _run_tool(self, turn: _Turn, run_id: str, call, step: int) -> dict:
+    async def _run_tool(
+        self,
+        turn: _Turn,
+        run_id: str,
+        call,
+        step: int,
+        invocation: str = "",
+        event_name: str | None = None,
+        announce: bool = True,
+    ) -> dict:
+        """Run one tool call and record its events.
+
+        ``announce=False`` is for a resumed call: the crash already announced it, and a second
+        ``tool_call`` would open a new UI step that the result then closes, leaving the first
+        step spinning forever.
+        """
         image_start = len(self._states[run_id].get("pending_image_inputs", []))
-        await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
+        shown_name = event_name or call.name
+        if announce:
+            await self._event(
+                run_id,
+                "agent.tool_call",
+                # call_id pairs the result with this exact call: several calls in one reply are
+                # announced back to back, so "the last running step with this name" is the wrong one.
+                {"step": step, "name": shown_name, "call_id": call.id, "arguments": _clip_arguments(call.arguments)},
+            )
         tool = metrics.tool_label(call.name)
         tool_started = time.perf_counter()
         wanted = None
@@ -1585,7 +1633,7 @@ class AgentLoop:
                 raise ToolError(f"技能 {wanted or ''} 不存在或已不可用")
             elif call.name == "run_subtasks":
                 with span("agent.tool", tool=tool):
-                    result = await self._subtasks(turn, run_id, call, step)
+                    result = await self._subtasks(turn, run_id, call, step, invocation)
             else:
                 needs_sandbox = call.name in SANDBOX_TOOLS or (call.name == "save_skill" and call.arguments.get("path"))
                 lease_id = await self._ensure_lease(turn, run_id) if needs_sandbox else (turn.lease_id or "")
@@ -1602,21 +1650,23 @@ class AgentLoop:
                 ctx.exec_lifetime_seconds = (
                     120 if budget.data.get("pause_step") is not None else max(1, settings.run_max_seconds - budget.data["active_seconds"])
                 )
+                if call.name == "bash":
+                    ctx.command_handle = command_handle(run_id, invocation, command_text(call.arguments))
                 with span("agent.tool", tool=tool):
                     try:
                         result = await self._interruptible(
                             run_id,
                             execute_tool(call.name, call.arguments, lease_id, self.broker, ctx),
-                            steerable=call.name == "exec_wait",
+                            steerable=call.name in {"bash", "bash_wait"},
                         )
                     except SteerArrived:
                         # Only the wait is abandoned: the command keeps running and its unread output stays behind the same offset.
                         result = {
                             "ok": True,
-                            "handle": call.arguments.get("handle"),
+                            "handle": call.arguments.get("handle") or ctx.command_handle,
                             "running": True,
                             "steered": True,
-                            "hint": "用户发来新消息，已停止等待；命令仍在后台运行。先处理新消息，需要时用相同 offset 继续 exec_wait。",
+                            "hint": "用户发来新消息，已停止等待；命令仍在后台运行。先处理新消息，需要时用相同 offset 继续 bash_wait。",
                         }
         except (RunCanceled, LeaseInterrupted, BudgetPause, FileDependencyPending):
             raise
@@ -1709,20 +1759,18 @@ class AgentLoop:
             "agent.tool_result",
             {
                 "step": step,
-                "name": call.name,
+                "name": shown_name,
+                "call_id": call.id,
                 "ok": bool(result.get("ok")),
                 "exit_code": result.get("exit_code"),
-                "stdout": (
-                    (result.get("output_tail") if result.get("running") else result.get("stdout"))
-                    or (f"已读取技能说明（{len(shown)} 字）" if shown else "")
-                )[:2000],
+                "stdout": (result.get("stdout") or result.get("output") or (f"已读取技能说明（{len(shown)} 字）" if shown else ""))[:2000],
                 **(
                     {
                         "running": bool(result.get("running")),
                         "job_key": hashlib.sha256(result["handle"].encode()).hexdigest() if result.get("handle") else None,
                         "idle_seconds": result.get("idle_seconds"),
                     }
-                    if call.name in {"exec", "exec_wait", "exec_kill"}
+                    if call.name in {"bash", "bash_wait", "bash_kill"}
                     else {}
                 ),
                 "stderr": (result.get("stderr") or "")[:2000],
@@ -1814,14 +1862,23 @@ class AgentLoop:
         payload, exceeded = bounded_checkpoint(
             self._context(run_id).snapshot(turn.run.get("_image_files", {})), settings.checkpoint_max_bytes
         )
-        saved = await self.platform.put_checkpoint(run_id, {"expected_step": self._steps.get(run_id, 0), "state": payload})
-        self._steps[run_id] = saved["step"]
+        # The API stores a checkpoint with a compare-and-set on the step it had seen. Two coroutines
+        # that read the same expected_step both succeed locally and one gets 409 stale_step over the
+        # wire, so one run has exactly one CAS in flight: the lock covers the read of expected_step
+        # and the write, not the serialization above.
+        async with self._checkpoint_lock(run_id):
+            expected = self._steps.get(run_id, 0)
+            saved = await self.platform.put_checkpoint(run_id, {"expected_step": expected, "state": payload})
+            self._steps[run_id] = saved["step"]
         if exceeded:
             state.clear()
             state.update(payload)
             turn.messages = state["messages"]
             turn.artifacts, turn.delivered = state["artifacts"], state["delivered"]
             raise BudgetPause(CAPACITY_NOTE)
+
+    def _checkpoint_lock(self, run_id: str) -> asyncio.Lock:
+        return self._checkpoint_locks.setdefault(run_id, asyncio.Lock())
 
     async def _workspace_checkpoint(self, run_id: str, turn: _Turn, *, force=False) -> None:
         if not turn.lease_id or not turn.lease_used:  # an unused early sandbox holds the restored workspace unchanged
@@ -1884,12 +1941,35 @@ class AgentLoop:
         if record and "result" in record:
             return record["result"]
         if record and call.name in NON_REPLAYABLE:
-            return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True}
-        if not record:
-            state["tool_log"][invocation] = {"name": call.name, "started": True}
+            computed = command_handle(run_id, invocation, command_text(call.arguments)) if call.name == "bash" else ""
+            handle = record.get("handle") or computed
+            if not handle:
+                return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True}
+            # The command may still be running in this sandbox: continue waiting on that execution.
+            # If the sandbox lost it, the helper says so and nothing is started again.
+            # The event keeps the original tool name so the UI closes the step it opened before the restart.
+            resumed = await self._run_tool(
+                turn, run_id, ToolCall(call.id, "bash_wait", {"handle": handle}), step, invocation, event_name=call.name, announce=False
+            )
+            # No observable result at all (lost execution, an unrecoverable exit state, or the wait itself
+            # failed): the model must re-check the workspace, not re-run. A finished command, even with a
+            # non-zero exit code, is a real result and passes through untouched.
+            unobserved = "exit_code" not in resumed
+            if resumed.get("lost") or unobserved:
+                return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True, "handle": handle}
+            return {**resumed, "resumed": True}
+        if not record and call.name not in READ_ONLY_TOOLS:
+            record = {"name": call.name, "started": True}
+            if call.name == "bash":
+                # Deterministic, so a resumed run can wait on the same execution.
+                record["handle"] = command_handle(run_id, invocation, command_text(call.arguments))
+            state["tool_log"][invocation] = record
             if call.name in FILE_TOOLS:
                 state["workspace_dirty"] = True
             await self._checkpoint(run_id, turn)
+        # A read-only lookup writes no started record and is not checkpointed on its own: it has no
+        # side effect, a resume may simply repeat it, and a batch of them would otherwise cost a
+        # gzip + object store + DB write per file. The step-end checkpoint still persists the results.
         if call.name == "ask_user":
             # An answer only ever satisfies the question it was given for; a stale one cannot leak into a later question.
             answered = state.get("answer") or {}
@@ -2051,7 +2131,7 @@ class AgentLoop:
         else:
             identity = delivery_id_var.set(f"{run_id}:{invocation}")
             try:
-                result = await self._run_tool(turn, run_id, call, step)
+                result = await self._run_tool(turn, run_id, call, step, invocation)
             finally:
                 delivery_id_var.reset(identity)
         return result
@@ -2168,6 +2248,7 @@ class AgentLoop:
             self._states.pop(run_id, None)
             self._turns.pop(run_id, None)
             self._steps.pop(run_id, None)
+            self._checkpoint_locks.pop(run_id, None)
             self._lease_errors.pop(run_id, None)
             self._steer_pending.discard(run_id)
             self._budgets.pop(run_id, None)
@@ -2259,7 +2340,7 @@ class AgentLoop:
             offered = [] if spec is not None and not spec.supports({"tools"}) else catalog
             turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
             turn.offered = offered
-            self._prepare_office_turn(turn, run_id)
+            self._prepare_workspace_turn(turn, run_id)
             error = None
             pause_reason = None
             step_limit = budget.data["start_step"] + settings.max_agent_steps
@@ -2363,12 +2444,13 @@ class AgentLoop:
                         await self._event(run_id, "agent.message", {"step": step, "content": response.content})
                     if calls and run["_ledger_tokens"] >= settings.run_max_tokens:
                         raise TokenLimit(_token_limit_error(run))
-                while state["pending"]:
-                    data = state["pending"][0]
-                    call = ToolCall(data["id"], data["name"], data["arguments"])
-                    invocation = f"{step}:{data['ordinal']}"
-                    image_start = len(state.get("pending_image_inputs", []))
-                    result = await self._durable_tool(turn, run_id, call, step, invocation)
+
+                async def _consume(call, invocation, result, image_start):
+                    """Record one tool result: adjust it to the budget, log it, append it, checkpoint.
+
+                    Kept separate from execution so a batch of read-only calls can run at once and
+                    still be consumed in ordinal order.
+                    """
                     if spec:
                         result = admit_tool_result(
                             ContextBand.for_model(spec, run.get("context_settings")),
@@ -2393,28 +2475,56 @@ class AgentLoop:
                     if call.name == "memory":
                         self._context(run_id).observe_memory_result(result, call.id)
                     state["pending"].pop(0)
-                    if call.name in {"exec", "exec_wait", "exec_kill"} and result.get("handle"):
+                    job_handle = result.get("handle") or call.arguments.get("handle")
+                    if call.name in {"bash", "bash_wait", "bash_kill"} and job_handle:
                         jobs = set(state.get("background_jobs", []))
                         if result.get("running"):
-                            jobs.add(result["handle"])
+                            jobs.add(job_handle)
                         else:
-                            jobs.discard(result["handle"])
+                            jobs.discard(job_handle)
                         state["background_jobs"] = sorted(jobs)
                     if call.name == "finish" and result.get("ok"):
                         state.update(finished=True, final_summary=result.get("summary") or state["final_summary"])
                     changed = call.name in FILE_TOOLS or (
-                        call.name in {"exec_wait", "exec_kill"}
+                        call.name in {"bash_wait", "bash_kill"}
                         and not result.get("running")
                         and result.get("exit_code") is not None
                         and result.get("handle") not in state.get("snapshotted_execs", [])
                     )
                     if changed:
                         state["workspace_dirty"] = True
-                        if call.name in {"exec_wait", "exec_kill"}:
-                            state["snapshotted_execs"] = [*state.get("snapshotted_execs", [])[-7:], result["handle"]]
-                    await self._checkpoint(run_id, turn)
+                        if call.name in {"bash_wait", "bash_kill"}:
+                            state["snapshotted_execs"] = [*state.get("snapshotted_execs", [])[-7:], job_handle]
+                    if call.name not in READ_ONLY_TOOLS:
+                        await self._checkpoint(run_id, turn)
                     if changed:
                         await self._workspace_checkpoint(run_id, turn)
+
+                while state["pending"]:
+                    batch = 0
+                    while batch < len(state["pending"]) and state["pending"][batch]["name"] in READ_ONLY_TOOLS:
+                        batch += 1
+                    parallel = [state["pending"][i] for i in range(batch)] if batch > 1 else []
+                    image_start = len(state.get("pending_image_inputs", []))
+                    if parallel:
+                        prepared = [
+                            (ToolCall(item["id"], item["name"], item["arguments"]), f"{step}:{item['ordinal']}") for item in parallel
+                        ]
+                        gathered = await asyncio.gather(
+                            *(self._durable_tool(turn, run_id, call, step, invocation) for call, invocation in prepared),
+                            return_exceptions=True,
+                        )
+                        failure = next((item for item in gathered if isinstance(item, BaseException)), None)
+                        if failure is not None:
+                            raise failure
+                        for (call, invocation), result in zip(prepared, gathered, strict=True):
+                            await _consume(call, invocation, result, image_start)
+                        continue
+                    data = state["pending"][0]
+                    call = ToolCall(data["id"], data["name"], data["arguments"])
+                    invocation = f"{step}:{data['ordinal']}"
+                    result = await self._durable_tool(turn, run_id, call, step, invocation)
+                    await _consume(call, invocation, result, image_start)
                 for parts in state.pop("pending_image_inputs", []):
                     state.setdefault("tool_image_indices", []).append(len(messages))
                     messages.append({"role": "user", "content": parts})

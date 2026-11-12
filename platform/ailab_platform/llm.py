@@ -296,19 +296,22 @@ def _call(step: int, tool: str, arguments: dict) -> LLMResponse:
 _PPT = [
     ("load_skill", {"name": "platform.pptx"}),
     (
-        "exec",
-        {"cmd": "mkdir -p /workspace/work && python /opt/skills/platform.pptx/scripts/build.py --example > /workspace/work/deck.json"},
+        "bash",
+        {"command": "mkdir -p /workspace/work && python /opt/skills/platform.pptx/scripts/build.py --example > /workspace/work/deck.json"},
     ),
-    ("exec", {"cmd": "python /opt/skills/platform.pptx/scripts/build.py /workspace/work/deck.json /workspace/outputs/ailab-demo.pptx"}),
+    ("bash", {"command": "python /opt/skills/platform.pptx/scripts/build.py /workspace/work/deck.json /workspace/outputs/ailab-demo.pptx"}),
     ("deliver_file", {"path": "/workspace/outputs/ailab-demo.pptx", "filename": "ailab-demo.pptx"}),
 ]
 _XLSX = [
     ("load_skill", {"name": "platform.xlsx"}),
     (
-        "exec",
-        {"cmd": "mkdir -p /workspace/work && python /opt/skills/platform.xlsx/scripts/build_xlsx.py --example > /workspace/work/book.json"},
+        "bash",
+        {
+            "command": "mkdir -p /workspace/work && "
+            "python /opt/skills/platform.xlsx/scripts/build_xlsx.py --example > /workspace/work/book.json"
+        },
     ),
-    ("exec", {"cmd": "python /opt/skills/platform.xlsx/scripts/build_xlsx.py /workspace/work/book.json /workspace/outputs/sales.xlsx"}),
+    ("bash", {"command": "python /opt/skills/platform.xlsx/scripts/build_xlsx.py /workspace/work/book.json /workspace/outputs/sales.xlsx"}),
     ("deliver_file", {"path": "/workspace/outputs/sales.xlsx", "filename": "sales.xlsx"}),
 ]
 
@@ -447,7 +450,7 @@ class MockLLM(LLMClient):
         offered = {t.get("function", {}).get("name") for t in tools or []}
         system = str(messages[0].get("content") or "") if messages else ""
         picked = next((k for k in ("pptx", "xlsx") if f"本轮已选技能：{k}" in system), "")
-        if "exec" not in offered:  # no sandbox offered (chat): words only
+        if "bash" not in offered:  # no sandbox offered (chat): words only
             pass
         elif picked == "pptx" or _wants_ppt(prompt):
             script, closing = _PPT, "已完成：演示文稿已生成并交付到资料库，右侧可以预览。想调整哪一页、换什么配色，直接告诉我。"
@@ -456,12 +459,12 @@ class MockLLM(LLMClient):
         elif "文件" in prompt or "总结" in prompt:
             content = f"# 处理结果\n\n原始请求：{prompt}\n\n这是 Agent Service 生成的文件。\n"
             script = [
-                ("write_file", {"path": "/workspace/outputs/answer.md", "content": content}),
+                ("write", {"path": "/workspace/outputs/answer.md", "content": content}),
                 ("deliver_file", {"path": "/workspace/outputs/answer.md", "filename": "answer.md"}),
             ]
             closing = "文件已生成并交付。"
         elif "沙箱" in prompt or "命令" in prompt:
-            script = [("exec", {"cmd": "echo 'hello from ailab sandbox'; pwd; ls -la"})]
+            script = [("bash", {"command": "echo 'hello from ailab sandbox'; pwd; ls -la"})]
             closing = "沙箱命令已执行完成。"
 
         if script is None:  # plain chat: answer directly, no tools

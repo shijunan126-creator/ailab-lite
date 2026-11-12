@@ -82,6 +82,9 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
                                 "prompt_anchors": state.get("prompt_anchors", []),
                                 "messages": state["messages"],
                                 "tools": state["tool_catalog_v1"],
+                                # Which model produced this prefix; the Agent compares it when it
+                                # has no boundary reason of its own.
+                                "model": state.get("context_model", parent.model),
                                 "delivered": state.get("delivered", {}),
                                 "delivery_names": state.get("delivery_names", {}),
                                 "operational_state": {

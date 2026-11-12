@@ -236,7 +236,7 @@ def test_only_urls_from_the_user_or_web_results_can_be_fetched() -> None:
         {"role": "system", "content": "see https://system.test/a"},
         {"role": "user", "content": "总结 https://blog.test/post?id=1。"},
         {"role": "assistant", "content": "I will read https://attacker.test/?q=secret"},
-        {"role": "tool", "name": "exec", "content": json.dumps({"stdout": "https://attacker.test/leak"})},
+        {"role": "tool", "name": "bash", "content": json.dumps({"stdout": "https://attacker.test/leak"})},
         {"role": "tool", "name": "read_url", "content": json.dumps({"links": ["https://docs.test/next"]})},
         {"role": "tool", "name": "web_search", "content": json.dumps({"results": [{"url": "https://news.test/1"}]})},
     ]
@@ -545,6 +545,21 @@ def test_a_refused_save_is_a_tool_error_and_the_run_continues() -> None:
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
     assert "已有同名个人技能 notes" in llm.seen_messages[1][-1]["content"]
     assert platform.statuses[-1][0] == "succeeded"
+
+
+def test_a_missing_skill_file_is_named_as_missing() -> None:
+    """The Broker answers 404 for a path that is not there; "工具请求失败" hides the fix from the model."""
+    from ailab_platform.clients import ClientError
+    from ailab_platform.contracts.files import FILE_NOT_FOUND
+
+    class Broker(_Broker):
+        async def get_file(self, lease_id, path, max_bytes=None):
+            raise ClientError("GET", f"/internal/leases/{lease_id}/files", FILE_NOT_FOUND, json.dumps({"detail": "no such file"}))
+
+    with pytest.raises(net_tools.NetToolError, match="文件不存在"):
+        asyncio.run(
+            net_tools.save_skill({"name": "notes", "mode": "create", "path": "/workspace/work/skills/notes.md"}, "r1", "l1", Broker(), None)
+        )
 
 
 def test_download_path_is_confined_to_downloads() -> None:

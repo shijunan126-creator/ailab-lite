@@ -715,6 +715,7 @@ export type Step = {
   status: "running" | "ok" | "failed" | "note";
   output?: string;
   modelStep?: number;
+  callId?: string; // pairs a result with its own call when one reply runs several tools at once
   background?: boolean;
   jobKey?: string;
   sources?: Source[];

@@ -19,7 +19,15 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ..config import BASE_DIR, settings
-from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
+from .base import (
+    SANDBOX_EXPIRY_GRACE_SECONDS,
+    ExecResult,
+    SandboxError,
+    SandboxFileNotFound,
+    SandboxProvider,
+    SandboxResource,
+    SandboxSpec,
+)
 from .transfer import CHUNK_SIZE, copy_chunks
 
 SKILLS = BASE_DIR.parent / "images" / "sbx-office" / "skills"
@@ -130,6 +138,27 @@ class MockSandbox(SandboxProvider):
         pattern = "|".join(re.escape(prefix) for prefix in mapping)
         return re.sub(rf"({pattern})(?![\w.-])", lambda match: str(mapping[match[1]]), cmd)
 
+    def get_file_lines_to_path(self, sandbox_id: str, path: str, target: Path, *, line: int, max_bytes: int) -> None:
+        """What ``lines_script`` does, on the local file: skip to the line, copy at most max_bytes."""
+        source = self._translate(sandbox_id, path)
+        if not source.exists():
+            raise SandboxFileNotFound(f"no such file in the sandbox: {path}")
+        if not source.is_file():
+            raise SandboxError(f"not a regular file in the sandbox: {path}")
+        with source.open("rb") as src, target.open("wb") as dst:
+            skip = line - 1
+            while skip:
+                chunk = src.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                index = -1
+                while skip and (index := chunk.find(b"\n", index + 1)) >= 0:
+                    skip -= 1
+                if not skip:
+                    src.seek(index + 1 - len(chunk), 1)  # back to just after the newline that ends line - 1
+            if not skip:
+                dst.write(src.read(max_bytes))
+
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
         translated = self._translate_command(sandbox_id, cmd)
         root = self._sandbox_root(sandbox_id)
@@ -218,13 +247,17 @@ class MockSandbox(SandboxProvider):
 
     def get_file_to_path(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int) -> None:
         source = self._translate(sandbox_id, path)
+        if not source.exists():
+            raise SandboxFileNotFound(f"no such file in the sandbox: {path}")
         if not source.is_file():
-            raise SandboxError("not a regular file in the sandbox")
+            raise SandboxError(f"not a regular file in the sandbox: {path}")
         with source.open("rb") as src, target.open("wb") as dst:
             copy_chunks(iter(lambda: src.read(CHUNK_SIZE), b""), dst, max_bytes=max_bytes)
 
     def file_size(self, sandbox_id: str, path: str) -> int:
         target = self._translate(sandbox_id, path)
+        if not target.exists():
+            raise SandboxFileNotFound(f"no such file in the sandbox: {path}")
         if not target.is_file():
             raise SandboxError(f"not a regular file in the sandbox: {path}")
         return target.stat().st_size

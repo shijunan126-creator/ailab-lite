@@ -11,12 +11,19 @@ import Answer from "./answer";
 
 const MARK: Record<PlanStep["status"], string> = { pending: "pending", running: "running", done: "ok", skipped: "note", failed: "failed" };
 
+// Older runs keep their tool names; the icon must still say what happened.
+const SEARCH_TOOLS = new Set(["web_search", "search_images", "search_library", "recall_history", "grep", "find"]);
+const GLOBE_TOOLS = new Set(["read_url", "download_url"]);
+const TERMINAL_TOOLS = new Set(["bash", "bash_wait", "bash_kill", "exec", "exec_wait", "exec_kill", "fetch_packages", "fetch_repo"]);
+const EDIT_TOOLS = new Set(["write", "edit", "write_file", "save_skill"]);
+const BOOK_TOOLS = new Set(["read", "read_file", "read_library_file", "copy_library_file", "list_files"]);
+
 function StepIcon({ name }: { name: string }) {
-  if (name === "web_search" || name === "search_images" || name === "search_library" || name === "recall_history") return <IconSearch size={14} />;
-  if (name === "read_url" || name === "download_url") return <IconGlobe size={14} />;
-  if (name === "exec" || name === "fetch_packages" || name === "fetch_repo") return <IconTerminal size={14} />;
-  if (name === "write_file" || name === "save_skill") return <IconFilePen size={14} />;
-  if (name === "read_library_file" || name === "copy_library_file") return <IconBook size={14} />;
+  if (SEARCH_TOOLS.has(name)) return <IconSearch size={14} />;
+  if (GLOBE_TOOLS.has(name)) return <IconGlobe size={14} />;
+  if (TERMINAL_TOOLS.has(name)) return <IconTerminal size={14} />;
+  if (EDIT_TOOLS.has(name)) return <IconFilePen size={14} />;
+  if (BOOK_TOOLS.has(name)) return <IconBook size={14} />;
   if (name === "load_skill") return <IconSparkles size={14} />;
   return <IconFile size={14} />;
 }

@@ -13,7 +13,7 @@ DRIFTING = LLMResponse(content='{"verdict":"drifting","reason":"在整理无关�
 
 
 def _write(name):
-    return LLMResponse(tool_calls=[ToolCall(name, "write_file", {"path": f"/workspace/{name}.txt", "content": name})])
+    return LLMResponse(tool_calls=[ToolCall(name, "write", {"path": f"/workspace/{name}.txt", "content": name})])
 
 
 @pytest.fixture

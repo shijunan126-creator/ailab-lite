@@ -92,12 +92,15 @@ SCAN_EXHAUSTED = Counter("ailab_scan_exhausted_total", "Files that exhausted sca
 
 KNOWN_TOOLS = frozenset(
     {
-        "list_files",
-        "read_file",
-        "write_file",
-        "exec",
-        "exec_wait",
-        "exec_kill",
+        "ls",
+        "read",
+        "write",
+        "edit",
+        "grep",
+        "find",
+        "bash",
+        "bash_wait",
+        "bash_kill",
         "deliver_file",
         "finish",
         "search_library",

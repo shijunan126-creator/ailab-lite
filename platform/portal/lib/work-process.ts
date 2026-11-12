@@ -31,6 +31,25 @@ function describeTool(name: string, args: any): { label: string; detail?: string
       return { label: "运行 JavaScript", detail: String(args?.code || "").split("\n").find((l) => l.trim())?.trim().slice(0, 120) };
     case "search_images":
       return { label: "搜索图片", detail: args?.query };
+    case "bash":
+      return { label: "运行命令", detail: String(args?.cmd || args?.command || "").slice(0, 160) };
+    case "bash_wait":
+      return { label: "查看命令进度" };
+    case "bash_kill":
+      return { label: "停止命令" };
+    case "write":
+      return { label: "写入文件", detail: args?.path };
+    case "read":
+      return { label: "读取文件", detail: args?.path };
+    case "edit":
+      return { label: "修改文件", detail: args?.path };
+    case "ls":
+      return { label: "查看目录", detail: args?.path };
+    case "grep":
+      return { label: "搜索内容", detail: args?.pattern };
+    case "find":
+      return { label: "查找文件", detail: args?.pattern };
+    // Names used before the Pi alignment: persisted events still have to render.
     case "exec":
       return { label: "运行命令", detail: String(args?.cmd || args?.command || "").slice(0, 160) };
     case "exec_wait":
@@ -140,7 +159,7 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
     }
     case "agent.tool_call": {
       const d = describeTool(p.name, p.arguments);
-      pushStep(next, { name: p.name, ...d, status: "running", modelStep: p.step });
+      pushStep(next, { name: p.name, ...d, status: "running", modelStep: p.step, ...(p.call_id ? { callId: p.call_id } : {}) });
       break;
     }
     case "agent.tool_result": {
@@ -153,24 +172,41 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
           }
         }
       }
-      search: for (let i = next.length - 1; i >= 0; i--) {
-        const it = next[i];
-        if (it.kind !== "steps") continue;
-        for (let j = it.steps.length - 1; j >= 0; j--) {
-          const s = it.steps[j];
-          if (s.name !== p.name || s.status !== "running" || (p.step !== undefined && s.modelStep !== p.step)) continue;
-          const step: Step = { ...s, status: p.ok ? "ok" : "failed", output: [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500) };
+      // Several calls in one reply are announced back to back and answer as they finish: the call id
+      // decides which row this result belongs to. Without one (an event recorded before ids existed)
+      // fall back to the last running row with the same name and model step.
+      const running: { item: number; index: number; step: Step }[] = [];
+      next.forEach((it, item) => {
+        if (it.kind !== "steps") return;
+        it.steps.forEach((step, index) => {
+          if (step.status === "running") running.push({ item, index, step });
+        });
+      });
+      const byId = (s: Step) => s.callId === p.call_id;
+      const byName = (s: Step) => s.name === p.name && (p.step === undefined || s.modelStep === p.step);
+      const newest = [...running].reverse();
+      // A result that has an id never falls back to another row when some row carries an id: that row
+      // is simply gone (a rebuild), and pairing by name would pin this result on someone else's call.
+      const named = running.some((row) => row.step.callId !== undefined) ? undefined : newest.find((row) => byName(row.step));
+      const picked = p.call_id !== undefined ? newest.find((row) => byId(row.step)) ?? named : newest.find((row) => byName(row.step));
+      if (picked) {
+        const it = next[picked.item];
+        if (it.kind === "steps") {
+          const step: Step = {
+            ...picked.step,
+            status: p.ok ? "ok" : "failed",
+            output: [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500),
+          };
           if (p.job_key) step.jobKey = p.job_key;
-          // a command still going after its first wait: the model comes back to it with exec_wait
+          // a command still going after its first wait: the model comes back to it with bash_wait
           if (p.running) {
             step.background = true;
             step.status = "note"; // not finished: no tick until a later look sees it end
           }
           if (Array.isArray(p.sources)) step.sources = p.sources.filter((x: any) => x && /^https?:\/\//.test(x.url || "")).slice(0, 10);
           const steps = it.steps.slice();
-          steps[j] = step;
-          next[i] = { kind: "steps", steps };
-          break search;
+          steps[picked.index] = step;
+          next[picked.item] = { kind: "steps", steps };
         }
       }
       break;

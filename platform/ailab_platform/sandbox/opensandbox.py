@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import re
 import shlex
 import threading
@@ -17,14 +18,23 @@ import time
 import uuid
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import httpx
 
 from ..config import settings
 from ..paths import PathError, normalize_path
-from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
-from .transfer import CHUNK_SIZE, TransferLimitError, TransferReader, copy_chunks
+from .base import (
+    SANDBOX_EXPIRY_GRACE_SECONDS,
+    ExecResult,
+    SandboxError,
+    SandboxProvider,
+    SandboxResource,
+    SandboxSpec,
+    lines_error,
+    lines_script,
+)
+from .transfer import CHUNK_SIZE, TRANSFER_SECONDS, TransferLimitError, TransferReader, copy_chunks
 
 
 def _checked(path: str) -> str:
@@ -34,8 +44,40 @@ def _checked(path: str) -> str:
         raise SandboxError(str(exc)) from exc
 
 
+def _chain(path: str) -> list[str]:
+    """/workspace and every component below it down to ``path``: lstat sees a link only on the entry it is asked about."""
+    try:
+        parts = PurePosixPath(path).relative_to("/workspace").parts
+    except ValueError:
+        return []
+    return ["/workspace"] + ["/workspace/" + "/".join(parts[: i + 1]) for i in range(len(parts))]
+
+
+def _head(chunks, size: int):
+    for chunk in chunks:
+        if size <= 0:
+            return
+        yield chunk[:size]
+        size -= len(chunk)
+
+
 def _join(messages) -> str:
     return "\n".join((m.text or "") for m in messages).strip("\n")
+
+
+class _ExpectedMiss(logging.Filter):
+    """Drop the SDK's ERROR traceback for a file-info lookup of a missing path.
+
+    The SDK logs every failed call with a traceback. A missing path is how the write guard learns
+    a file is new, which is most writes, so it would otherwise log a traceback per new file.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        error = record.exc_info[1] if record.exc_info else None
+        return not (record.getMessage().startswith("Failed to get file info") and "FILE_NOT_FOUND" in str(error))
+
+
+_MISS = _ExpectedMiss()
 
 
 _LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?\Z")
@@ -88,6 +130,9 @@ class OpenSandboxProvider(SandboxProvider):
             ) from exc
 
         self._SandboxSync = SandboxSync
+        sdk_log = logging.getLogger("opensandbox.sync.adapters.filesystem_adapter")
+        if _MISS not in sdk_log.filters:
+            sdk_log.addFilter(_MISS)
         self._config = ConnectionConfigSync(
             domain=settings.osb_domain,
             protocol=settings.osb_protocol,
@@ -190,8 +235,54 @@ class OpenSandboxProvider(SandboxProvider):
             duration_ms=duration,
         )
 
-    def put_file(self, sandbox_id: str, path: str, data: bytes) -> None:
-        path = _checked(path)
+    # Every exec costs about a second on OpenSandbox (1.1.1, measured), the file API a few
+    # milliseconds. The guards below ask the file API first and keep the guarded shell for
+    # anything they cannot prove: a link, a missing path or an API failure. Like the shell guard,
+    # the check precedes the transfer; the sandbox boundary, not this check, contains a racing agent.
+    def _lstat(self, sandbox_id: str, paths: list[str]) -> dict[str, tuple[str, int]] | None:
+        """Kind and size of each path, links not followed. None if any path is missing or the API fails."""
+        try:
+            infos = self._sandbox(sandbox_id).files.get_file_info(paths)
+            return {p: ((infos[p].entry_type or "").lower(), int(infos[p].size)) for p in paths}
+        except Exception:
+            return None
+
+    def _plain_size(self, sandbox_id: str, path: str) -> int | None:
+        """The size of a regular file reached through real directories only, or None."""
+        chain = _chain(path)
+        info = self._lstat(sandbox_id, chain) if len(chain) > 1 else None
+        if info is None or any(info[p][0] != "directory" for p in chain[:-1]) or info[path][0] != "file":
+            return None
+        return info[path][1]
+
+    def _direct_write(self, sandbox_id: str, path: str) -> str | None:
+        """Whether the file API may write ``path`` itself: "file" (replace it), "absent" (create it), or None.
+
+        Every parent must already exist as a real directory. A missing one goes through the shell
+        guard's ``mkdir -p`` as the sandbox user: execd may run as another user, and directories it
+        creates would not be writable by the agent's commands.
+        """
+        chain = _chain(path)
+        if len(chain) < 2:
+            return None
+        info = self._lstat(sandbox_id, chain)
+        if info is None:  # usually a new file; otherwise a missing parent or a failing API, which the shell settles
+            info = self._lstat(sandbox_id, chain[:-1])
+            if info is None:
+                return None
+        if any(info[p][0] != "directory" for p in chain[:-1]):
+            return None
+        return "absent" if path not in info else ("file" if info[path][0] == "file" else None)
+
+    def file_size(self, sandbox_id: str, path: str) -> int:
+        size = self._plain_size(sandbox_id, path)
+        return size if size is not None else super().file_size(sandbox_id, path)
+
+    def _guard_write(self, sandbox_id: str, path: str) -> str | None:
+        """Make ``path`` writable through the file API: the fast check, else the guarded shell. Returns the fast verdict."""
+        verdict = self._direct_write(sandbox_id, path)
+        if verdict is not None:
+            return verdict
         q = shlex.quote(path)
         check = self.exec(
             sandbox_id,
@@ -203,6 +294,11 @@ class OpenSandboxProvider(SandboxProvider):
         )
         if check.exit_code != 0:
             raise SandboxError(f"refusing to write through a symlink: {path}")
+        return None
+
+    def put_file(self, sandbox_id: str, path: str, data: bytes) -> None:
+        path = _checked(path)
+        self._guard_write(sandbox_id, path)
         sandbox = self._sandbox(sandbox_id)
         try:
             # OpenSandbox reads the mode's decimal digits as octal ("644" -> rw-r--r--); 0o644 (= 420) would become r---w----
@@ -222,49 +318,84 @@ class OpenSandboxProvider(SandboxProvider):
         path = _checked(path)
         if source.stat().st_size > max_bytes:
             raise TransferLimitError("file exceeds transfer limit")
-        q = shlex.quote(path)
-        check = self.exec(
-            sandbox_id,
-            f'p={q}; parent=$(dirname "$p"); rp=$(realpath -m "$parent") || exit 1; '
-            'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; [ ! -L "$p" ] && mkdir -p -- "$parent"',
-            timeout=15,
-        )
-        if check.exit_code != 0:
-            raise SandboxError("refusing to write through a symlink")
+        verdict = self._guard_write(sandbox_id, path)
         temporary = str(Path(path).with_name(f".ailab-upload-{uuid.uuid4().hex}"))
+        files = self._sandbox(sandbox_id).files
+        published = False
         try:
             # SDK 1.1.1 streams binary IOBase in both direct chunked multipart
             # and Content-Length server-proxy mode. Passing bytes defeats this.
             with TransferReader(io.FileIO(source, "rb"), max_bytes) as stream:
-                self._sandbox(sandbox_id).files.write_file(temporary, stream, mode=644)
-            moved = self.exec(sandbox_id, f"mv -f -- {shlex.quote(temporary)} {q}", timeout=15)
-            if moved.exit_code != 0:
-                raise SandboxError("OpenSandbox streaming upload could not publish file")
+                files.write_file(temporary, stream, mode=644)
+            if verdict == "absent":  # the file API's move refuses to replace, so only a new file avoids the exec
+                try:
+                    from opensandbox.models.filesystem import MoveEntry
+
+                    files.move_files([MoveEntry(src=temporary, dest=path)])
+                    published = True
+                except Exception:
+                    pass  # created meanwhile: replace it below
+            if not published:
+                moved = self.exec(sandbox_id, f"mv -f -- {shlex.quote(temporary)} {shlex.quote(path)}", timeout=15)
+                if moved.exit_code != 0:
+                    raise SandboxError("OpenSandbox streaming upload could not publish file")
+                published = True
         except SandboxError:
             raise
         except Exception as exc:
             raise SandboxError("OpenSandbox streaming upload failed") from exc
         finally:
-            # A failed multipart request may leave a partial sandbox file.
-            try:
-                self.exec(sandbox_id, f"rm -f -- {shlex.quote(temporary)}", timeout=15)
-            except SandboxError:
-                # Preserve the transfer error if the resource itself vanished;
-                # lease reconciliation owns resource cleanup in this case.
-                pass
+            if not published:  # a failed multipart request may leave a partial sandbox file
+                try:
+                    files.delete_files([temporary])
+                except Exception:
+                    # Preserve the transfer error if the resource itself vanished;
+                    # lease reconciliation owns resource cleanup in this case.
+                    pass
 
     def get_file_to_path(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int) -> None:
         path = _checked(path)
         if self.file_size(sandbox_id, path) > max_bytes:
             raise TransferLimitError("file exceeds transfer limit")
+        self._stream(sandbox_id, path, target, max_bytes=max_bytes)
+
+    def _stream(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int, head: bool = False) -> None:
+        """Stream ``path`` to ``target``; ``head`` keeps its first ``max_bytes`` instead of refusing a larger file."""
         try:
             chunks = self._sandbox(sandbox_id).files.read_bytes_stream(path, chunk_size=CHUNK_SIZE)
             with closing(chunks), target.open("wb") as stream:
-                copy_chunks(chunks, stream, max_bytes=max_bytes)
+                copy_chunks(_head(chunks, max_bytes) if head else chunks, stream, max_bytes=max_bytes)
         except SandboxError:
             raise
         except Exception as exc:
             raise SandboxError("OpenSandbox streaming download failed") from exc
+
+    def get_file_lines_to_path(self, sandbox_id: str, path: str, target: Path, *, line: int, max_bytes: int) -> None:
+        path = _checked(path)
+        if line == 1 and self._plain_size(sandbox_id, path) is not None:
+            self._stream(sandbox_id, path, target, max_bytes=max_bytes, head=True)  # the common read: no exec at all
+            return
+        # The file API's offset/limit is unreliable (offset 0 is a 400) and exec output is decoded
+        # text, so one exec writes the window to a temporary file and the file API streams just that.
+        # The file lives outside /workspace: a parallel ``ls`` or a workspace snapshot must never see
+        # it. That path is ours, not the model's, so it is streamed without the /workspace guard.
+        temp = f"/tmp/.ailab-lines-{uuid.uuid4().hex}"  # hex only: safe unquoted
+        try:
+            result = self.exec(sandbox_id, f"{{ {lines_script(path, line, max_bytes)}; }} > {temp}", timeout=TRANSFER_SECONDS)
+            if result.exit_code:
+                raise lines_error(result.exit_code, path)
+            self._stream(sandbox_id, temp, target, max_bytes=max_bytes)
+        finally:
+            try:
+                self._sandbox(sandbox_id).files.delete_files([temp])
+            except Exception:
+                pass  # the read's own error matters more; a vanished sandbox takes its /tmp with it
+
+    def remove_file(self, sandbox_id: str, path: str) -> None:
+        try:
+            self._sandbox(sandbox_id).files.delete_files([_checked(path)])
+        except Exception:
+            super().remove_file(sandbox_id, path)  # already gone, or the API failed: the shell settles which
 
     def list_files(self, sandbox_id: str, path: str) -> list[dict]:
         from .file_listing import LIST_PROGRAM, parse_listing

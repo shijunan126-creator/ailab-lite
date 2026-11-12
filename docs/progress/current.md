@@ -1,3 +1,27 @@
+# 工作区工具对齐 Pi（2026-11-11）
+
+- 用户要求：把 `read_file`/`write_file`/`list_files`/`exec` 换成 Pi 的 `read`/`write`/`edit`/`bash`（另补 `grep`/`find`，底层 `rg`/`fd`），逻辑与性能优化照 Pi 源码做；随后临时调整 bash 的等待与期限。分支 `feat/pi-aligned-workspace-tools`，base `origin/main@7d17db92`，工作树 `.worktrees/pi-aligned-workspace-tools`；未授权推送、合并、部署。
+- 已完成：九个工具落地（行窗口、容错 `edit`、FIFO 文件锁、沙箱内 `ls`/`grep`/`find`）；bash 把「等待窗口 / 平台期限 / HTTP 单次等待」分成三件事，一次工具调用内部多段有界等待、不忙轮询、不按 idle 杀进程，期限由沙箱 supervisor 到点强制，句柄确定化使重启后接管原执行而不是重跑；提示词、技能生成物、Portal 步骤名同步。
+- 真模型验收（DeepSeek V4.1 Flash / OpenCode Go，16 个任务 29 次调用）：改前模型完全不用 read/edit/write、一律 bash + python 改文件；补 4 行工具选择规则后 read 出现在 9/16 个任务里，edit/write/ls/find/grep 均按意图使用。据此修了三处：grep/find 无结果写明搜索范围并给计数、bash 非 0 退出补 `Command exited with code N`、交付只在要成品时。等待窗口语义实测通过（10 秒窗口连续三次 bash_wait 后拿到最终结果，未被当成超时）。
+- 验证：[记录](updates/2026-11-11-pi-aligned-workspace-tools.md)。ruff 通过；单元套件 3014 项、16 失败（后查明是本地未构建 Office 读取器 `runner.mjs`，见第五轮更正）、189 跳过；Portal 286 项 + `tsc` 干净。提示词 system 2591 → 2765 tokens，含 28 个工具 schema 时 7283。
+- 容器内验证：按同一 base 与 Debian 快照装了 `ripgrep`/`fd-find`，在 uid 10001 下把 ls/grep/find/read/edit/write/bash/bath_wait/期限杀进程/kill 全跑通（`fd-find` 实际是 `fdfind`，探针回退必要）；由此修掉短命令丢失 `error`/`killed_by` 的真 bug。
+- 整栈补齐：完整 sbx-office 镜像在本机 arm64 构建成功（4.85 GB，SMOKE PASS，rg/fdfind 在、渲染 1 秒、断网），contracts 135 项 0 失败（52 项缺外部服务跳过），E2E 210 项 0 失败（15 跳过），Next 生产构建通过，真 AgentLoop 下 3 个子任务并发 edit 同一文件三节全落盘。
+- 未覆盖：amd64/双架构镜像与 k3s/gVisor 冒烟、E2E 的 docker/opensandbox 沙箱档、依赖外部服务的 contracts。
+- 独立代码审查（2026-11-12）提出 3 条必须修 + 4 条应该修 + 补充项，已全部修复并各配"不修就失败"的用例：`edit` 模糊匹配只看匹配段（不再把整行全角标点折成半角）；重叠出现计数；子任务调用编号带父 step（否则第二批同命令复用旧句柄）；恢复时只有真的丢失才算 `UNCERTAIN_EXEC`、事件名沿用原工具名；`grep` 的 glob `removeprefix` 与 `--no-require-git`；`bash_kill` 成功即 ok；bash 结果统一一个形状（去掉 `output_tail`，缺口有 elided 标记）；`write` 进文件队列；`timeout` 参数忽略并附 note；主参数改 `command`；提示词 2765 → 2657 tokens。
+- 验证：ruff 干净；全量 3166 项 / 16 失败（与未改基线逐条相同）/ 276 跳过；改动模块定向 342 项 0 失败；Portal 286 项 + `tsc` 干净；整栈 E2E 210 项 0 失败；真模型重跑 9 个任务，`command` 参数与 10 秒窗口多次 `bash_wait` 均正常。
+- 第三轮审查（2026-11-12）指出的 5 条必须修 + 4 条应该修已全部落地：`edit` 改成 "oldText 编译成正则、直接在原文上匹配"（5 MB 16 ms、峰值约 8 MiB，原实现 403 MiB）、尾空格 bug、`max_edit_bytes` 2 MiB + `to_thread`；Broker 的 404/413/400 与 `SandboxFileNotFound`；子任务编号带父调用；恢复不再多发 `tool_call`（`announce=False`）；旧目录含退役名时重建并记 `tool_catalog_changed`；`lost` 标记取代 `exit_code == -1`；缺口用 helper 的读取起点；运行中用 `output`；MockLLM 发 `command`；精简目录补 `read`/`write`/`edit`；提示词版本号升级。
+- 验证：ruff 干净；全量 3181 项 / 16 失败（与未改基线一致）/ 276 跳过；Portal 288 项 + `tsc` 干净；整栈 E2E 210 项 0 失败；真模型两轮 Work，第二轮前缀逐字节保留、`prompt_tokens` 单调增。
+- 第四轮审查（2026-11-12）的 4 条必须修已落地：`edit` 从正则改成线性折叠匹配（2 MB 最坏用例 14.3 s → 6 ms，峰值 8 MiB，GIL 不再被整段占住）、`_file_error` 只映射 400/404/413（410 重新触发租约中断）、`search_images`/`save_skill` 按 404 判断、提示词版本按模式拆开（Chat 不重建）。另外：旧目录重建时同一边界刷新 `messages[0]`、边界原因区分 `model_changed`/`tool_catalog_changed`/`platform_rules_changed`、`edit` 用 `max_bytes` 提前 413；两个后续项也做了——同一回复里连续 `read`/`ls`/`grep`/`find` 并发执行（结果按 ordinal 回填），`read` 走 Broker 的 `offset`/`length` 只取 2 MiB 窗口。
+- 验证：ruff 干净；全量 3192 项 / 16 失败（与未改基线一致）/ 276 跳过；改动模块 471 项全过；整栈 E2E 210 项 0 失败。
+- 第五轮审查（2026-11-12）的 4 条必须修已落地：并发 `_checkpoint` 按 run 加锁（只读工具不再写 started 记录、也不单独 checkpoint）、`agent.tool_call`/`tool_result` 带 `call_id` 且前后端按 id 配对、provider 层实现真正的字节范围读取（大文件不再整份 413，Broker 只传窗口）、`read` 到窗口末尾给续读提示、`edit` 起点/行中空白的两个边界修正。
+- 验收：全量 **3202 项 / 0 失败 / 252 跳过**（先按 CI 方式构建 `vendor/office-suite/runtime/runner.mjs`；此前记的"16 项既有失败"是缺这个构建产物，已在 dated update 更正）；Portal 290 项 + `tsc` 干净；整栈 E2E 211 项 0 失败。真模型 ADR 0030：Work 13 次调用 `cached/prompt` **95.9%**、Chat 5 次 **96.6%**，每次调用都是上一请求的逐字节前缀；真模型崩溃恢复里后台命令只启动一次，恢复用原 handle 等到了结果。
+- 第六轮审查（2026-11-12）：上一轮的范围读在真实沙箱里不可用（Docker/OpenSandbox 的下载只收 `/workspace`，切片却写在 `/tmp`；mock 重写了该方法，所有测试都没执行到）。已改为 provider 各自实现的按行窗口（`tail -n +N | head -c L`），`read` 任意 offset 都能读、到末尾才报总行数；另修 `edit` 行尾判断与 checkpoint 锁清理。真实 Docker 容器 52 MB 文件第 350 万行 63 ms。详见 dated update 第六轮。
+- 真实 OpenSandbox + 真模型（2026-11-12）：按行窗口在真实 OpenSandbox 上可用；调用链路优化后 `write`/`read`/`edit` 从 1–3 秒降到 0.04–0.1 秒，续轮第一个工具等沙箱从 9–13 秒降到约 1 秒，快照 4.1 → 1.1 秒；真模型 Work 缓存 98.5%、Chat 99.1%；真实契约 27 passed。详见 dated update 最后一节。
+- PR #188：CI 在 `41113c2c` 15 项全绿（SQLite 3006 / PostgreSQL 3140 / E2E 196 passed）；首轮失败均为测试问题，已修，见 dated update。
+- 下一步：合并由用户决定；合并后需重建 `sbx-office` 镜像（`rg`/`fd`），部署需用户当次明确要求。
+
+---
+
 # 记忆页不再显示来源对话（2026-11-11）
 
 - 用户要求：记忆行去掉「来源对话 / 等 N 段对话」，后端保留来源数据并保证删除链正确。分支 `feat/memory-hide-sources`，base `main@bc5c5b5c`；未授权部署。

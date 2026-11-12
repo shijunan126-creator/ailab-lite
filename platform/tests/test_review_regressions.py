@@ -137,7 +137,7 @@ def test_download_header_quotes_untrusted_filenames():
 
 def test_token_limit_stops_before_tools_run(monkeypatch):
     monkeypatch.setattr(settings, "run_max_tokens", 100)
-    calls = [ToolCall("c", "write_file", {"path": "/workspace/x", "content": "no"})]
+    calls = [ToolCall("c", "write", {"path": "/workspace/x", "content": "no"})]
     llm = ScriptedLLM([LLMResponse(content="over budget", tool_calls=calls, usage={"prompt_tokens": 101})])
     platform, broker = _run(llm)
     assert platform.statuses[-1][0] == "failed"
@@ -170,7 +170,7 @@ def test_chat_mode_ignores_unsolicited_tool_calls():
         async def get_run(self, run_id):
             return {**await super().get_run(run_id), "options": {"mode": "chat"}}
 
-    call = ToolCall("c", "write_file", {"path": "/workspace/x", "content": "no"})
+    call = ToolCall("c", "write", {"path": "/workspace/x", "content": "no"})
     llm = ScriptedLLM([LLMResponse(content="只是文字", tool_calls=[call]), LLMResponse(content="只是文字")])
     platform, broker = _run(llm, platform=ChatPlatform())
     assert broker.leases == 0 and broker.put_calls == []  # nothing ran: chat offers save_skill, not the sandbox

@@ -5,7 +5,7 @@ import json
 
 from ailab_platform.llm import MockLLM
 
-TOOLS = [{"type": "function", "function": {"name": "exec"}}]  # what the agent offers in work mode
+TOOLS = [{"type": "function", "function": {"name": "bash"}}]  # what the agent offers in work mode
 
 
 def _call(messages: list[dict], prompt: str, tools=TOOLS):
@@ -36,8 +36,10 @@ def test_mock_ppt_sequence() -> None:
     )
     messages.append({"role": "tool", "tool_call_id": first.tool_calls[0].id, "content": "{}"})
     second = _call(messages, "帮我做一个 PPT")
-    assert second.tool_calls[0].name == "exec"
-    assert "build.py --example" in second.tool_calls[0].arguments["cmd"]
+    assert second.tool_calls[0].name == "bash"
+    # The mock follows the schema the model sees: the primary parameter is ``command``.
+    assert "build.py --example" in second.tool_calls[0].arguments["command"]
+    assert "cmd" not in second.tool_calls[0].arguments
 
 
 def test_mock_chat_answers_without_tools() -> None:
@@ -51,13 +53,13 @@ def test_mock_counts_steps_from_the_latest_user_message() -> None:
         {
             "role": "assistant",
             "content": "",
-            "tool_calls": [{"id": "x", "type": "function", "function": {"name": "exec", "arguments": "{}"}}],
+            "tool_calls": [{"id": "x", "type": "function", "function": {"name": "bash", "arguments": "{}"}}],
         },
         {"role": "tool", "tool_call_id": "x", "content": "{}"},
         {"role": "assistant", "content": "done"},
     ]
     first = _call([*history, {"role": "user", "content": "再在沙箱里执行一次命令"}], "")
-    assert first.tool_calls and first.tool_calls[0].name == "exec"
+    assert first.tool_calls and first.tool_calls[0].name == "bash"
 
 
 def test_mock_sandbox_command_finishes() -> None:
@@ -66,7 +68,7 @@ def test_mock_sandbox_command_finishes() -> None:
         {"role": "user", "content": "在沙箱里执行一条命令"},
     ]
     first = _call(messages, "在沙箱里执行一条命令")
-    assert first.tool_calls[0].name == "exec"
+    assert first.tool_calls[0].name == "bash"
     messages.append(
         {
             "role": "assistant",
@@ -75,7 +77,7 @@ def test_mock_sandbox_command_finishes() -> None:
                 {
                     "id": first.tool_calls[0].id,
                     "type": "function",
-                    "function": {"name": "exec", "arguments": json.dumps({"cmd": "echo hi"})},
+                    "function": {"name": "bash", "arguments": json.dumps({"cmd": "echo hi"})},
                 }
             ],
         }

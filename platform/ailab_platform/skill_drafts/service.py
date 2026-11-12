@@ -121,7 +121,7 @@ def _snapshot(db, draft):
             select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.type == "agent.tool_call").order_by(RunEvent.seq).limit(100)
         ):
             payload = event.payload or {}
-            if payload.get("name") in {"write_file", "exec"}:
+            if payload.get("name") in {"write", "edit", "bash"}:
                 tools.append(json.dumps({"name": payload["name"], "arguments": payload.get("arguments")}, ensure_ascii=False)[:4000])
         parts.append(
             json.dumps({"user": run.prompt, "assistant": for_history(run.summary or "", False, 8000), "tools": tools}, ensure_ascii=False)

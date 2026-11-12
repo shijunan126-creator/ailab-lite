@@ -10,7 +10,7 @@ from ailab_platform.adapters.runtime import checkpoint_state, fresh_state
 from ailab_platform.agent.discovery import REDUCED_V1, catalog_for_budget
 from ailab_platform.agent.loop import AgentLoop, BudgetPause, _tools_for_run
 from ailab_platform.agent.multimodal import image_part
-from ailab_platform.agent.prompts import PLATFORM_PROMPT_VERSION, memory_prompt, system_prompt_for
+from ailab_platform.agent.prompts import memory_prompt, prompt_version, system_prompt_for
 from ailab_platform.agent.tools import tools_for_turn
 from ailab_platform.catalog import Catalog, ModelSpec
 from ailab_platform.contracts.context_summary import ContextSummary, canonical_summary
@@ -58,14 +58,14 @@ def test_discovery_keeps_request_prefix_and_tools():
 
 def test_clipped_tool_result_stays_identical_on_later_calls():
     class Broker(FakeBroker):
-        async def get_file(self, lease_id, path):
-            return b"x" * 100_000
+        async def get_file(self, lease_id, path, **kwargs):
+            return (b"x" * 100 + b"\n") * 1000  # 1000 lines, ~98KB: over the byte cap, under the line cap
 
     def tool_call(call_id, name, arguments):
         return {"tool_calls": [{"index": 0, "id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}]}
 
     responses = [
-        tool_call("read", "read_file", '{"path":"/workspace/work/large.txt"}'),
+        tool_call("read", "read", '{"path":"/workspace/work/large.txt"}'),
         tool_call("plan", "update_plan", '{"steps":["finish"]}'),
         {"content": "done"},
     ]
@@ -77,7 +77,7 @@ def test_clipped_tool_result_stays_identical_on_later_calls():
     assert_extension(requests[0], requests[1])
     assert_extension(requests[1], requests[2])
     result = next(message for message in requests[1]["messages"] if message.get("tool_call_id") == "read")
-    assert '"next_offset"' in result["content"] and len(result["content"]) < 100_000  # read_file returns a bounded window
+    assert '"next_offset"' in result["content"] and len(result["content"]) < 100_000  # read returns a bounded window
 
 
 def test_reasoning_is_echoed_without_rewriting_earlier_messages():
@@ -439,7 +439,7 @@ def test_platform_system_prompt_does_not_include_user_skill_state(mode):
     first = system_prompt_for(mode, "private-one", frozenset({"disabled-one"}), [{"name": "private-one"}], "secret one")
     second = system_prompt_for(mode, "private-two", frozenset({"disabled-two"}), [{"name": "private-two"}], "secret two")
     assert first == second
-    assert PLATFORM_PROMPT_VERSION in first
+    assert prompt_version(mode) in first
     assert all(value not in first for value in ("private-one", "disabled-one", "secret one", "private-two", "disabled-two", "secret two"))
 
 
@@ -457,9 +457,9 @@ def test_revoked_parent_rebuilds_valid_history_without_replaying_tools(monkeypat
                         {"role": "system", "content": "old"},
                         {
                             "role": "assistant",
-                            "tool_calls": [{"id": "exec", "type": "function", "function": {"name": "exec", "arguments": "{}"}}],
+                            "tool_calls": [{"id": "bash", "type": "function", "function": {"name": "bash", "arguments": "{}"}}],
                         },
-                        {"role": "tool", "name": "exec", "tool_call_id": "exec", "content": "already executed"},
+                        {"role": "tool", "name": "bash", "tool_call_id": "bash", "content": "already executed"},
                         {
                             "role": "assistant",
                             "tool_calls": [{"id": "delivery", "type": "function", "function": {"name": "deliver_file", "arguments": "{}"}}],
@@ -535,7 +535,7 @@ def test_legacy_checkpoint_rebuilds_once_and_preserves_tool_fences(split):
     ) + [{"role": "user", "content": "current task"}]
     state["user_message_index"] = len(state["messages"]) - 1
     state["delivered"] = {"/workspace/out.txt": 12}
-    state["tool_log"] = {"0:0": {"name": "exec", "status": "started"}}
+    state["tool_log"] = {"0:0": {"name": "bash", "status": "started"}}
     platform, broker = FakePlatform(), FakeBroker()
     platform.checkpoint = {"step": 1, "state": state}
     with scripted_server([{"content": "done"}]) as (url, requests):
@@ -1147,7 +1147,7 @@ def test_file_skill_reuses_text_but_revalidates_and_installs_current_version(mod
                 }
             return run
 
-    execute = {"tool_calls": [{"index": 0, "id": "exec", "type": "function", "function": {"name": "exec", "arguments": '{"cmd":"true"}'}}]}
+    execute = {"tool_calls": [{"index": 0, "id": "bash", "type": "function", "function": {"name": "bash", "arguments": '{"cmd":"true"}'}}]}
     responses = [{"content": "first"}, *([execute] if mode == "work" else []), {"content": "second"}]
     with scripted_server(responses) as (url, requests):
         platform, broker = Platform(), FakeBroker()
@@ -1245,7 +1245,7 @@ def test_office_module_wire_load_reread_and_checkpoint_prefix(mode, fmt):
     assert prohibited not in json.dumps(requests, ensure_ascii=False).lower()
 
 
-@pytest.mark.parametrize("context_tokens, refused", [(24000, True), (32000, False), (64000, False)])
+@pytest.mark.parametrize("context_tokens, refused", [(24000, True), (40000, False), (64000, False)])
 def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatch, context_tokens, refused):
     from ailab_platform.agent.skill_modules import read_module
     from ailab_platform.agent.tools import tool_result_message
@@ -1567,7 +1567,8 @@ def test_deploy_prompt_and_tool_changes_preserve_resumed_checkpoint(monkeypatch,
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("next", attempt_id="next"))
     assert next_requests[0]["messages"][0]["content"] == "new deployment"
     assert next_requests[0]["tools"] != old_tools
-    assert ("agent.context_boundary", {"reason": "model_changed"}) in platform.events
+    # Both the rules and the catalog moved: the rules label is the broader one.
+    assert ("agent.context_boundary", {"reason": "platform_rules_changed"}) in platform.events
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
@@ -1920,6 +1921,7 @@ def test_below_trigger_rebuild_validates_checkpoint_and_first_wire_request(monke
                 run["previous_model_context"] = {
                     "messages": prior,
                     "tools": [],
+                    "model": "other" if reason == "model_changed" else "m",
                     "context_epoch": 7,
                     "context_abi_version": 0 if reason == "context_abi_changed" else CONTEXT_ABI_VERSION,
                 }
@@ -2024,7 +2026,7 @@ def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode, fmt)
     system = requests[0]["messages"][0]["content"]
     assert "只回答用户本次问的内容" in system
     if mode == "work":
-        assert "保留真实退出码" in system and "inputs只注入本轮附件" not in system
+        assert "exit_code、stdout 和 stderr" in system and "inputs只注入本轮附件" not in system
     else:
         search = next(t for t in requests[0]["tools"] if t["function"]["name"] == "search_document")
         assert "字面匹配" in search["function"]["description"]
@@ -2902,3 +2904,90 @@ def test_line_moved_out_of_scope_is_announced_without_a_boundary():
     assert "已删除" not in blocks[0]["content"]
     assert requests[0]["messages"][:2] == requests[-1]["messages"][:2]
     assert not any(kind == "agent.context_boundary" for kind, _ in platform.events)
+
+
+@pytest.mark.parametrize("mode", ["work", "chat"])
+def test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary(mode):
+    """A run paused across a deploy would otherwise keep offering tools this Agent no longer executes."""
+    from ailab_platform.agent.tools import RETIRED_TOOLS
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": mode}}
+
+    platform = Platform()
+    state = fresh_state()
+    retired = sorted(RETIRED_TOOLS)[0]
+    legacy_tools = [{"type": "function", "function": {"name": name, "description": "old", "parameters": {}}} for name in (retired,)]
+    state["messages"] = [
+        {"role": "system", "content": system_prompt_for(mode) + "\n旧规则：用 exec_wait 等后台命令，用 read_file 阅读。"},
+        {"role": "system", "content": ""},
+        {"role": "user", "content": "continue"},
+    ]
+    state["tool_catalog_v1"] = legacy_tools
+    state["user_message_index"] = 2
+    keys = [m.get("content") for m in state["messages"][1:]]
+    platform.checkpoint = {"step": 1, "state": state}
+    with scripted_server([{"content": "done"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="resume"))
+    offered = {tool["function"]["name"] for tool in requests[0]["tools"]}
+    assert retired not in offered
+    if mode == "work":
+        assert {"read", "write", "edit", "bash"} <= offered
+    else:  # Chat never had workspace tools; its checkpoint is rebuilt the same way and offers none
+        assert not {"read", "write", "edit", "bash", "exec"} & offered
+    # The rules the model reads name the tools it is actually offered: both halves are refreshed
+    # in the same recorded boundary, and messages[1:] stay byte for byte.
+    system = requests[0]["messages"][0]["content"]
+    assert "exec_wait" not in system and "read_file" not in system
+    assert system == system_prompt_for(mode)
+    assert [m.get("content") for m in requests[0]["messages"][1:]] == keys
+    assert ("agent.context_boundary", {"reason": "tool_catalog_changed"}) in platform.events
+
+
+def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
+    """The workspace-tool deployment changes Work's rules only; Chat's text and prefix must not move."""
+    import hashlib
+
+    chat = system_prompt_for("chat")
+    assert len(chat) == 3412
+    assert hashlib.sha256(chat.encode()).hexdigest() == "a774b0e597243f2e327526396da380215f7a66837ea9ebcd668ae5f0425c7d22"
+    assert prompt_version("chat") != prompt_version("work")
+
+    from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
+
+    options = {"mode": "chat"}
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {
+                **await super().get_run(run_id),
+                "options": options,
+                "previous_model_context": {
+                    "messages": [{"role": "system", "content": chat}, {"role": "system", "content": ""}, {"role": "user", "content": "hi"}],
+                    "tools": _tools_for_run({"model": "m", "options": options}),
+                    "model": "m",
+                    "context_abi_version": CONTEXT_ABI_VERSION,
+                },
+            }
+
+    platform = Platform()
+    with scripted_server([{"content": "same"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("next", attempt_id="next"))
+    assert requests[0]["messages"][0]["content"] == chat
+    assert not any(kind == "agent.context_boundary" for kind, _ in platform.events)
+
+
+def test_the_reduced_catalog_still_fits_the_smallest_model_budget():
+    """Small-context models get the reduced catalog; the file rules must be satisfiable there."""
+    from ailab_platform.agent.discovery import SEARCH
+    from ailab_platform.catalog import ModelSpec
+    from ailab_platform.model_policy import ModelPolicy
+    from ailab_platform.model_policy import estimator as token_estimator
+
+    small = ModelSpec(id="small", name="small", provider="mock", context_tokens=32768, capabilities=["tools"])
+    budget = min(ModelPolicy.input_budget(small), max(800, int(ModelPolicy.input_budget(small) * 0.15)))
+    reduced = catalog_for_budget([SEARCH, *tools_for_turn()], budget)
+    names = {tool["function"]["name"] for tool in reduced}
+    assert {"read", "write", "edit", "bash"} <= names
+    assert token_estimator.raw(reduced) <= budget

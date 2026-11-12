@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import pathlib
 import shutil
 import tempfile
 import traceback
@@ -228,6 +229,30 @@ def release_test_memory_jobs():
         if runs - before_runs:
             db.execute(update(Run).where(Run.id.in_(runs - before_runs)).values(status="canceled"))
         db.commit()
+
+
+_OFFICE_READER = pathlib.Path(__file__).resolve().parents[2] / "vendor/office-suite/runtime/runner.mjs"
+# Modules that read real Office/PDF files through the vendored reader.
+_READER_MODULES = {
+    "test_document_context.py",
+    "test_document_reading_reliability.py",
+    "test_library_render.py",
+    "test_native_text_ranges.py",
+}
+
+
+@pytest.fixture(autouse=True)
+def office_reader_built(request):
+    """A missing build artifact is a broken environment, not a reason to skip.
+
+    ``runner.mjs`` is gitignored and built by CI before pytest (``npm ci --ignore-scripts && npm run build``).
+    Skipping these tests hid a whole reading path locally; failing says what to run.
+    """
+    if pathlib.Path(str(request.node.fspath)).name in _READER_MODULES and not _OFFICE_READER.is_file():
+        pytest.fail(
+            f"缺少 {_OFFICE_READER.relative_to(_OFFICE_READER.parents[3])}：先在 vendor/office-suite/runtime 执行 "
+            "`npm ci --ignore-scripts && npm run build`，再跑这些 Office 读取测试。"
+        )
 
 
 @pytest.fixture(autouse=True)

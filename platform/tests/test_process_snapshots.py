@@ -260,8 +260,8 @@ def test_resumed_partial_survives_full_gc_and_late_append(db):
     db.commit()
     transition_run(db, run.id, RunStatus.RUNNING)
     append_event(db, run.id, "agent.delta", {"step": 1, "text": "new partial"})
-    append_event(db, run.id, "agent.tool_call", {"step": 1, "name": "exec", "arguments": {"cmd": "sleep 30"}})
-    append_event(db, run.id, "agent.tool_result", {"step": 1, "name": "exec", "ok": True, "running": True, "job_key": "job"})
+    append_event(db, run.id, "agent.tool_call", {"step": 1, "name": "bash", "arguments": {"cmd": "sleep 30"}})
+    append_event(db, run.id, "agent.tool_result", {"step": 1, "name": "bash", "ok": True, "running": True, "job_key": "job"})
     transition_run(db, run.id, RunStatus.CANCELED)
     before = get_process(run.id, user, db)
     assert "new partial" in json.dumps(before)
@@ -295,7 +295,7 @@ def test_legacy_snapshot_upgrades_without_erasing_gc_history(db, gc):
     transition_run(db, run.id, RunStatus.CANCELED)
     snapshot = db.get(RunProcessSnapshot, run.id)
     snapshot.schema_version = 1
-    snapshot.items = [{"kind": "steps", "steps": [{"name": "exec", "label": "运行命令 · 仍在运行", "status": "note"}]}]
+    snapshot.items = [{"kind": "steps", "steps": [{"name": "bash", "label": "运行命令 · 仍在运行", "status": "note"}]}]
     db.commit()
     if gc:
         db.execute(delete(RunEvent).where(RunEvent.run_id == run.id))
@@ -307,3 +307,23 @@ def test_legacy_snapshot_upgrades_without_erasing_gc_history(db, gc):
     else:
         assert "recoverable new partial" in json.dumps(view)
     assert db.get(RunProcessSnapshot, run.id).schema_version == 2
+
+
+def test_results_pair_by_call_id_not_by_last_matching_name():
+    """Three reads announced together, answered out of order: each row must get its own result."""
+    from ailab_platform.api.process_view import reduce_event
+
+    items = []
+    for call_id, path in (("c0", "a.txt"), ("c1", "b.txt"), ("c2", "c.txt")):
+        reduce_event(
+            items, "agent.tool_call", {"step": 1, "name": "read", "call_id": call_id, "arguments": {"path": f"/workspace/work/{path}"}}
+        )
+    reduce_event(items, "agent.tool_result", {"step": 1, "name": "read", "call_id": "c2", "ok": True, "stdout": "C"})
+    reduce_event(items, "agent.tool_result", {"step": 1, "name": "read", "call_id": "c0", "ok": False, "error": "ENOENT"})
+    reduce_event(items, "agent.tool_result", {"step": 1, "name": "read", "call_id": "c1", "ok": True, "stdout": "B"})
+    rows = [(step["detail"], step["status"], step.get("output")) for item in items if item["kind"] == "steps" for step in item["steps"]]
+    assert rows == [
+        ("/workspace/work/a.txt", "failed", "ENOENT"),
+        ("/workspace/work/b.txt", "ok", "B"),
+        ("/workspace/work/c.txt", "ok", "C"),
+    ]

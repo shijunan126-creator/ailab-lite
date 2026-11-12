@@ -8,7 +8,7 @@ import json
 from ailab_platform.agent.loop import AgentLoop, _Turn
 from ailab_platform.config import settings
 from ailab_platform.llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMResponse, ToolCall
-from tests.runtime_fakes import CheckpointFake, background_request
+from tests.runtime_fakes import CheckpointFake, background_request, sandbox_window
 
 
 class FakePlatform(CheckpointFake):
@@ -73,9 +73,9 @@ class FakeBroker:
         return {"key": "workspaces/run_1.tgz", "size": 10}
 
     async def output_manifest(self, lease_id):
-        return [{**f, "sha256": "a" * 64} for f in await self.list_files(lease_id, "/workspace/outputs")]
+        return [{**f, "sha256": "a" * 64} for f in await self.ls(lease_id, "/workspace/outputs")]
 
-    async def list_files(self, lease_id, path):
+    async def ls(self, lease_id, path):
         return []
 
     async def commit(self, lease_id, path, filename=None, role="output", expected_sha256=None):
@@ -107,7 +107,7 @@ def test_workspace_and_delivery_failures_hide_internal_details(caplog):
         async def snapshot(self, lease_id):
             raise RuntimeError(secret)
 
-        async def list_files(self, lease_id, path):
+        async def ls(self, lease_id, path):
             return [{"path": "/workspace/outputs/result.txt", "size": 1}]
 
         async def commit(self, lease_id, path, expected_sha256=None):
@@ -155,7 +155,7 @@ def test_user_id_reaches_the_model_gateway() -> None:
 
 
 def test_tool_call_with_invalid_json_is_not_executed() -> None:
-    bad = ToolCall(id="c1", name="write_file", arguments={INVALID_ARGUMENTS_KEY: '{"path": "/workspace/a.txt", "con'})
+    bad = ToolCall(id="c1", name="write", arguments={INVALID_ARGUMENTS_KEY: '{"path": "/workspace/a.txt", "con'})
     llm = ScriptedLLM([LLMResponse(tool_calls=[bad]), LLMResponse(content="giving up")])
     platform, broker = _run(llm)
 
@@ -167,7 +167,7 @@ def test_tool_call_with_invalid_json_is_not_executed() -> None:
 
 
 def test_the_loop_keeps_reasoning_and_streams_thinking_events() -> None:
-    step = ToolCall(id="c1", name="list_files", arguments={"path": "/nope"})
+    step = ToolCall(id="c1", name="ls", arguments={"path": "/nope"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[step], reasoning_content="why " * 10), LLMResponse(content="x", reasoning_content="ok")])
     platform, _ = _run(llm)
     assistant = next(m for m in llm.seen_messages[1] if m["role"] == "assistant")
@@ -178,7 +178,7 @@ def test_the_loop_keeps_reasoning_and_streams_thinking_events() -> None:
 
 
 def test_tool_call_events_do_not_store_huge_arguments() -> None:
-    big = ToolCall(id="c1", name="write_file", arguments={"path": "/workspace/a", "content": "x" * 50_000})
+    big = ToolCall(id="c1", name="write", arguments={"path": "/workspace/a", "content": "x" * 50_000})
     llm = ScriptedLLM([LLMResponse(tool_calls=[big]), LLMResponse(content="done")])
     platform, _ = _run(llm)
     event = next(p for t, p in platform.events if t == "agent.tool_call")
@@ -190,6 +190,7 @@ def test_tool_call_events_do_not_store_huge_arguments() -> None:
 import time  # noqa: E402
 
 from ailab_platform.clients import ClientError  # noqa: E402
+from ailab_platform.contracts.files import FILE_NOT_FOUND  # noqa: E402
 
 
 class RichBroker(FakeBroker):
@@ -211,7 +212,7 @@ class RichBroker(FakeBroker):
             raise ClientError("POST", "u", 429, "sandbox capacity reached (1)")
         return {"lease_id": "lease_1", "provider": "fake", "inputs": [{"path": "/workspace/inputs/a.txt"}]}
 
-    async def list_files(self, lease_id, path):
+    async def ls(self, lease_id, path):
         self.listings += 1
         return self.outputs
 
@@ -231,7 +232,7 @@ class RichBroker(FakeBroker):
 
 def test_files_the_model_forgot_to_deliver_are_archived() -> None:
     broker = RichBroker(outputs=[{"path": "/workspace/outputs/report.md", "size": 5}])
-    write = ToolCall(id="c1", name="exec", arguments={"cmd": "echo hi > /workspace/outputs/report.md"})
+    write = ToolCall(id="c1", name="bash", arguments={"cmd": "echo hi > /workspace/outputs/report.md"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[write]), LLMResponse(content="done, report is ready")])
     platform, _ = _run(llm, broker=broker)
     assert broker.commits == ["/workspace/outputs/report.md"]
@@ -268,7 +269,7 @@ def test_deliver_file_outside_outputs_is_refused_before_reaching_the_broker() ->
 def test_token_limit_stops_the_run_but_keeps_the_work(monkeypatch) -> None:
     monkeypatch.setattr(settings, "run_max_tokens", 100)
     broker = RichBroker(outputs=[{"path": "/workspace/outputs/partial.md", "size": 3}])
-    step = ToolCall(id="c", name="list_files", arguments={"path": "/workspace"})
+    step = ToolCall(id="c", name="ls", arguments={"path": "/workspace"})
     llm = ScriptedLLM(
         [
             LLMResponse(tool_calls=[step], usage={"prompt_tokens": 50, "completion_tokens": 20}),
@@ -287,7 +288,7 @@ def test_run_waits_for_a_free_sandbox(monkeypatch) -> None:
 
     monkeypatch.setattr(loop_mod, "SANDBOX_RETRY_SECONDS", 0.01)
     broker = RichBroker(lease_failures=3)
-    work = ToolCall(id="c1", name="exec", arguments={"cmd": "true"})
+    work = ToolCall(id="c1", name="bash", arguments={"cmd": "true"})
     platform, _ = _run(ScriptedLLM([LLMResponse(tool_calls=[work]), LLMResponse(content="ok")]), broker=broker)
     assert [t for t, _ in platform.events].count("agent.waiting_sandbox") == 1
     assert platform.statuses[-1][0] == "succeeded"
@@ -298,7 +299,7 @@ def test_gives_up_waiting_for_a_sandbox(monkeypatch) -> None:
 
     monkeypatch.setattr(loop_mod, "SANDBOX_RETRY_SECONDS", 0.01)
     monkeypatch.setattr(settings, "sandbox_wait_seconds", 0.05)
-    work = ToolCall(id="c1", name="exec", arguments={"cmd": "true"})
+    work = ToolCall(id="c1", name="bash", arguments={"cmd": "true"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[work]), LLMResponse(content="could not")])
     platform, _ = _run(llm, broker=RichBroker(lease_failures=10_000))
     result = next(p for t, p in platform.events if t == "agent.tool_result")
@@ -323,7 +324,7 @@ def test_cancel_interrupts_a_running_tool_and_frees_the_sandbox(monkeypatch) -> 
             return run
 
     broker = RichBroker(slow_exec=True)
-    slow = ToolCall(id="c1", name="exec", arguments={"cmd": "sleep 30"})
+    slow = ToolCall(id="c1", name="bash", arguments={"cmd": "sleep 30"})
     started = time.monotonic()
     platform, _ = _run(ScriptedLLM([LLMResponse(tool_calls=[slow])]), platform=CancelingPlatform(), broker=broker)
     assert time.monotonic() - started < 5
@@ -348,50 +349,55 @@ def test_a_flaky_status_check_does_not_fail_the_run() -> None:
     assert platform.statuses[-1][0] == "succeeded"
 
 
-# ---- read_file ----------------------------------------------------------------------------------
+# ---- read ---------------------------------------------------------------------------------------
 
 import pytest  # noqa: E402
 
-from ailab_platform.agent.tools import READ_LIMIT_CHARS, ToolError, execute_tool  # noqa: E402
+from ailab_platform.agent.tools import ToolError, execute_tool  # noqa: E402
 
 
 class _ReadBroker:
     def __init__(self, data: bytes) -> None:
         self.data = data
 
-    async def get_file(self, lease_id, path):
-        return self.data
+    async def get_file(self, lease_id, path, *, line=None, length=None, **kwargs):
+        return sandbox_window(self.data, line, length)
 
 
 def _read(data: bytes, **window) -> dict:
-    return asyncio.run(execute_tool("read_file", {"path": "/workspace/x", **window}, "lease", _ReadBroker(data)))
+    return asyncio.run(execute_tool("read", {"path": "/workspace/x", **window}, "lease", _ReadBroker(data)))
 
 
-def test_read_file_refuses_binary_instead_of_flooding_the_context() -> None:
+def test_read_refuses_binary_instead_of_flooding_the_context() -> None:
     png = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + bytes(range(256)) * 50
     out = _read(png)
-    assert out["ok"] is False and "binary" in out["error"] and "content" not in out
+    assert out["ok"] is False and "view_workspace_file" in out["error"] and "content" not in out
 
 
-def test_read_file_reads_text_including_chinese_and_truncates_long_files() -> None:
+def test_read_returns_text_and_windows_long_files_by_line() -> None:
     assert _read("你好，世界\n".encode())["content"] == "你好，世界\n"
-    text = "".join(f"{i}字" for i in range(READ_LIMIT_CHARS))
+    text = "\n".join(f"{index} 字" for index in range(2500))
     first = _read(text.encode())
-    assert first["ok"] and first["content"] == text[:READ_LIMIT_CHARS]
-    assert first["total_chars"] == len(text) and first["next_offset"] == READ_LIMIT_CHARS
-    chunks, offset = [first["content"]], first["next_offset"]
-    while offset is not None:
-        part = _read(text.encode(), offset=offset)
-        chunks.append(part["content"])
-        offset = part.get("next_offset")
-    assert "".join(chunks) == text and part["offset"] > 0 and "next_offset" not in part
-    assert _read(text.encode(), offset=5, limit=3)["content"] == text[5:8]
+    assert first["ok"] and first["total_lines"] == 2500
+    assert first["content"].startswith("0 字\n1 字\n") and "2499 字" not in first["content"]
+    assert first["next_offset"] == 2001
+    assert first["content"].endswith("[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]")
+    rest = _read(text.encode(), offset=first["next_offset"])
+    assert rest["content"].startswith("2000 字\n") and "next_offset" not in rest
+    limited = _read(text.encode(), offset=5, limit=3)
+    assert limited["content"].startswith("4 字\n5 字\n6 字")
+    assert limited["content"].endswith("[2493 more lines in file. Use offset=8 to continue.]")
 
 
-@pytest.mark.parametrize("window", [{"offset": -1}, {"offset": 10**9}, {"limit": 0}, {"limit": READ_LIMIT_CHARS + 1}, {"offset": "3"}])
-def test_read_file_rejects_bad_windows(window) -> None:
+@pytest.mark.parametrize("window", [{"offset": -1}, {"offset": 0}, {"limit": 0}, {"offset": "3"}])
+def test_read_rejects_bad_windows(window) -> None:
     with pytest.raises(ToolError):
         _read(b"short", **window)
+
+
+def test_read_reports_an_offset_past_the_end() -> None:
+    with pytest.raises(ToolError, match=r"Offset 10 is beyond end of file \(1 lines total\)"):
+        _read(b"short", offset=10)
 
 
 def test_a_multibyte_char_split_by_the_sniff_window_is_still_text() -> None:
@@ -474,7 +480,7 @@ def test_load_skill_requires_attested_sandbox() -> None:
 
     broker = AttestedBroker()
     read = ToolCall(id="c1", name="load_skill", arguments={"name": "platform.pptx"})
-    execute = ToolCall(id="c2", name="exec", arguments={"cmd": "true"})
+    execute = ToolCall(id="c2", name="bash", arguments={"cmd": "true"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[read]), LLMResponse(tool_calls=[execute]), LLMResponse(content="ok")])
     _run(llm, broker=broker)
     assert broker.leases == 1
@@ -499,7 +505,7 @@ def test_previews_render_after_file_changes_and_land_in_the_result() -> None:
             return [{"filename": "deck.pptx", "kind": "pages", "pages": ["1/p-01.jpg"], "version": 1}]
 
     broker = PreviewBroker()
-    build = ToolCall(id="c1", name="exec", arguments={"cmd": "python build.py"})
+    build = ToolCall(id="c1", name="bash", arguments={"cmd": "python build.py"})
     platform, _ = _run(ScriptedLLM([LLMResponse(tool_calls=[build]), LLMResponse(content="done")]), broker=broker)
     updated = [p for t, p in platform.events if t == "preview.updated"]
     assert updated and updated[0]["filename"] == "deck.pptx"
@@ -513,7 +519,7 @@ def test_a_conversation_turn_saves_its_workspace_only_if_it_used_a_sandbox() -> 
     assert broker.snapshots == 0 and "workspace_saved" not in platform.statuses[-1][1]["result"]
 
     broker = FakeBroker()
-    work = ToolCall(id="c1", name="exec", arguments={"cmd": "true"})
+    work = ToolCall(id="c1", name="bash", arguments={"cmd": "true"})
     platform, _ = _run(
         ScriptedLLM([LLMResponse(tool_calls=[work]), LLMResponse(content="ok")]), platform=ConversationPlatform(), broker=broker
     )
@@ -523,12 +529,178 @@ def test_a_conversation_turn_saves_its_workspace_only_if_it_used_a_sandbox() -> 
     assert saved["workspace_saved_at"]
 
 
+def test_read_only_calls_in_one_reply_run_at_the_same_time() -> None:
+    """Each read is a sandbox round trip; three sequential ones cost three times the latency for nothing."""
+    broker = FakeBroker()
+    active = peak = 0
+
+    async def get_file(lease_id, path, **kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        return b"line\n"
+
+    broker.get_file = get_file
+    calls = [ToolCall(id=f"c{i}", name="read", arguments={"path": f"/workspace/work/{i}.txt"}) for i in range(3)]
+    llm = ScriptedLLM([LLMResponse(tool_calls=calls), LLMResponse(content="ok")])
+    _run(llm, broker=broker)
+    assert peak == 3
+    # Results are appended in ordinal order, so the request prefix stays the one the model asked for.
+    assert [m["tool_call_id"] for m in llm.seen_messages[-1] if m["role"] == "tool"] == ["c0", "c1", "c2"]
+
+
+def test_tool_events_carry_the_call_id_that_pairs_them() -> None:
+    """Several calls in one reply are announced back to back: the UI needs the id, not "the last one"."""
+    broker = FakeBroker()
+
+    async def get_file(lease_id, path, **kwargs):
+        return b"line\n"
+
+    broker.get_file = get_file
+    calls = [ToolCall(id=f"c{i}", name="read", arguments={"path": f"/workspace/work/{i}.txt"}) for i in range(2)]
+    llm = ScriptedLLM([LLMResponse(tool_calls=calls), LLMResponse(content="ok")])
+    platform, _ = _run(llm, broker=broker)
+    announced = [p for t, p in platform.events if t == "agent.tool_call"]
+    results = [p for t, p in platform.events if t == "agent.tool_result"]
+    assert [p["call_id"] for p in announced] == ["c0", "c1"]
+    assert [p["call_id"] for p in results] == ["c0", "c1"]
+
+
+def test_two_concurrent_checkpoints_never_share_one_expected_step() -> None:
+    """The lock is what makes the step CAS safe for any concurrent writer, not only the read batch."""
+    from ailab_platform.adapters.runtime import fresh_state
+
+    platform = FakePlatform()
+    loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ScriptedLLM([]))
+    loop._states["r"] = fresh_state()
+    loop._steps["r"] = 0
+    turn = loop._turns["r"] = _Turn({"id": "r", "model": "m"})
+
+    async def both():
+        await asyncio.gather(loop._checkpoint("r", turn), loop._checkpoint("r", turn))
+
+    asyncio.run(both())
+    assert platform.checkpoint["step"] == 2
+
+
+def test_concurrent_reads_do_not_collide_on_the_checkpoint_step() -> None:
+    """Each concurrent call used to read the same expected_step; every write but one got 409 stale_step."""
+    broker = FakeBroker()
+
+    async def get_file(lease_id, path, **kwargs):
+        await asyncio.sleep(0.01)
+        return b"line\n"
+
+    broker.get_file = get_file
+    calls = [ToolCall(id=f"c{i}", name="read", arguments={"path": f"/workspace/work/{i}.txt"}) for i in range(3)]
+    llm = ScriptedLLM([LLMResponse(tool_calls=calls), LLMResponse(content="ok")])
+    platform, _ = _run(llm, broker=broker)
+    assert platform.statuses[-1][0] == "succeeded"
+    assert [m["tool_call_id"] for m in llm.seen_messages[-1] if m["role"] == "tool"] == ["c0", "c1", "c2"]
+
+    # Three reads cost exactly as many checkpoints as one: a read-only call writes none of its own.
+    single = ScriptedLLM([LLMResponse(tool_calls=calls[:1]), LLMResponse(content="ok")])
+    control, _ = _run(single, broker=broker)
+    assert platform.checkpoints == control.checkpoints
+
+
+def test_a_finished_run_leaves_no_checkpoint_lock_behind() -> None:
+    """The Agent process outlives its runs: per-run state, the lock included, goes when the run does."""
+    loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker(), llm=ScriptedLLM([LLMResponse(content="done")]))
+    asyncio.run(loop.process("run_1", attempt_id="att_1"))
+    assert loop._checkpoint_locks == {} and loop._steps == {}
+
+
+@pytest.mark.parametrize(("mode", "continues", "early"), [("work", True, True), ("work", False, False), ("chat", True, False)])
+def test_a_continuing_work_turn_takes_its_sandbox_during_the_first_model_call(monkeypatch, mode, continues, early) -> None:
+    """Setting up a sandbox with the previous workspace took the first tool about 10 s on OpenSandbox."""
+    from ailab_platform.catalog import ModelSpec, get_catalog
+
+    monkeypatch.setitem(
+        get_catalog().models, "m", ModelSpec(id="m", name="m", provider="mock", capabilities=["tools"], context_tokens=200000)
+    )
+    broker = FakeBroker()
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            run = {**await super().get_run(run_id), "options": {"mode": mode}}
+            return {**run, "workspace_restore_key": "workspaces/previous.tgz"} if continues else run
+
+    class Model(ScriptedLLM):
+        leases_at_first_call: int | None = None
+
+        async def chat(self, messages, tools, model, user_id=None):
+            if self.leases_at_first_call is None:
+                await asyncio.sleep(0.05)  # the first model call takes seconds; the sandbox is set up meanwhile
+                self.leases_at_first_call = broker.leases
+            return await super().chat(messages, tools, model, user_id)
+
+    model = Model([LLMResponse(content="done")])
+    asyncio.run(AgentLoop(platform=Platform(), broker=broker, llm=model).process("run_1", attempt_id="att_1"))
+    assert model.leases_at_first_call == int(early)
+    assert broker.snapshots == 0  # an unused early sandbox holds the restored workspace unchanged: nothing to save
+
+
+def test_a_read_never_runs_beside_a_write() -> None:
+    """Only read-only lookups overlap: bash, write and edit stay in reply order."""
+    broker = FakeBroker()
+    active = peak = 0
+
+    async def get_file(lease_id, path, **kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        return b"line\n"
+
+    broker.get_file = get_file
+    writes: list[str] = []
+
+    async def put_file(lease_id, path, data):
+        writes.append(path)
+
+    broker.put_file = put_file
+    calls = [
+        ToolCall(id="c0", name="read", arguments={"path": "/workspace/work/a.txt"}),
+        ToolCall(id="c1", name="write", arguments={"path": "/workspace/work/b.txt", "content": "x"}),
+        ToolCall(id="c2", name="read", arguments={"path": "/workspace/work/c.txt"}),
+    ]
+    llm = ScriptedLLM([LLMResponse(tool_calls=calls), LLMResponse(content="ok")])
+    _run(llm, broker=broker)
+    assert peak == 1 and [path for path in writes if path == "/workspace/work/b.txt"] == ["/workspace/work/b.txt"]
+    assert [m["tool_call_id"] for m in llm.seen_messages[-1] if m["role"] == "tool"] == ["c0", "c1", "c2"]
+
+
+def test_a_lost_lease_during_read_or_edit_stops_the_run() -> None:
+    """A 410 used to be read as "Could not read file", so the run kept working on a dead lease."""
+    for tool, arguments in (
+        ("read", {"path": "/workspace/work/a.txt"}),
+        ("edit", {"path": "/workspace/work/a.txt", "edits": [{"oldText": "a", "newText": "b"}]}),
+    ):
+        broker = FakeBroker()
+
+        async def get_file(lease_id, path, **kwargs):
+            raise ClientError("GET", f"/internal/leases/{lease_id}/files", 410, "lease expired")
+
+        broker.get_file = get_file
+        platform, _ = _run(
+            ScriptedLLM([LLMResponse(tool_calls=[ToolCall(id="c1", name=tool, arguments=arguments)]), LLMResponse(content="ok")]),
+            broker=broker,
+        )
+        assert platform.paused["status"] == "interrupted", tool
+        assert platform.paused["auto_resume"] is True, tool
+        assert "租约中断" in platform.paused["error"], tool
+
+
 def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:
     broker = FakeBroker()
 
-    async def get_file(lease_id, path):
-        # what the real client raises when the broker answers 400 for a path that is not there
-        raise ClientError("GET", f"/internal/leases/{lease_id}/files?path={path}", 400, "get_file failed")
+    async def get_file(lease_id, path, **kwargs):
+        # what the real client raises when the broker answers FILE_NOT_FOUND for a path that is not there
+        raise ClientError("GET", f"/internal/leases/{lease_id}/files?path={path}", FILE_NOT_FOUND, "no such file")
 
     broker.get_file = get_file
     find = ToolCall(id="c1", name="search_images", arguments={"query": "city skyline", "count": 2})
@@ -546,7 +718,7 @@ def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:
 
 def test_near_the_step_limit_the_model_is_told_to_wrap_up(monkeypatch) -> None:
     monkeypatch.setattr(settings, "max_agent_steps", 8)
-    work = [LLMResponse(tool_calls=[ToolCall(id=f"c{i}", name="exec", arguments={"cmd": f"echo {i}"})]) for i in range(5)]
+    work = [LLMResponse(tool_calls=[ToolCall(id=f"c{i}", name="bash", arguments={"cmd": f"echo {i}"})]) for i in range(5)]
     llm = ScriptedLLM([*work, LLMResponse(content="done")])
     _run(llm)
     notes = [m for m in llm.seen_messages[-1] if m["role"] == "user" and "平台提示" in m["content"]]
@@ -556,7 +728,7 @@ def test_near_the_step_limit_the_model_is_told_to_wrap_up(monkeypatch) -> None:
 def test_running_out_of_steps_ends_with_a_summary_not_a_bare_error(monkeypatch) -> None:
     monkeypatch.setattr(settings, "max_agent_steps", 2)
     deliver = ToolCall(id="c1", name="deliver_file", arguments={"path": "/workspace/outputs/a.pptx"})
-    again = ToolCall(id="c2", name="exec", arguments={"cmd": "true"})
+    again = ToolCall(id="c2", name="bash", arguments={"cmd": "true"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[deliver]), LLMResponse(tool_calls=[again]), LLMResponse(content="做完了大半，还差最后一页")])
     platform, _ = _run(llm)
     assert platform.paused["status"] == "interrupted"
@@ -578,7 +750,7 @@ def test_exec_accepts_command_as_well_as_cmd() -> None:
         return {"exit_code": 0, "stdout": json.dumps({"ok": True, "exit_code": 0, "stdout": "", "stderr": ""})}
 
     broker.exec = exec_
-    call = ToolCall(id="c1", name="exec", arguments={"command": "echo hi"})
+    call = ToolCall(id="c1", name="bash", arguments={"command": "echo hi"})
     _run(ScriptedLLM([LLMResponse(tool_calls=[call]), LLMResponse(content="ok")]), broker=broker)
 
     requests = [background_request(broker, command) for command in seen]
@@ -622,7 +794,7 @@ def test_cancel_checks_use_the_light_state_endpoint() -> None:
             self.light += 1
             return {"status": "running"}
 
-    step = ToolCall(id="c1", name="list_files", arguments={"path": "/workspace"})
+    step = ToolCall(id="c1", name="ls", arguments={"path": "/workspace"})
     platform = Counting()
     _run(ScriptedLLM([LLMResponse(tool_calls=[step]), LLMResponse(content="ok")]), platform=platform)
     assert platform.light >= 2 and platform.full == 1  # the run is read in full once, at the start
@@ -685,8 +857,8 @@ def test_running_exec_events_expose_progress_without_handle():
                 ),
             }
 
-    for name in ("exec", "exec_wait", "exec_kill"):
-        args = {"cmd": "build"} if name == "exec" else {"handle": "a" * 32, "seconds": 0}
+    for name in ("bash", "bash_wait", "bash_kill"):
+        args = {"cmd": "build", "background": True} if name == "bash" else {"handle": "a" * 32, "wait_seconds": 0}
         platform, _ = _run(ScriptedLLM([LLMResponse(tool_calls=[ToolCall("c", name, args)]), LLMResponse(content="done")]), broker=Broker())
         event = next(p for t, p in platform.events if t == "agent.tool_result")
         assert event["running"] is True and event["exit_code"] is None and event["idle_seconds"] == 17
@@ -697,7 +869,7 @@ def test_consumed_large_write_is_not_copied_into_durable_tool_log():
     platform, _ = _run(
         ScriptedLLM(
             [
-                LLMResponse(tool_calls=[ToolCall("c", "write_file", {"path": "/workspace/a", "content": "x" * 100000})]),
+                LLMResponse(tool_calls=[ToolCall("c", "write", {"path": "/workspace/a", "content": "x" * 100000})]),
                 LLMResponse(content="done"),
             ]
         )

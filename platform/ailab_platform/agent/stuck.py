@@ -36,7 +36,7 @@ def observation(name, arguments, result):
         "arguments_fingerprint": fingerprint(arguments),
         "result_fingerprint": fingerprint(result),
         "failed": result.get("ok") is False or bool(result.get("error")),
-        "waiting": name == "exec_wait" and result.get("running") is True,
+        "waiting": name in {"bash", "bash_wait"} and result.get("running") is True,
         "result": bookkeeping_result(result),
     }
 

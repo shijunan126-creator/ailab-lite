@@ -48,6 +48,9 @@ def supervise(payload, directory):
     # dash rejects common bash forms such as <(...) and [[ ]].
     child = subprocess.Popen(["/bin/bash", "-c", payload["cmd"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     deadline = started + min(payload["max_seconds"], max(0, payload["expires_at"] - time.time()))
+    # Published so the Agent can report the remaining hard limit; the supervisor enforces it
+    # itself at this deadline, whether or not anyone is polling.
+    put(directory / "deadline", {"deadline_at": time.time() + max(0.0, deadline - time.monotonic())})
     streams = {child.stdout: "stdout", child.stderr: "stderr"}
     tails = {"stdout": "", "stderr": ""}
     prefixes, counts = {"stdout": "", "stderr": ""}, {"stdout": 0, "stderr": 0}
@@ -88,7 +91,17 @@ def supervise(payload, directory):
             if streams:
                 raise subprocess.TimeoutExpired(payload["cmd"], payload["max_seconds"])
         except subprocess.TimeoutExpired:
-            put(directory / "exit", {"exit_code": -9})
+            # The platform deadline, not a wait window: the command is killed here even if nothing polls.
+            put(
+                directory / "exit",
+                {
+                    "exit_code": -9,
+                    "killed_by": "deadline",
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                    "stdout": tails["stdout"],
+                    "stderr": tails["stderr"],
+                },
+            )
             os.killpg(os.getpgrp(), signal.SIGKILL)
         result = {"exit_code": code, "duration_ms": int((time.monotonic() - started) * 1000)}
         for name, prefix in prefixes.items():
@@ -199,7 +212,10 @@ def control(payload):
                     killed += 1
                 put(candidate.parent / "exit", {"exit_code": -9})
         return {"ok": True, "running": False, "killed": killed}
-    if payload["action"] == "start":
+    if payload["action"] == "start" and (directory / "meta").exists():
+        # A retried start for the same handle: the command already runs here. Never launch it twice.
+        payload = {**payload, "action": "wait", "initial": True}
+    elif payload["action"] == "start":
         with (ROOT / "lock").open("w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             import shutil
@@ -222,13 +238,15 @@ def control(payload):
             start_worker(payload, directory)
         payload = {**payload, "action": "wait", "initial": True}
     if not (directory / "meta").exists():
-        return {"ok": False, "running": False, "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}
+        # ``lost`` is the only signal a resumed run may turn into "uncertain": a finished command
+        # with a non-zero exit code is a real result and must reach the model unchanged.
+        return {"ok": False, "running": False, "lost": True, "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}
     meta = json.loads((directory / "meta").read_text())
     payload["log_bytes"] = meta["log_bytes"]
     if payload["action"] == "kill" and not (directory / "exit").exists():
         if alive(meta):
             os.killpg(meta["pid"], signal.SIGKILL)
-        put(directory / "exit", {"exit_code": -9})
+        put(directory / "exit", {"exit_code": -9, "killed_by": "caller"})
     deadline = time.monotonic() + min(payload["seconds"], 300)
     while payload["action"] == "wait" and not (directory / "exit").exists() and alive(meta) and time.monotonic() < deadline:
         time.sleep(min(0.25, max(0, deadline - time.monotonic())))
@@ -251,11 +269,19 @@ def control(payload):
     completed = json.loads((directory / "exit").read_text()) if (directory / "exit").exists() else {}
     if isinstance(completed, int):  # v1 handles may finish while an Agent is being upgraded.
         completed = {"exit_code": completed}
+    timing = {}
+    if isinstance(meta.get("started_at"), (int, float)):
+        timing["elapsed_seconds"] = round(max(0.0, time.time() - meta["started_at"]), 3)
+    if (directory / "deadline").exists():
+        deadline_at = json.loads((directory / "deadline").read_text()).get("deadline_at")
+        if isinstance(deadline_at, (int, float)):
+            timing["remaining_seconds"] = round(max(0.0, deadline_at - time.time()), 3)
     code = completed.get("exit_code")
     running = code is None and alive(meta)
     if code is None and not running:
+        # ``lost`` says "no result exists"; -1 alone would also match a signal-killed command.
         code = -1
-        completed = {"exit_code": code, "error": "后台进程退出状态丢失，请先检查文件"}
+        completed = {"exit_code": code, "lost": True, "error": "后台进程退出状态丢失，请先检查文件"}
         put(directory / "exit", completed)
     if payload.get("initial") and code is not None:
         return {"ok": code == 0, **completed}
@@ -266,10 +292,22 @@ def control(payload):
         "running": running,
         "exit_code": code,
         "output_tail": output.decode(errors="replace"),
+        # Where reading started in this job's byte stream: the Agent reports a gap from this, exactly,
+        # even when a multibyte sequence made the tail shorter than the bytes it stands for.
+        "from": start,
         "idle_seconds": round(max(0, time.time() - last_output_at), 3),
-        "hint": "命令仍在运行；用 exec_wait 等待并检查输出进展。" if running else "",
+        "hint": "命令仍在运行；用 bash_wait 等待并检查输出进展。" if running else "",
         "total_bytes": total,
         "truncated": start > payload["offset"],
+        # The ring buffer of recent output, for a model that wants to inspect more than the returned tail.
+        **({"log_path": str(directory / "log")} if start > payload["offset"] else {}),
+        **timing,
+        # The supervisor keeps each stream separately; hand them over when the job is done.
+        **(
+            {key: completed[key] for key in ("stdout", "stderr", "duration_ms", "killed_by") if key in completed}
+            if code is not None
+            else {}
+        ),
     }
 
 

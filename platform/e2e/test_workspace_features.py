@@ -497,3 +497,20 @@ def test_artifact_menu_moves_file_and_questions_in_its_project(logged_in, stack)
         expect(page.locator(".attach-chip").filter(has_text=file["filename"])).to_be_visible()
     finally:
         api(page, stack, "delete", "/projects/" + p["id"])
+
+
+def test_two_reads_in_one_reply_both_finish_and_keep_their_own_result(logged_in, stack):
+    """Concurrent tool calls: the real checkpoint CAS must not collide, and each step shows its own file."""
+    from .test_portal import _open_all_steps
+
+    page = logged_in
+    page.get_by_role("radio", name="工作", exact=True).click()
+    prompt = "并行读取-" + uuid.uuid4().hex[:8]
+    _start_conversation(page, prompt)
+    _wait_for_turns(page, 1)
+    page.wait_for_function("!document.querySelector('.steps .pr-loading')")
+    _open_all_steps(page)
+    # The read step shows its own path; the output sits behind "输出", so compare the labels first.
+    labels = [row for row in page.locator(".step-detail").all_inner_texts() if row.endswith(".txt")]
+    assert "/workspace/work/a.txt" in labels and "/workspace/work/b.txt" in labels, labels
+    assert page.locator(".turn-meta").count() == 1

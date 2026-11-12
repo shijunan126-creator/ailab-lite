@@ -34,8 +34,8 @@ def band_for(window):
 
 def pair(index, tokens=2000):
     return [
-        {"role": "assistant", "tool_calls": [{"id": str(index), "function": {"name": "read_file", "arguments": "{}"}}]},
-        {"role": "tool", "tool_call_id": str(index), "name": "read_file", "content": "汉" * tokens},
+        {"role": "assistant", "tool_calls": [{"id": str(index), "function": {"name": "read", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": str(index), "name": "read", "content": "汉" * tokens},
     ]
 
 
@@ -187,7 +187,7 @@ def test_admission_accounts_batch_args_results_images_and_whole_file():
     assert not accepted[2]["ok"] and accepted[2]["reason"] == "batch_budget" and "skill" not in accepted[2]
     assert band.cost(messages[3:]) < 64000
     protocol_groups(messages)
-    huge = ToolCall("huge", "read_file", {})
+    huge = ToolCall("huge", "read", {})
     result = admit_tool_result(
         band, [*PREFIX, CURRENT, pair("huge")[0]], [], {"user_message_index": 2}, huge, {"ok": True, "text": "汉" * 80000}
     )
@@ -200,7 +200,7 @@ def test_admission_accounts_batch_args_results_images_and_whole_file():
 def test_900k_audit_source_admission_prevents_the_80k_latest_group():
     band = band_for(1000000)
     messages = [*PREFIX, CURRENT, *(m for i in range(101) for m in pair(i, 8100))]
-    call = ToolCall("latest", "read_file", {})
+    call = ToolCall("latest", "read", {})
     messages.append(pair("latest")[0])
     result = admit_tool_result(band, messages, [], {"user_message_index": 2}, call, {"ok": True, "text": "汉" * 80000})
     assert not result["ok"]
@@ -361,7 +361,7 @@ def test_plan_rejects_unknown_top_level_keys(monkeypatch):
 
 def test_pending_batch_reserves_real_cannot_fit_messages():
     band = band_for(1000000)
-    calls = [ToolCall(str(i), "read_file", {}) for i in range(20)]
+    calls = [ToolCall(str(i), "read", {}) for i in range(20)]
     assistant = {"role": "assistant", "tool_calls": [{"id": call.id, "function": {"name": call.name, "arguments": "{}"}} for call in calls]}
     messages = [*PREFIX, CURRENT, assistant]
     state = {"user_message_index": 2, "pending": [{"id": call.id, "name": call.name} for call in calls]}
@@ -487,7 +487,7 @@ def test_batch_capacity_uses_real_floor_and_preserves_latest_unit(window):
     from ailab_platform.agent.context_band import batch_budget
 
     band = band_for(window)
-    call = ToolCall("capacity", "read_file", {})
+    call = ToolCall("capacity", "read", {})
     messages = [*PREFIX, CURRENT, pair(call.id)[0]]
     state = {"user_message_index": 2}
     budget = batch_budget(band, messages, [], state)

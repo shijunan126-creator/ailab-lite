@@ -182,7 +182,7 @@ def test_attachment_text_is_in_the_message() -> None:
 
 
 def test_work_mode_still_lets_the_model_decide() -> None:
-    step = ToolCall(id="c1", name="exec", arguments={"cmd": "true"})
+    step = ToolCall(id="c1", name="bash", arguments={"cmd": "true"})
     llm = _Recording([LLMResponse(tool_calls=[step]), LLMResponse(content="done")])
     broker = _run(llm, _Platform(options={"mode": "work"}))
     assert broker.leases == 1 and all(llm.offered)

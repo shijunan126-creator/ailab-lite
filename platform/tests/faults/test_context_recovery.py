@@ -91,7 +91,7 @@ def test_lost_attempt_cannot_append_settle_tools_or_activate_epoch_and_summary(a
     live = {**SERVICE, "X-Run-Attempt": replacement["token"]}
     candidate = {**copy.deepcopy(initial), "context_epoch": 6}
     candidate["messages"].append({"role": "assistant", "content": "stale compacted summary"})
-    candidate["tool_log"] = {"0:0": {"name": "exec", "result": {"ok": True}}}
+    candidate["tool_log"] = {"0:0": {"name": "bash", "result": {"ok": True}}}
     assert save(api, rid, headers, step=1, state=candidate).status_code == 409
     response = api.post(
         f"/internal/runs/{rid}/events", headers=headers, json={"type": "agent.context_boundary", "payload": {"reason": "compacted"}}

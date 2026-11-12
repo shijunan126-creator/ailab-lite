@@ -130,8 +130,8 @@ def test_skill_search_does_not_change_tool_availability():
     platform, broker = Platform(), FakeBroker()
     model = ScriptedLLM(
         [
-            LLMResponse(tool_calls=[ToolCall("s", "search_capabilities", {"query": "write_file", "kind": "tool"})]),
-            LLMResponse(tool_calls=[ToolCall("w", "write_file", {"path": "/workspace/a.txt", "content": "kept"})]),
+            LLMResponse(tool_calls=[ToolCall("s", "search_capabilities", {"query": "write", "kind": "tool"})]),
+            LLMResponse(tool_calls=[ToolCall("w", "write", {"path": "/workspace/a.txt", "content": "kept"})]),
             LLMResponse(content="完成"),
         ]
     )
@@ -601,7 +601,7 @@ def test_a_tool_the_mode_allows_runs_when_called_by_name_before_discovery():
     platform, broker = Platform(), FakeBroker()
     model = ScriptedLLM(
         [
-            LLMResponse(tool_calls=[ToolCall("w", "write_file", {"path": "/workspace/a.txt", "content": "kept"})]),
+            LLMResponse(tool_calls=[ToolCall("w", "write", {"path": "/workspace/a.txt", "content": "kept"})]),
             LLMResponse(content="完成"),
         ]
     )

@@ -160,7 +160,7 @@ def test_nonvision_catalog_omits_visual_tools(monkeypatch):
 
     monkeypatch.setitem(get_catalog().models, "m", ModelSpec(id="m", name="m", provider="mock", capabilities=["tools"]))
     names = {t["function"]["name"] for t in _tools_for_run({"model": "m", "mode": "work"})}
-    assert "exec" in names and not names & {"view_attachment", "view_workspace_file"}
+    assert "bash" in names and not names & {"view_attachment", "view_workspace_file"}
 
 
 def test_warm_starts_the_listener_only_where_one_can_run(tmp_path, monkeypatch):
@@ -210,7 +210,7 @@ def test_office_work_run_warms_the_view_listener_once_its_sandbox_exists(monkeyp
 
     monkeypatch.setattr("ailab_platform.agent.loop.verify_sandbox_skills", attested)
     broker = Broker()
-    work = [ToolCall(f"c{i}", "exec", {"cmd": "true"}) for i in range(3)]
+    work = [ToolCall(f"c{i}", "bash", {"cmd": "true"}) for i in range(3)]
     model = ScriptedLLM([LLMResponse(tool_calls=[call]) for call in work] + [LLMResponse(content="done")])
     asyncio.run(AgentLoop(platform=Platform(), broker=broker, llm=model).process("run_1", attempt_id="attempt"))
     assert len(broker.warmed) == warms  # repeated sandbox work within a minute does not warm again
@@ -292,7 +292,7 @@ def test_follow_up_office_turn_takes_its_sandbox_and_warms_during_the_first_mode
     assert first.at_first_call == (0, 0)  # a first turn has no workspace to continue: its sandbox waits for a tool
 
     broker.busy = busy
-    second = Model([LLMResponse(tool_calls=[ToolCall("c1", "exec", {"cmd": "true"})]), LLMResponse(content="done")])
+    second = Model([LLMResponse(tool_calls=[ToolCall("c1", "bash", {"cmd": "true"})]), LLMResponse(content="done")])
     asyncio.run(AgentLoop(platform=platform, broker=broker, llm=second).process("second", attempt_id="a2"))
     assert [status for status, _ in platform.statuses if status == "succeeded"] == ["succeeded", "succeeded"]
     assert second.at_first_call == ((0, 0) if busy else (1, 1))
