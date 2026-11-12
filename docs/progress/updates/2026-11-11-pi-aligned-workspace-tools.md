@@ -300,3 +300,12 @@ A–F 通过；问题都出在上一轮新加的"只读并行"和"`read` 按字�
 - `test_a_csv_of_repeated_lines_edits_in_linear_time`：0.5 s 墙钟上限在 CI 上是 0.73/0.84 s（本机 0.21 s，覆盖率不影响）。这个上限从没对应过真实回归（被替换的旧实现在这个输入上也只要 0.17 s），改成断言"行数翻倍、线程 CPU 时间 < 3 倍"。
 - 第二轮 CI（`dc108083`）SQLite 只剩 `test_the_worst_case_does_not_hold_the_gil` 1 项（上一轮通过）：它数另一线程在搜索期间醒来几次，而线性搜索只要约 6 ms，繁忙的 runner 上两次之间就跑完了，和是否持有 GIL 无关。改为断言另一线程看到的最长间隔 < 1 s；持锁 2 s 的正则会产生 2.06 s 的间隔，回归仍会失败。
 - 第三轮 CI（`41113c2c`）15 项全绿：SQLite 3006 passed / 225 skipped，PostgreSQL 3140 passed / 91 skipped，E2E 三片 196 passed / 15 skipped。
+
+## 小文件的第 N 行起窗口免 exec（2026-11-12，分支 `perf/osb-offset-read`，基线 `main@d6651ce2`）
+
+- 改动：OpenSandbox provider 的 `get_file_lines_to_path` 在文件不大于窗口时，用文件 API 流整个文件、在 Broker 里按块跳过前 N−1 行（`_from_line`），截到窗口字节数；更大的文件仍走沙箱内 `tail`。Broker 搬运和内存上限不变：最多一个窗口（2 MiB + 1）的字节，按块落临时文件。
+- 真实 OpenSandbox（本机 Docker 运行时）：199 KB 文件从第 3000 行读，文件 API **5 ms**（中位 6 ms）对 exec + `tail` **1024 ms**（中位 1026 ms），两条路输出字节一致（80,040）。
+- 契约（Docker + OpenSandbox + mock）：`test_sandbox_lifecycle.py` + `test_sandbox_transfer.py` **27 passed / 1 skipped**，新增小文件跨行与越过末行的窗口断言。
+- 单测：新增与真实 `tail` 逐字节对照（空文件、无结尾换行、连续空行、CRLF、多字节中文，行 1–6 × 窗口 1/2/5/100 字节）与 1/2/3/7 字节分块的跳行用例，并断言只有"行 > 1 且文件大于窗口"才起 exec；去掉改动后 9 项失败。相关模块 78 passed / 2 skipped，ruff 干净。
+- 没覆盖到：Kubernetes 运行时/gVisor 下的耗时；本机整栈用 Docker provider，这个改动不影响它。
+- 首轮 CI（`4d4e79a6`）：SQLite 只挂 `test_a_retried_start_waits_on_the_running_command_instead_of_launching_it_twice`（PostgreSQL 同一用例通过），与本改动无关。原因：后台 `start` 在进程登记（`meta`）后就返回，不等它的 shell 跑完 `echo`，测试立刻读标记文件，赶上就报文件不存在。改为断言第二次 start 后登记的进程（pid + 启动时间）不变、只有一个任务；去掉 helper 的重试保护时仍会失败。
