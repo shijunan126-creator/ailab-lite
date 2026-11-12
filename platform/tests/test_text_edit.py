@@ -137,6 +137,56 @@ class TestFuzzyMatching:
         assert result == "after\nafter   \n"
 
 
+def test_every_short_file_with_spaces_edits_inside_its_own_match():
+    """Exhaustive over {a, space, newline} and a full-width quote: the span must be exactly the quoted text.
+
+    Cheap invariants that the two boundary bugs break: a span that starts with whitespace the oldText
+    does not start with (the previous line's trailing spaces were counted as part of the match), and a
+    span whose trailing whitespace run is longer than the oldText's without ending at a line end.
+    """
+    cases = 0
+    for alphabet, size in ((["a", " ", "\n"], 5), (["a", " ", "\n", "\u201c"], 4)):
+        for combination in itertools.product(alphabet, repeat=size):
+            normalized = "".join(combination)
+            for start in range(len(normalized)):
+                for length in range(1, len(normalized) - start + 1):
+                    old_text = normalized[start : start + length]
+                    for new_text in ("", "X", " "):
+                        try:
+                            applied = apply_edits(normalized, [(old_text, new_text)], "/workspace/work/a.txt")
+                        except EditError:
+                            continue
+                        cases += 1
+                        span = applied.replacements[0]
+                        matched = normalized[span.match_index : span.match_index + span.match_length]
+                        assert matched[:1].isspace() or not old_text[:1].isspace(), (normalized, old_text, matched)
+                        at_line_end = span.match_index + span.match_length in (len(normalized), 0) or (
+                            normalized[span.match_index + span.match_length :][:1] == "\n"
+                        )
+                        assert at_line_end or len(matched) - len(matched.rstrip(" \t")) == len(old_text) - len(old_text.rstrip(" \t")), (
+                            normalized,
+                            old_text,
+                            matched,
+                        )
+    assert cases > 5000
+
+
+class TestWhitespaceBoundaries:
+    """Both of these used to change characters outside the matched region."""
+
+    def test_a_match_that_starts_after_line_end_whitespace_keeps_that_whitespace(self):
+        # The start landed exactly on a removal point, so the previous line's spaces were eaten.
+        assert edit("bar   \nfoo  \nbaz\n", [("\nfoo\nbaz", "\nFOO\nbaz")]) == "bar   \nFOO\nbaz\n"
+
+    def test_mid_line_whitespace_is_content_not_a_line_end(self):
+        # Only a line-end run is optional; here the quoted space has to match the file as written.
+        assert edit("say “hi”   bar", [('say "hi" ', 'say "yo" ')], "/workspace/work/a.txt") == 'say "yo"   bar'
+
+    def test_mid_line_whitespace_that_differs_is_not_a_match(self):
+        with pytest.raises(EditError, match="Could not find the exact text"):
+            edit("say “hi”bar", [('say "hi" ', 'say "yo" ')], "/workspace/work/a.txt")
+
+
 class TestLineEndings:
     def test_lf_old_text_matches_a_crlf_file(self):
         assert edit("first\r\nsecond\r\nthird\r\n", [("second\n", "REPLACED\n")]) == "first\r\nREPLACED\r\nthird\r\n"

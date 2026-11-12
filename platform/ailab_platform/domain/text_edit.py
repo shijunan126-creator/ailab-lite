@@ -31,7 +31,7 @@ from __future__ import annotations
 import itertools
 import unicodedata
 from array import array
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 
 BOM = "\ufeff"
@@ -187,8 +187,13 @@ def strip_line_ends(text: str) -> tuple[str, array, array]:
     return "".join(parts), points, amounts
 
 
-def _removed_before(offset: int, points: array, amounts: array) -> int:
-    index = bisect_left(points, offset)
+def _removed_before(offset: int, points: array, amounts: array, *, inclusive: bool = False) -> int:
+    """Characters removed before ``offset``; ``inclusive`` counts a removal that starts exactly there.
+
+    A match *starting* on a removal point begins after the removed characters, so its start must count
+    them; a match *ending* on one stops before them, so its end must not.
+    """
+    index = bisect_right(points, offset) if inclusive else bisect_left(points, offset)
     return amounts[index - 1] if index else 0
 
 
@@ -203,18 +208,24 @@ def _fuzzy_spans(content: str, old_text: str) -> list[tuple[int, int]]:
     stripped = "\n".join(line.rstrip(" \t") for line in lines)
     if not stripped:
         return []  # only whitespace: its pattern would match everywhere, which is never what was meant
-    trailing = lines[-1] != lines[-1].rstrip(" \t")
+    trailing = lines[-1][len(lines[-1].rstrip(" \t")) :]  # the quoted run of spaces, if any
     spans: list[tuple[int, int]] = []
     if not has_line_end_whitespace(folded):
         stripped_file, points, amounts = folded, array("l"), array("l")
     else:
         stripped_file, points, amounts = strip_line_ends(folded)
     for hit in find_all(stripped_file, stripped, limit=OCCURRENCE_REPORT_CAP):
-        start = hit + _removed_before(hit, points, amounts)
+        start = hit + _removed_before(hit, points, amounts, inclusive=True)
         end = hit + len(stripped) + _removed_before(hit + len(stripped), points, amounts)
-        if trailing:  # quoted trailing spaces must be consumed, not left behind
-            while end < len(folded) and folded[end] in " \t":
-                end += 1
+        if trailing:  # the quoted trailing spaces are consumed, not left behind
+            if end == len(folded) or folded[end] == "\n":
+                # At a line end the quoted run stands for whatever whitespace the file has there.
+                while end < len(folded) and folded[end] in " \t":
+                    end += 1
+            elif folded.startswith(trailing, end):
+                end += len(trailing)  # mid-line whitespace is content: it has to match as written
+            else:
+                continue
         spans.append((start, end))
     return spans
 
