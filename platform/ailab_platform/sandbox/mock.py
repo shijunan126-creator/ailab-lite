@@ -138,6 +138,18 @@ class MockSandbox(SandboxProvider):
         pattern = "|".join(re.escape(prefix) for prefix in mapping)
         return re.sub(rf"({pattern})(?![\w.-])", lambda match: str(mapping[match[1]]), cmd)
 
+    def get_file_range_to_path(self, sandbox_id: str, path: str, target: Path, *, offset: int, length: int) -> None:
+        """Mock files are local files: slice them directly instead of shell-dancing through /tmp."""
+        source = self._translate(sandbox_id, path)
+        if not source.exists():
+            raise SandboxFileNotFound(f"no such file in the sandbox: {path}")
+        if not source.is_file():
+            raise SandboxError(f"not a regular file in the sandbox: {path}")
+        with source.open("rb") as handle:
+            handle.seek(offset)
+            data = handle.read(length)
+        target.write_bytes(data)
+
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
         translated = self._translate_command(sandbox_id, cmd)
         root = self._sandbox_root(sandbox_id)

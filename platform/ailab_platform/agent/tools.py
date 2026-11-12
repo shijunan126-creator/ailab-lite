@@ -999,6 +999,12 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             result["total_lines"] = window.total_lines
         else:
             result["partial"] = True  # the line count and the notices only cover the window
+            if window.next_offset is None:
+                # Silently ending at the window edge reads as "end of file": say what is left and how to reach it.
+                result["note"] = (
+                    f"只读到 {READ_WINDOW_BYTES // (1024 * 1024)}MB 读取窗口的末尾，文件后面还有内容。"
+                    "用 grep -n 定位行号，或用 bash 的 sed -n 'N,Mp' 读取指定行。"
+                )
         if window.next_offset is not None:
             result["next_offset"] = window.next_offset
         if window.truncation.truncated:

@@ -1294,25 +1294,35 @@ class LeaseManager:
     def get_file(self, lease_id: str, path: str, *, max_bytes: int | None = None, offset: int = 0, length: int | None = None) -> bytes:
         """The file, a byte range of it, or 413 before the transfer when the caller's limit is tighter.
 
-        ``edit`` says it can only hold 2 MiB; transferring 10 MiB first and refusing after
-        would pay for the copy the caller just said it cannot afford. ``read`` asks for a
-        window, so the Agent never holds a whole 10 MiB file to show 2000 lines of it.
+        ``edit`` says it can only hold 2 MiB; transferring 10 MiB first and refusing after would pay
+        for the copy the caller just said it cannot afford. ``read`` asks for a window: with a range
+        the limit applies to ``length``, not to the size of the file, so a 50 MB log can be opened at
+        its beginning while Broker memory and disk stay bounded by the window.
         """
         lease = self._load(lease_id)
         path = self._checked(path)
-        limit = settings.max_sandbox_read_bytes
+        limit = settings.max_sandbox_read_bytes if max_bytes is None else min(max_bytes, settings.max_sandbox_read_bytes)
+        if length is not None:
+            if length > limit:
+                raise TransferLimitError(f"requested {length} bytes; the limit is {limit}")
+            size = self._provider_call("file_size", lease["sandbox_id"], path)
+            wanted = min(length, max(0, size - offset))
+            if wanted == 0:
+                return b""
+            with self.transfer_file() as local:
+                self._provider_call("get_file_range_to_path", lease["sandbox_id"], path, local, offset=offset, length=wanted)
+                return local.read_bytes()
         if max_bytes is not None:
-            limit = min(max_bytes, limit)
             size = self._provider_call("file_size", lease["sandbox_id"], path)
             if size > limit:
                 raise TransferLimitError(f"file is {size} bytes; the limit is {limit}")
         with self.transfer_file() as local:
             self._download(lease, path, local, limit)
-            if not offset and length is None:
+            if not offset:
                 return local.read_bytes()
             with local.open("rb") as handle:
                 handle.seek(offset)
-                return handle.read() if length is None else handle.read(length)
+                return handle.read()
 
     @_operation
     def list_files(self, lease_id: str, path: str) -> list[dict]:

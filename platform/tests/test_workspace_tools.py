@@ -309,3 +309,31 @@ def test_an_offset_beyond_the_read_window_points_at_grep_instead_of_lying():
 
     with pytest.raises(ToolError, match="offset=900 不在已读范围内"):
         call("read", {"path": f"{WORK}/big.log", "offset": 900}, Windowed())
+
+
+def test_a_twelve_megabyte_file_is_read_through_the_window_not_refused():
+    """It used to be a 413: the whole file was the unit of transfer, so a window could not exist."""
+    big = b"header\n" + b"y" * (12 * 1024 * 1024)
+
+    class Ranged(FakeBroker):
+        async def get_file(self, lease_id, path, **kwargs):
+            assert kwargs == {"length": READ_WINDOW_BYTES + 1}  # the Agent asks for a window, not the file
+            return big[: READ_WINDOW_BYTES + 1]
+
+    result = call("read", {"path": f"{WORK}/big.log"}, Ranged())
+    assert result["ok"] and result["partial"] is True and result["content"].startswith("header")
+
+
+def test_the_end_of_the_read_window_says_how_to_go_on():
+    """Reading the last lines of the window returns next_offset=None, which reads as end of file."""
+    body = b"".join(b"line %07d\n" % index for index in range(300000))
+    window = body[:READ_WINDOW_BYTES]
+    lines_in_window = window.count(b"\n")
+
+    class FullWindow(FakeBroker):
+        async def get_file(self, lease_id, path, **kwargs):
+            return body[: READ_WINDOW_BYTES + 1]
+
+    result = call("read", {"path": f"{WORK}/big.log", "offset": lines_in_window - 5, "limit": 100}, FullWindow())
+    assert result["partial"] is True and result.get("next_offset") is None
+    assert "窗口的末尾" in result["note"] and "sed -n" in result["note"]

@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from ..contracts.sandbox import LeaseHandle as LeaseHandle
 from ..contracts.sandbox import SandboxResource as SandboxResource
@@ -103,6 +104,35 @@ class SandboxProvider(ABC):
 
     @abstractmethod
     def release(self, sandbox_id: str) -> None: ...
+
+    def get_file_range_to_path(self, sandbox_id: str, path: str, target: Path, *, offset: int, length: int) -> None:
+        """Write bytes ``[offset, offset + length)`` of a sandbox file to ``target``.
+
+        The provider API has no byte ranges, so one exec writes just that slice into a temporary
+        file inside the sandbox and the ordinary bounded download carries it out; the temporary
+        file is removed in ``finally``. A caller that only wants the first few kilobytes of a
+        50 MB log never moves the other 49.99 MB.
+        """
+        if offset < 0 or length <= 0:
+            raise SandboxError(f"invalid range offset={offset} length={length}")
+        quoted, temp = shlex.quote(path), f"/tmp/.ailab-range-{uuid4().hex}"
+        # Exit codes mean what ``file_size`` means by them: 2 absent (404), 3 not a regular file,
+        # 4 a link (which could point outside the workspace).
+        script = (
+            f"[ ! -L {quoted} ] || exit 4; "
+            f"[ -e {quoted} ] || exit 2; "
+            f"[ -f {quoted} ] || exit 3; "
+            f"head -c {offset + length} -- {quoted} | tail -c +{offset + 1} > {shlex.quote(temp)}"
+        )
+        result = self.exec(sandbox_id, script, timeout=120)
+        if result.exit_code == 2:
+            raise SandboxFileNotFound(f"no such file in the sandbox: {path}")
+        if result.exit_code != 0:
+            raise SandboxError(f"could not read {path}: {result.stderr.strip() or result.exit_code}")
+        try:
+            self.get_file_to_path(sandbox_id, temp, target, max_bytes=length)
+        finally:
+            self.exec(sandbox_id, f"rm -f {shlex.quote(temp)}", timeout=15)
 
     def file_size(self, sandbox_id: str, path: str) -> int:
         """Size of a regular file, without transferring it.
