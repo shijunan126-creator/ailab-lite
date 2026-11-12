@@ -70,6 +70,17 @@ def api(request, report_path):
                     "cached_tokens": usage.get("cached_tokens"),
                     "calls": usage.get("calls"),
                     "boundaries": [b.get("reason") for b in turn.boundaries()],
+                    # enough to see where a task struggled without keeping the conversation
+                    "commands": [str((c.get("arguments") or {}).get("command", ""))[:300] for c in turn.tool_calls("bash")],
+                    "failed": [
+                        {
+                            "name": f.get("name"),
+                            "exit_code": f.get("exit_code"),
+                            "error": str(f.get("error") or "")[:300],
+                            "stdout": str(f.get("stdout") or "")[-300:],
+                        }
+                        for f in turn.failed_tools()
+                    ],
                 }
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
         client.close()
