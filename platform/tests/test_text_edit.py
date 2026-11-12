@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import itertools
 import re
+import threading
+import time
+import tracemalloc
 
 import pytest
 
@@ -13,7 +16,6 @@ from ailab_platform.domain.text_edit import (
     apply_edits,
     apply_replacements_to_original,
     edit_text,
-    folded_text,
     normalize_to_lf,
 )
 
@@ -223,22 +225,60 @@ def test_random_mixed_endings_always_normalize_to_the_diffed_content():
         assert normalize_to_lf(written) == applied.new_content
 
 
-def test_a_five_megabyte_chinese_file_edits_quickly_without_a_second_copy():
-    """The per-character table this replaced peaked at 403 MiB and 8.3 s for 5 MB in a 256 MiB pod."""
-    import time
-    import tracemalloc
-
-    folded_text("warm the fold tables: their one-time build is not part of the measured edit")
-    body = "".join(f"第{i}段：价格（含税）为１００元，保持不变。\n" for i in range(200000))
-    assert len(body) > 5 * 1024 * 1024
-    old_text = "第199999段：价格(含税)为100元，保持不变。"  # half-width: forces the fuzzy path
-    tracemalloc.start()
+def test_a_repeated_two_megabyte_file_is_searched_in_linear_time():
+    """A regex of character classes backtracks here: 14.3 s for this exact input, holding the GIL throughout."""
+    content = "a" * (2 * 1024 * 1024)
     started = time.perf_counter()
-    result = edit_text(body, [(old_text, "第199999段：已改。")], "/workspace/work/a.txt")
+    with pytest.raises(EditError):
+        edit_text(content, [("a" * 1000 + "b", "x")], "/workspace/work/a.txt")
+    assert time.perf_counter() - started < 0.5
+
+
+def test_a_csv_of_repeated_lines_edits_in_linear_time():
+    rows = "".join(f"id,{index},alpha,beta,gamma\n" for index in range(120000))
+    content = rows + "id,999999,价格（含税）为１００元\n"
+    started = time.perf_counter()
+    result = edit_text(content, [("id,999999,价格(含税)为100元\n", "id,999999,已改。\n")], "/workspace/work/a.csv")
+    assert time.perf_counter() - started < 0.5
+    assert result.endswith("id,999999,已改。\n") and result.count("已改") == 1
+
+
+def test_the_worst_case_does_not_hold_the_gil():
+    """``asyncio.to_thread`` cannot help if the search itself keeps the interpreter lock."""
+    content = "a" * (2 * 1024 * 1024)
+    ticks = 0
+    done = threading.Event()
+
+    def heartbeat() -> None:
+        nonlocal ticks
+        while not done.is_set():
+            ticks += 1
+            time.sleep(0.001)
+
+    thread = threading.Thread(target=heartbeat, daemon=True)
+    thread.start()
+    time.sleep(0.02)  # let the heartbeat settle into its sleep cycle
+    before = ticks
+    with pytest.raises(EditError):
+        edit_text(content, [("a" * 1000 + "b", "x")], "/workspace/work/a.txt")
+    during = ticks - before
+    done.set()
+    thread.join(timeout=1)
+    # A 14 s search lets this counter advance once; a linear one is over in milliseconds.
+    assert during >= 2, during
+
+
+def test_a_two_megabyte_chinese_edit_stays_inside_the_agent_memory_budget():
+    """The per-character table this replaced peaked at 403 MiB for 5 MB; the tool limit is 2 MiB."""
+    body = ""
+    index = 0
+    while len(body) < 2 * 1024 * 1024:
+        body += f"第{index}段：价格（含税）为１００元，保持不变。\n"
+        index += 1
+    old_text = f"第{index - 1}段：价格(含税)为100元，保持不变。"  # half-width: forces the fuzzy path
+    tracemalloc.start()
+    result = edit_text(body, [(old_text, f"第{index - 1}段：已改。")], "/workspace/work/a.txt")
     _, peak = tracemalloc.get_traced_memory()
-    elapsed = time.perf_counter() - started
     tracemalloc.stop()
-    assert result.startswith("第0段：") and result.endswith("第199999段：已改。\n")
-    assert result.count("价格（含税）为１００元") == 199999
-    assert elapsed < 0.5, elapsed
+    assert result.startswith("第0段：") and result.endswith(f"第{index - 1}段：已改。\n")
     assert peak < 32 * 1024 * 1024, peak

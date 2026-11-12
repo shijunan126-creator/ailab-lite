@@ -6,12 +6,17 @@ then tolerant to the differences a model reliably introduces when it quotes a
 file back: trailing whitespace, curly quotes, Unicode dashes, special spaces and
 width/compatibility forms.
 
-Tolerance never rewrites the file: ``oldText`` is compiled into one regex whose
-character classes accept every character that folds to the requested one, and it
-is searched directly in the original bytes. Matched offsets are therefore file
-offsets, a fuzzy edit costs nothing beyond the pattern (a 5 MB file matches in
-tens of milliseconds, no per-character table and no second copy of the file), and
-a full-width comma next to the matched span keeps its own bytes.
+Tolerance never rewrites the file. Every fold maps one character to one character,
+so ``str.translate`` preserves length and index: the match runs on translated text
+and its offsets are already file offsets, and a full-width comma next to the
+matched span keeps its own bytes. Trailing whitespace is handled by stripping line
+ends once and remembering where, not by a per-character map.
+
+Matching is linearithmic, not quadratic: ``str.find`` is CPython's two-way search,
+while a regex made of character classes is backtracking over "file length times
+oldText length" (14 s for 2 MB of repeated text). It runs in a worker thread, but
+that does not make it non-blocking: CPython's ``re`` holds the GIL for the whole
+search. Nothing here hides the GIL either, so the cost has to be small.
 
 Deliberate differences from Pi:
 
@@ -24,8 +29,9 @@ Deliberate differences from Pi:
 from __future__ import annotations
 
 import itertools
-import re
 import unicodedata
+from array import array
+from bisect import bisect_left
 from dataclasses import dataclass
 
 BOM = "\ufeff"
@@ -73,6 +79,7 @@ _FUZZY_TABLE = {
 
 _folds: dict[str, str] | None = None
 _variants: dict[str, list[str]] | None = None
+_table: dict[int, str] | None = None
 
 
 def _fold_tables() -> tuple[dict[str, str], dict[str, list[str]]]:
@@ -110,45 +117,106 @@ def folded_text(text: str) -> str:
     return "".join(folds.get(char, char) for char in text)
 
 
-def find_all(haystack: str, needle: str) -> list[int]:
-    """Every occurrence, including overlapping ones: "}\\n}\\n" occurs twice in "}\\n}\\n}\\n"."""
+def find_all(haystack: str, needle: str, limit: int | None = None) -> list[int]:
+    """Every occurrence, including overlapping ones: "a\na\n" occurs twice in "a\na\na\n".
+
+    ``limit`` stops the scan once enough occurrences are known: a repeated line can occur
+    millions of times and the message only needs to know the text is not unique.
+    """
     if not needle:
         return []
     found: list[int] = []
     index = haystack.find(needle)
     while index != -1:
         found.append(index)
+        if limit is not None and len(found) >= limit:
+            break
         index = haystack.find(needle, index + 1)
     return found
 
 
-def _atom(char: str) -> str:
-    """One character of ``oldText``: every file character that folds to the same one."""
-    folds, variants = _fold_tables()
-    group = variants.get(folds.get(char, char))
-    if group is None:
-        return re.escape(char)
-    return "[" + "".join(re.escape(item) for item in group) + "]"
+def _translate_table() -> dict[int, str]:
+    """The fold table in ``str.translate`` form: one character in, one character out."""
+    global _table
+    if _table is None:
+        folds, _ = _fold_tables()
+        _table = {ord(source): folded for source, folded in folds.items()}
+    return _table
 
 
-def _space_class() -> str:
-    _, variants = _fold_tables()
-    return "[" + "".join(re.escape(item) for item in variants.get(" ", [" "])) + r"\t]*"
+def has_line_end_whitespace(text: str) -> bool:
+    """Whether some line ends with a space or a tab (the last line counts, unterminated)."""
+    if text.endswith((" ", "\t")):
+        return True
+    return " \n" in text or "\t\n" in text
 
 
-def fuzzy_pattern(old_text: str) -> re.Pattern[str] | None:
-    """``oldText`` as a regex over the original file: trailing whitespace optional, widths folded.
+def strip_line_ends(text: str) -> tuple[str, array, array]:
+    """``text`` without the spaces/tabs before each line break, plus where they were removed.
 
-    Returns ``None`` for a text that is only whitespace (its pattern would match everywhere).
+    ``points[i]`` is the offset in the stripped text of the i-th removal and ``amounts[i]``
+    the total removed up to and including it, so ``offset + removed_before(offset)`` maps
+    a stripped offset back to the original one.
     """
-    space = _space_class()
-    lines = old_text.split("\n")
-    body = (space + "\n").join("".join(_atom(char) for char in line.rstrip(" \t")) for line in lines)
-    if not body:
-        return None
-    if lines[-1] != lines[-1].rstrip(" \t"):
-        body += space  # the quoted trailing spaces must be consumed, not left behind
-    return re.compile(body)
+    removed_ranges: list[tuple[int, int]] = []
+    position = 0
+    length = len(text)
+    while position < length:
+        newline = text.find("\n", position)
+        end = length if newline == -1 else newline
+        keep = end
+        while keep > position and text[keep - 1] in " \t":
+            keep -= 1
+        if keep != end:
+            removed_ranges.append((keep, end))
+        if newline == -1:
+            break
+        position = newline + 1
+    if not removed_ranges:
+        return text, array("l"), array("l")
+    parts: list[str] = []
+    points, amounts = array("l"), array("l")
+    previous, removed = 0, 0
+    for keep, end in removed_ranges:
+        parts.append(text[previous:keep])
+        removed += end - keep
+        points.append(keep - (removed - (end - keep)))
+        amounts.append(removed)
+        previous = end
+    parts.append(text[previous:])
+    return "".join(parts), points, amounts
+
+
+def _removed_before(offset: int, points: array, amounts: array) -> int:
+    index = bisect_left(points, offset)
+    return amounts[index - 1] if index else 0
+
+
+def _fuzzy_spans(content: str, old_text: str) -> list[tuple[int, int]]:
+    """Every tolerant occurrence of ``old_text`` in ``content`` as ``(start, end)`` file offsets."""
+    table = _translate_table()
+    # Every fold source is a non-ASCII character and NFKC leaves ASCII alone, so an ASCII
+    # document folds to itself: skip the translation, which costs 130 ms for 2 MB.
+    folded = content if content.isascii() else content.translate(table)
+    needle = old_text if old_text.isascii() else old_text.translate(table)
+    lines = needle.split("\n")
+    stripped = "\n".join(line.rstrip(" \t") for line in lines)
+    if not stripped:
+        return []  # only whitespace: its pattern would match everywhere, which is never what was meant
+    trailing = lines[-1] != lines[-1].rstrip(" \t")
+    spans: list[tuple[int, int]] = []
+    if not has_line_end_whitespace(folded):
+        stripped_file, points, amounts = folded, array("l"), array("l")
+    else:
+        stripped_file, points, amounts = strip_line_ends(folded)
+    for hit in find_all(stripped_file, stripped, limit=OCCURRENCE_REPORT_CAP):
+        start = hit + _removed_before(hit, points, amounts)
+        end = hit + len(stripped) + _removed_before(hit + len(stripped), points, amounts)
+        if trailing:  # quoted trailing spaces must be consumed, not left behind
+            while end < len(folded) and folded[end] in " \t":
+                end += 1
+        spans.append((start, end))
+    return spans
 
 
 def _missing_message(path: str, index: int, total: int) -> str:
@@ -165,19 +233,6 @@ def _occurrences_message(path: str, index: int, total: int, occurrences: int) ->
         f"Found {count} occurrences of edits[{index}] in {path}. "
         "Each oldText must be unique. Please provide more context to make it unique."
     )
-
-
-def _fuzzy_starts(pattern: re.Pattern[str], content: str) -> list[int]:
-    """Overlapping start offsets, stopped once the text is known not to be unique."""
-    starts: list[int] = []
-    position = 0
-    while len(starts) < OCCURRENCE_REPORT_CAP:
-        found = pattern.search(content, position)
-        if found is None:
-            break
-        starts.append(found.start())
-        position = found.start() + 1
-    return starts
 
 
 def _apply_replacements(content: str, replacements: list[TextReplacement]) -> str:
@@ -200,22 +255,20 @@ def apply_edits(base_content: str, edits: list[tuple[str, str]], path: str) -> E
 
     matched: list[TextReplacement] = []
     for index, (old_text, new_text) in enumerate(normalized):
-        exact = find_all(base_content, old_text)
+        exact = find_all(base_content, old_text, limit=OCCURRENCE_REPORT_CAP)
         if len(exact) == 1:
             matched.append(TextReplacement(exact[0], len(old_text), new_text, index))
             continue
         if len(exact) > 1:
             raise EditError(_occurrences_message(path, index, total, min(len(exact), OCCURRENCE_REPORT_CAP)))
-        pattern = fuzzy_pattern(old_text)
-        starts = _fuzzy_starts(pattern, base_content) if pattern is not None else []
-        if not starts:
+        spans = _fuzzy_spans(base_content, old_text)
+        if not spans:
             raise EditError(_missing_message(path, index, total))
-        if len(starts) > 1:
-            raise EditError(_occurrences_message(path, index, total, len(starts)))
-        # The regex matched trailing whitespace and width variants too, so its span is the replacement span.
-        found = pattern.search(base_content, starts[0])
-        assert found is not None and found.start() == starts[0]
-        matched.append(TextReplacement(found.start(), found.end() - found.start(), new_text, index))
+        if len(spans) > 1:
+            raise EditError(_occurrences_message(path, index, total, len(spans)))
+        start, end = spans[0]
+        # The span covers trailing whitespace and width variants too, so it is the replacement span.
+        matched.append(TextReplacement(start, end - start, new_text, index))
 
     matched.sort(key=lambda item: item.match_index)
     for previous, current in itertools.pairwise(matched):
