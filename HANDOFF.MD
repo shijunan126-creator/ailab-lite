@@ -16,6 +16,8 @@
 - 上游技能按它自家镜像写字体路径、探针和脚本名（`pdf.py convert.html` 曾调用从未发布的 `html2pdf.js`）。改技能后在构建出的镜像里断网实跑文档里的命令，并逐个核对代码块里的绝对路径；静态看 apt 清单不够。ReportLab 读不了 Noto CJK 的 CFF 轮廓，能嵌入的中文只有 `wqy-zenhei.ttc` 和 TeX Live 带入的 AR PL 字体。
 - fontconfig 别名要写 `binding="same"`，否则 Chromium（Skia）不认替代字体，`fc-match` 看着对、PDF 里仍是 DejaVu。matplotlib 不走 fontconfig，要 `addfont` 实际文件。`--no-install-recommends` 下 `gs`、DejaVu 都不会被带入。
 - colima 默认不挂 `/tmp`，`docker run -v /tmp/x:...` 得到空目录；脚本用 `-i` 从 stdin 传进容器。
+- 用户消息的文本只由 `prompts.user_text` 生成：技能标记按用户原文的码点位置插入（无位置放在原文末尾，与 Portal 一致），之后才套定时任务头、追加选中段落 `<document_references>`。实时、追加（steer）和两个历史接口必须都走它；steer 是用户此刻输入，不继承所在 run 的 `schedule`。分开拼会让历史重建与首次发送的字节不同，steer 认领的 `startswith` 校验也会失败。
+- 真模型场景在 `platform/scenarios/`，经公开 API 跑任意栈（本机部署 API 在 `127.0.0.1:28080`，token 从部署的 `runtime.env` 读进进程环境，不打印）。每个场景结束删除自己的会话和文件；报告写仓库外 JSONL，含每轮工具、bash 命令、失败调用和 `cached_tokens`。单个样本波动大（同一 PDF 任务 16–21 次调用），比较前后要看路线和失败原因，不只看次数。
 
 ## 2026-11-11 Outbox 唤醒
 
