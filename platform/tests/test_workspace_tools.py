@@ -8,7 +8,14 @@ import re
 
 import pytest
 
-from ailab_platform.agent.tools import SANDBOX_TOOLS, ToolError, execute_tool, tools_for_chat, tools_for_turn
+from ailab_platform.agent.tools import (
+    READ_WINDOW_BYTES,
+    SANDBOX_TOOLS,
+    ToolError,
+    execute_tool,
+    tools_for_chat,
+    tools_for_turn,
+)
 from ailab_platform.clients import ClientError
 
 WORK = "/workspace/work"
@@ -22,7 +29,7 @@ class FakeBroker:
         self.stdout, self.exit_code = stdout, exit_code
         self.commands: list[str] = []
 
-    async def get_file(self, lease_id: str, path: str) -> bytes:
+    async def get_file(self, lease_id: str, path: str, **kwargs) -> bytes:
         if path not in self.files:
             raise ClientError("GET", f"/internal/leases/{lease_id}/files", 404, '{"detail": "no such file in the sandbox"}')
         return self.files[path]
@@ -200,7 +207,7 @@ def test_two_concurrent_edits_of_one_file_both_land():
     import time
 
     class SlowBroker(FakeBroker):
-        async def get_file(self, lease, path):
+        async def get_file(self, lease, path, **kwargs):
             data = await super().get_file(lease, path)
             await asyncio.sleep(0.05)  # widen the window between read and write
             return data
@@ -224,7 +231,7 @@ def test_a_write_and_an_edit_of_one_file_cannot_interleave(monkeypatch):
     """Without the queue the edit reads the old content, the write lands, and the edit then writes its own copy back."""
 
     class SlowBroker(FakeBroker):
-        async def get_file(self, lease_id, path):
+        async def get_file(self, lease_id, path, **kwargs):
             data = await super().get_file(lease_id, path)
             await asyncio.sleep(0.05)  # widen the read-modify-write window
             return data
@@ -248,18 +255,19 @@ def test_a_too_large_file_is_not_reported_as_missing():
     """12 MB: the model must not hear ENOENT and rewrite the file with write."""
 
     class BigBroker(FakeBroker):
-        async def get_file(self, lease_id, path):
+        async def get_file(self, lease_id, path, **kwargs):
             raise ClientError("GET", "/internal/leases/lease/files", 413, '{"detail": "file is 12582912 bytes; the limit is 10485760"}')
 
     with pytest.raises(ToolError, match="超过 10MB 读取上限"):
         call("read", {"path": f"{WORK}/big.csv"}, BigBroker())
-    with pytest.raises(ToolError, match="超过 10MB 读取上限"):
+    # edit has its own ceiling; the next action it offers is a script, not sed over a whole file.
+    with pytest.raises(ToolError, match="超过 edit 上限 2 MB；用 bash 运行脚本修改"):
         call("edit", {"path": f"{WORK}/big.csv", "edits": [{"oldText": "a", "newText": "b"}]}, BigBroker())
 
 
 def test_a_broker_400_hands_the_detail_to_the_model():
     class DirectoryBroker(FakeBroker):
-        async def get_file(self, lease_id, path):
+        async def get_file(self, lease_id, path, **kwargs):
             raise ClientError("GET", "/internal/leases/lease/files", 400, '{"detail": "not a regular file: /workspace/work"}')
 
     with pytest.raises(ToolError, match="不是普通文件"):
@@ -272,3 +280,32 @@ def test_edit_refuses_a_file_over_its_own_memory_budget(monkeypatch):
     monkeypatch.setattr(settings, "max_edit_bytes", 16)
     with pytest.raises(ToolError, match="超过 edit 上限"):
         call("edit", {"path": f"{WORK}/a.md", "edits": [{"oldText": "a", "newText": "b"}]}, FakeBroker({f"{WORK}/a.md": b"a" * 32}))
+
+
+def test_a_large_file_is_read_through_a_byte_window():
+    """The Agent holds a 2 MiB window, not the 10 MiB the Broker would let it transfer."""
+    seen: list[dict] = []
+
+    class Windowed(FakeBroker):
+        async def get_file(self, lease_id, path, **kwargs):
+            seen.append(kwargs)
+            return b"first line\n" + b"x" * READ_WINDOW_BYTES
+
+    result = call("read", {"path": f"{WORK}/big.log"}, Windowed())
+    assert seen == [{"length": READ_WINDOW_BYTES + 1}]
+    assert result["ok"] and result["content"].startswith("first line")
+    assert result["partial"] is True and "total_lines" not in result
+
+
+def test_a_complete_read_still_reports_the_line_count():
+    result = call("read", {"path": f"{WORK}/a.txt"}, FakeBroker({f"{WORK}/a.txt": b"one\ntwo\n"}))
+    assert result["total_lines"] == 3 and "partial" not in result  # a trailing newline counts an empty last line
+
+
+def test_an_offset_beyond_the_read_window_points_at_grep_instead_of_lying():
+    class Windowed(FakeBroker):
+        async def get_file(self, lease_id, path, **kwargs):
+            return b"a\nb\n" + b"x" * READ_WINDOW_BYTES  # a full window: the file goes on
+
+    with pytest.raises(ToolError, match="offset=900 不在已读范围内"):
+        call("read", {"path": f"{WORK}/big.log", "offset": 900}, Windowed())

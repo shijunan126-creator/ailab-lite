@@ -236,3 +236,46 @@ Broker 过去把 `get_file` 的所有 `SandboxError` 都映射成 400，Agent �
 - 运行中的结果字段叫 `output`：环形日志里 stdout 和 stderr 混在一起，结束时才分开。
 - MockLLM 改用 `command`，E2E 现在走的是 schema 里的主参数。
 - `REDUCED_V1` 补 `read`/`write`/`edit`：提示词禁止用 cat/sed 代替 read，而精简目录原本只给 bash——规则恰好堵死唯一的路。加完后精简目录仍在小上下文模型的预算内。
+
+## 第四轮审查后的修正（2026-11-12）
+
+上一轮把 `edit` 从逐字符映射改成正则，方向对、代价错：正则的耗时是"文件长度 × oldText 长度"，2 MB 全是 `a`、oldText 是 `a…ab` 时要 14.3 s；而 CPython 的 `re` 在整个搜索期间持有 GIL，`asyncio.to_thread` 并不能让事件循环继续跑（同一次搜索里另一线程只被调度了 1 次）。另外三处：`_file_error` 把所有状态码都吞成 ToolError、`search_images` 还按 400 判"不存在"、`PLATFORM_PROMPT_VERSION` 一起升会让所有 Chat 对话重建。
+
+### `edit` 改成线性匹配
+
+折叠都是一对一字符，所以 `str.translate` 保持长度、下标即原文下标：先把文件和 oldText 都折叠，再用 `str.find`（CPython 的两路算法，线性）找；命中即原文区间。行尾空白不建逐字符表，而是把每行行尾的 `[ \t]` 去掉一次，同时记下"被删掉的位置 + 累计删除量"两个数组（`array('l')`），用 `bisect` 把去尾文本的下标映射回原文；`oldText` 末行带尾空白时把终点延伸到原文这一行的空白结束处。
+
+两条捷径：文件是纯 ASCII 时折叠是恒等（所有折叠源都是非 ASCII），直接跳过 `translate`——2 MB 省 130 ms；文件里没有行尾空白时跳过去尾。
+
+实测：`a`×2 MB + 长 oldText 从 14.3 s 降到 6 ms；12 万行 CSV 的模糊编辑 220 ms；2 MB 中文模糊编辑峰值 8 MiB。单测断言两个最坏用例各 < 0.5 s，并用一个每 1 ms 计数的线程证明搜索期间 GIL 没有整段被占住。`to_thread` 留着（慢磁盘、大编码），注释改成"它不负责让搜索变便宜"。
+
+### 文件错误的 404 / 413 / 400 只映射这三种
+
+上一轮把 `_file_error` 写成"任何 ClientError 都变 ToolError"，于是 410（租约丢失）、503（所有权重建）、401/403、5xx 在 `read`/`edit` 上都变成"Could not read file"，run 不中断也不恢复，模型继续在一个失效的租约上工作。现在只有 400/404/413 转成给模型的提示，其余原样抛出，由 `_run_tool` 把 410 变成 `LeaseInterrupted`。用例：fake broker 抛 410 时 `read` 与 `edit` 都让 run 以"租约中断、自动继续"暂停（去掉修复即失败）。
+
+### 状态码契约的两个旧调用方
+
+`search_images` 只把 400 当"`credits.json` 还不存在"，404 一出来每个工作区第一次搜图都会失败；`save_skill(path=…)` 路径不存在时只剩一句"工具请求失败"。两处都按 404 判断，并把 fake 的状态码与真实路由共用 `contracts/files.py` 里的常量，`test_broker_routes.py` 断言"不存在"确实是那个常量——fake 与路由再也不会各说一套。
+
+### 提示词版本按模式拆开
+
+`PROMPT_VERSIONS = {"chat": 2026-11-08-genui-core, "work": 2026-11-12-workspace-tools}`：Chat 的规则文本这次一个字都没改，共用版本号却会让每个 Chat 对话的 `messages[0]` 变一次，整段上下文重建、前缀缓存全丢。用例把 Chat 的系统提示逐字节钉在 origin/main 的哈希上，并断言一个 Chat 对话跨这次升级不产生边界事件。
+
+### 旧目录重建时规则一起刷新
+
+`tool_catalog_v1` 里还列着 `exec_wait`/`read_file` 时，上一轮只换了工具列表，`messages[0]` 还是部署前那套"用 exec_wait…用 read_file 阅读"的规则，模型看到的规则和实际提供的工具对不上。现在这段逻辑在 `ContextManager.build` 里，重建目录的同一个边界里用当前的 `prompt_for` 重新生成 `messages[0]`，`messages[1:]` 一个字节不动。工具列表变了前缀本来就已经失效，规则刷新不多付代价。
+
+### 边界原因不再一律记成 model_changed
+
+进入那个分支的前提是工具或提示词变了，模型在这里并没有被比较。现在依次判断：上一轮的 model 与这一轮不同 → `model_changed`；只有工具变 → `tool_catalog_changed`；提示词变 → `platform_rules_changed`；API 已经给的结论（模型切换、访问被撤销）优先。`previous_model_context` 也补了 `model` 字段，恢复时能比较。
+
+### 顺带
+
+- `edit` 带上 `max_bytes`（2 MiB）：Broker 先 `file_size` 再决定，超限直接 413，不再先传 10 MB 再拒绝。
+- `edit` 收到 413 的文案改成"用 bash 运行脚本修改"，不再让它拿 `sed -n` 去改文件。
+- 唯一性/重复计数用 `find_all(limit=…)`，命中 100 次就停；旧代码一直数到 100，上一轮的汇报说"数到第 2 处就停"，与代码不符。
+
+### 两个后续项
+
+- **同一回复里的只读调用并行**：`read`/`ls`/`grep`/`find` 的连续前缀用 `asyncio.gather` 并发执行，结果按 ordinal 顺序回填（前缀稳定），`bash`/`write`/`edit` 仍严格串行，每次调用照旧单独写 `tool_log` 并逐个 checkpoint。用例断言三条 `read` 的并发峰值是 3、结果按 `c0/c1/c2` 追加；`read` 与 `write` 相邻时峰值是 1。
+- **`read` 走字节范围**：Broker 的 `get_file` 接受 `offset`/`length`，Agent 只取开头 2 MiB（多取 1 字节用来区分"正好读完"），按行窗口返回；文件更大时结果带 `partial: true`，不再返回会误导的 `total_lines`，`offset` 超出已读范围就明确告诉模型用 `grep` 定位或 `sed -n`。Agent 不再为 2000 行内容持有 10 MB。

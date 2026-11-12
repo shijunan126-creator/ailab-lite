@@ -69,7 +69,6 @@ from .tools import (
     ToolContext,
     ToolError,
     execute_tool,
-    has_retired_tools,
     tool_result_message,
     tools_for_chat,
     tools_for_turn,
@@ -88,6 +87,9 @@ THINKING_KEEP_CHARS = 20_000  # of the reasoning stored with the run (the events
 WRAP_UP_STEPS = 3  # this many steps before the limit the model is told to finish up
 WRAP_UP_NOTE = "（平台提示：本轮只剩 {n} 次工具调用。请尽快收尾：生成并交付文件，然后用文字回复用户。）"
 OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调用工具，直接用文字告诉用户已经完成了什么、还有什么没完成、下一轮可以怎么继续。）"
+# Read-only workspace lookups: the same turn may run several at once, each saving a sandbox round trip.
+# They never touch /workspace or the tool log's ordering, so results can be gathered and appended in ordinal order.
+READ_ONLY_TOOLS = frozenset({"read", "ls", "grep", "find"})
 FILE_TOOLS = frozenset(
     {"copy_library_file", "write", "edit", "bash", "deliver_file", "run_subtasks", *net_tools.NAMES}
 )  # tools that change /workspace or its outputs
@@ -2286,11 +2288,6 @@ class AgentLoop:
             mode, skill = options.get("mode", "work"), options.get("skill")
             if "tool_catalog_v1" not in state:
                 state["tool_catalog_v1"] = _tools_for_run(run)
-            elif has_retired_tools(state["tool_catalog_v1"]):
-                # The frozen catalog of a run paused across a deploy names tools this Agent no longer
-                # executes. Rebuild it once and record the boundary (ADR 0030); earlier messages are kept.
-                state["tool_catalog_v1"] = _tools_for_run(run)
-                await self._event(run_id, "agent.context_boundary", {"reason": "tool_catalog_changed"})
             run["_fixed_catalog"] = state["tool_catalog_v1"]
             turn.disabled_skills = frozenset(run.get("disabled_skills") or [])
             turn.personal = {s["name"]: s for s in run.get("personal_skills") or []}
@@ -2424,12 +2421,13 @@ class AgentLoop:
                         await self._event(run_id, "agent.message", {"step": step, "content": response.content})
                     if calls and run["_ledger_tokens"] >= settings.run_max_tokens:
                         raise TokenLimit(_token_limit_error(run))
-                while state["pending"]:
-                    data = state["pending"][0]
-                    call = ToolCall(data["id"], data["name"], data["arguments"])
-                    invocation = f"{step}:{data['ordinal']}"
-                    image_start = len(state.get("pending_image_inputs", []))
-                    result = await self._durable_tool(turn, run_id, call, step, invocation)
+
+                async def _consume(call, invocation, result, image_start):
+                    """Record one tool result: adjust it to the budget, log it, append it, checkpoint.
+
+                    Kept separate from execution so a batch of read-only calls can run at once and
+                    still be consumed in ordinal order.
+                    """
                     if spec:
                         result = admit_tool_result(
                             ContextBand.for_model(spec, run.get("context_settings")),
@@ -2477,6 +2475,32 @@ class AgentLoop:
                     await self._checkpoint(run_id, turn)
                     if changed:
                         await self._workspace_checkpoint(run_id, turn)
+
+                while state["pending"]:
+                    batch = 0
+                    while batch < len(state["pending"]) and state["pending"][batch]["name"] in READ_ONLY_TOOLS:
+                        batch += 1
+                    parallel = [state["pending"][i] for i in range(batch)] if batch > 1 else []
+                    image_start = len(state.get("pending_image_inputs", []))
+                    if parallel:
+                        prepared = [
+                            (ToolCall(item["id"], item["name"], item["arguments"]), f"{step}:{item['ordinal']}") for item in parallel
+                        ]
+                        gathered = await asyncio.gather(
+                            *(self._durable_tool(turn, run_id, call, step, invocation) for call, invocation in prepared),
+                            return_exceptions=True,
+                        )
+                        failure = next((item for item in gathered if isinstance(item, BaseException)), None)
+                        if failure is not None:
+                            raise failure
+                        for (call, invocation), result in zip(prepared, gathered, strict=True):
+                            await _consume(call, invocation, result, image_start)
+                        continue
+                    data = state["pending"][0]
+                    call = ToolCall(data["id"], data["name"], data["arguments"])
+                    invocation = f"{step}:{data['ordinal']}"
+                    result = await self._durable_tool(turn, run_id, call, step, invocation)
+                    await _consume(call, invocation, result, image_start)
                 for parts in state.pop("pending_image_inputs", []):
                     state.setdefault("tool_image_indices", []).append(len(messages))
                     messages.append({"role": "user", "content": parts})

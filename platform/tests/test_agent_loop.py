@@ -190,6 +190,7 @@ def test_tool_call_events_do_not_store_huge_arguments() -> None:
 import time  # noqa: E402
 
 from ailab_platform.clients import ClientError  # noqa: E402
+from ailab_platform.contracts.files import FILE_NOT_FOUND  # noqa: E402
 
 
 class RichBroker(FakeBroker):
@@ -359,7 +360,7 @@ class _ReadBroker:
     def __init__(self, data: bytes) -> None:
         self.data = data
 
-    async def get_file(self, lease_id, path):
+    async def get_file(self, lease_id, path, **kwargs):
         return self.data
 
 
@@ -528,12 +529,86 @@ def test_a_conversation_turn_saves_its_workspace_only_if_it_used_a_sandbox() -> 
     assert saved["workspace_saved_at"]
 
 
+def test_read_only_calls_in_one_reply_run_at_the_same_time() -> None:
+    """Each read is a sandbox round trip; three sequential ones cost three times the latency for nothing."""
+    broker = FakeBroker()
+    active = peak = 0
+
+    async def get_file(lease_id, path, **kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        return b"line\n"
+
+    broker.get_file = get_file
+    calls = [ToolCall(id=f"c{i}", name="read", arguments={"path": f"/workspace/work/{i}.txt"}) for i in range(3)]
+    llm = ScriptedLLM([LLMResponse(tool_calls=calls), LLMResponse(content="ok")])
+    _run(llm, broker=broker)
+    assert peak == 3
+    # Results are appended in ordinal order, so the request prefix stays the one the model asked for.
+    assert [m["tool_call_id"] for m in llm.seen_messages[-1] if m["role"] == "tool"] == ["c0", "c1", "c2"]
+
+
+def test_a_read_never_runs_beside_a_write() -> None:
+    """Only read-only lookups overlap: bash, write and edit stay in reply order."""
+    broker = FakeBroker()
+    active = peak = 0
+
+    async def get_file(lease_id, path, **kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        return b"line\n"
+
+    broker.get_file = get_file
+    writes: list[str] = []
+
+    async def put_file(lease_id, path, data):
+        writes.append(path)
+
+    broker.put_file = put_file
+    calls = [
+        ToolCall(id="c0", name="read", arguments={"path": "/workspace/work/a.txt"}),
+        ToolCall(id="c1", name="write", arguments={"path": "/workspace/work/b.txt", "content": "x"}),
+        ToolCall(id="c2", name="read", arguments={"path": "/workspace/work/c.txt"}),
+    ]
+    llm = ScriptedLLM([LLMResponse(tool_calls=calls), LLMResponse(content="ok")])
+    _run(llm, broker=broker)
+    assert peak == 1 and [path for path in writes if path == "/workspace/work/b.txt"] == ["/workspace/work/b.txt"]
+    assert [m["tool_call_id"] for m in llm.seen_messages[-1] if m["role"] == "tool"] == ["c0", "c1", "c2"]
+
+
+def test_a_lost_lease_during_read_or_edit_stops_the_run() -> None:
+    """A 410 used to be read as "Could not read file", so the run kept working on a dead lease."""
+    for tool, arguments in (
+        ("read", {"path": "/workspace/work/a.txt"}),
+        ("edit", {"path": "/workspace/work/a.txt", "edits": [{"oldText": "a", "newText": "b"}]}),
+    ):
+        broker = FakeBroker()
+
+        async def get_file(lease_id, path, **kwargs):
+            raise ClientError("GET", f"/internal/leases/{lease_id}/files", 410, "lease expired")
+
+        broker.get_file = get_file
+        platform, _ = _run(
+            ScriptedLLM([LLMResponse(tool_calls=[ToolCall(id="c1", name=tool, arguments=arguments)]), LLMResponse(content="ok")]),
+            broker=broker,
+        )
+        assert platform.paused["status"] == "interrupted", tool
+        assert platform.paused["auto_resume"] is True, tool
+        assert "租约中断" in platform.paused["error"], tool
+
+
 def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:
     broker = FakeBroker()
 
-    async def get_file(lease_id, path):
-        # what the real client raises when the broker answers 400 for a path that is not there
-        raise ClientError("GET", f"/internal/leases/{lease_id}/files?path={path}", 400, "get_file failed")
+    async def get_file(lease_id, path, **kwargs):
+        # what the real client raises when the broker answers FILE_NOT_FOUND for a path that is not there
+        raise ClientError("GET", f"/internal/leases/{lease_id}/files?path={path}", FILE_NOT_FOUND, "no such file")
 
     broker.get_file = get_file
     find = ToolCall(id="c1", name="search_images", arguments={"query": "city skyline", "count": 2})

@@ -151,6 +151,7 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
         },
         "messages": state["messages"],
         "tools": [],
+        "model": parent["model"],  # which model produced this prefix
         "delivered": state["delivered"],
         "delivery_names": state["delivery_names"],
     }

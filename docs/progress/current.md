@@ -11,7 +11,9 @@
 - 验证：ruff 干净；全量 3166 项 / 16 失败（与未改基线逐条相同）/ 276 跳过；改动模块定向 342 项 0 失败；Portal 286 项 + `tsc` 干净；整栈 E2E 210 项 0 失败；真模型重跑 9 个任务，`command` 参数与 10 秒窗口多次 `bash_wait` 均正常。
 - 第三轮审查（2026-11-12）指出的 5 条必须修 + 4 条应该修已全部落地：`edit` 改成 "oldText 编译成正则、直接在原文上匹配"（5 MB 16 ms、峰值约 8 MiB，原实现 403 MiB）、尾空格 bug、`max_edit_bytes` 2 MiB + `to_thread`；Broker 的 404/413/400 与 `SandboxFileNotFound`；子任务编号带父调用；恢复不再多发 `tool_call`（`announce=False`）；旧目录含退役名时重建并记 `tool_catalog_changed`；`lost` 标记取代 `exit_code == -1`；缺口用 helper 的读取起点；运行中用 `output`；MockLLM 发 `command`；精简目录补 `read`/`write`/`edit`；提示词版本号升级。
 - 验证：ruff 干净；全量 3181 项 / 16 失败（与未改基线一致）/ 276 跳过；Portal 288 项 + `tsc` 干净；整栈 E2E 210 项 0 失败；真模型两轮 Work，第二轮前缀逐字节保留、`prompt_tokens` 单调增。
-- 下一步：等用户决定是否推送/开 PR；镜像重建与前缀缓存真模型复测在 PR 后补。
+- 第四轮审查（2026-11-12）的 4 条必须修已落地：`edit` 从正则改成线性折叠匹配（2 MB 最坏用例 14.3 s → 6 ms，峰值 8 MiB，GIL 不再被整段占住）、`_file_error` 只映射 400/404/413（410 重新触发租约中断）、`search_images`/`save_skill` 按 404 判断、提示词版本按模式拆开（Chat 不重建）。另外：旧目录重建时同一边界刷新 `messages[0]`、边界原因区分 `model_changed`/`tool_catalog_changed`/`platform_rules_changed`、`edit` 用 `max_bytes` 提前 413；两个后续项也做了——同一回复里连续 `read`/`ls`/`grep`/`find` 并发执行（结果按 ordinal 回填），`read` 走 Broker 的 `offset`/`length` 只取 2 MiB 窗口。
+- 验证：ruff 干净；全量 3192 项 / 16 失败（与未改基线一致）/ 276 跳过；改动模块 471 项全过；整栈 E2E 210 项 0 失败。
+- 下一步：等用户决定是否推送/开 PR；镜像重建在前缀缓存真模型复测之后。
 
 ---
 

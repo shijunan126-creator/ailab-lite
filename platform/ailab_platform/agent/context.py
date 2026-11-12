@@ -38,7 +38,7 @@ from .prompts import (
     system_prompt_for,
     workspace_prompt,
 )
-from .tools import tools_for_turn
+from .tools import has_retired_tools, tools_for_turn
 
 
 def _summary_input(value):
@@ -701,16 +701,29 @@ class ContextManager:
                 turn.messages = self.state["messages"]
             raise
 
+    def _rules_message(self, run, turn, model, mode: str, skill, options: dict) -> dict:
+        """messages[0]: the platform rules for this mode and this run's capabilities."""
+        return {
+            "role": "system",
+            "content": self.prompt_for(
+                mode,
+                skill,
+                turn.disabled_skills,
+                list(turn.personal.values()),
+                None,
+                deferred=options.get("capability_discovery") == 1,
+                genui=bool(self.catalog().get(model) and self.catalog().get(model).supports({"genui"})),
+                genui_tools=bool(self.catalog().get(model) and self.catalog().get(model).supports({"tools"})),
+                **({"document_tools_version": 2} if options.get("document_tools_version") == 2 else {}),
+            ),
+        }
+
     async def _build(self, run, turn, model, llm):
         run_id, state = self.run_id, self.state
         options = run.get("options") or {}
         mode, skill = options.get("mode", "work"), options.get("skill")
         saved_messages = state["messages"]
         abi_mismatch = state.get("context_abi_version") not in (None, CONTEXT_ABI_VERSION)
-        if abi_mismatch:
-            run.pop("_fixed_catalog", None)
-            state["tool_catalog_v1"] = self.tools_for_run(run)
-            run["_fixed_catalog"] = state["tool_catalog_v1"]
         legacy = bool(saved_messages) and (
             abi_mismatch
             or "<ailab_memory>" in str(saved_messages[0].get("content", ""))
@@ -719,8 +732,20 @@ class ContextManager:
             or "<ailab_memory>" in str(saved_messages[1].get("content", ""))
             or ("<memory>" in str(saved_messages[1].get("content", "")) and "memory_observed" not in state)
         )
+        catalog_rebuilt = False
+        if abi_mismatch:
+            run.pop("_fixed_catalog", None)
+            state["tool_catalog_v1"] = self.tools_for_run(run)
+            run["_fixed_catalog"] = state["tool_catalog_v1"]
+        elif has_retired_tools(state.get("tool_catalog_v1")):
+            # A run paused across a deploy froze tool names this Agent no longer executes, and the
+            # rules it froze name the same tools ("用 exec_wait 等"). Both are refreshed here, in one
+            # recorded boundary: the tool list changed, so the prefix is gone either way.
+            run.pop("_fixed_catalog", None)
+            state["tool_catalog_v1"] = self.tools_for_run(run)
+            run["_fixed_catalog"] = state["tool_catalog_v1"]
+            catalog_rebuilt = True
         if not saved_messages or legacy:  # A legacy checkpoint is rebuilt once, preserving pending tool state.
-            picked_text = None
             attached = [f for f in run.get("input_files") or [] if f.get("text")]
             if attached:
                 files = [{"filename": f["filename"], "chars": f.get("chars"), "truncated": f.get("truncated")} for f in attached]
@@ -729,20 +754,7 @@ class ContextManager:
                 bounded_memory(self._band(model, run), run.get("memory") or {}) if self.catalog().get(model) else run.get("memory") or {}
             )
             messages: list[dict] = [
-                {
-                    "role": "system",
-                    "content": self.prompt_for(
-                        mode,
-                        skill,
-                        turn.disabled_skills,
-                        list(turn.personal.values()),
-                        picked_text,
-                        deferred=options.get("capability_discovery") == 1,
-                        genui=bool(self.catalog().get(model) and self.catalog().get(model).supports({"genui"})),
-                        genui_tools=bool(self.catalog().get(model) and self.catalog().get(model).supports({"tools"})),
-                        **({"document_tools_version": 2} if options.get("document_tools_version") == 2 else {}),
-                    ),
-                },
+                self._rules_message(run, turn, model, mode, skill, options),
                 {
                     "role": "system",
                     "content": workspace_prompt(
@@ -847,13 +859,20 @@ class ContextManager:
                 if previous:
                     tools_changed = previous.get("tools") != state["tool_catalog_v1"]
                     prompt_changed = previous.get("messages", [{}])[0] != messages[0]
-                    if options.get("document_tools_version") == 2 and tools_changed:
-                        run["context_boundary"] = "rebuilt"
+                    if previous.get("model") not in (None, model):
+                        reason = "model_changed"
+                    elif options.get("document_tools_version") == 2 and tools_changed:
+                        reason = "rebuilt"
                     elif tools_changed and not prompt_changed:
                         # Same rules, same model, different tool list: the catalog is what changed.
-                        run["context_boundary"] = "tool_catalog_changed"
+                        reason = "tool_catalog_changed"
+                    elif prompt_changed:
+                        # The model is compared above; the rules text itself is what moved.
+                        reason = "platform_rules_changed"
                     else:
-                        run.setdefault("context_boundary", "model_changed")
+                        reason = "rebuilt"
+                    # A reason the API already decided (model change, revoked access) wins.
+                    run.setdefault("context_boundary", reason)
                 elif not run.get("context_boundary") and (run.get("parent_run_id") or run.get("history")):
                     run["context_boundary"] = "rebuilt"
                 state["memory_observed"] = boundary_memory
@@ -877,6 +896,10 @@ class ContextManager:
                 )
             else:
                 await self.runtime._checkpoint(run_id, turn)
+        if catalog_rebuilt and not legacy and saved_messages and state["messages"][0].get("role") == "system":
+            state["messages"] = list(state["messages"])
+            state["messages"][0] = self._rules_message(run, turn, model, mode, skill, options)
+            await self.runtime._event(run_id, "agent.context_boundary", {"reason": "tool_catalog_changed"})
         state["context_abi_version"] = CONTEXT_ABI_VERSION
         messages = state["messages"]
         turn.messages = messages

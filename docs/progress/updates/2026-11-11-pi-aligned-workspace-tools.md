@@ -154,6 +154,31 @@
 - 整栈 E2E 重跑：**210 项 / 0 失败 / 15 跳过**，与本轮改动前一致。
 - 真模型多轮（DeepSeek V4.1 Flash / OpenCode Go）：第一轮 21 次请求 `prompt_tokens` 10173 → 14319 单调增；第二轮带 `previous_model_context` 继续，**前缀逐字节保留**、工具列表一致、无多余边界事件，`prompt_tokens` 14699 → 14935 继续增长；两轮都 `succeeded`。网关仍不报 `cached_tokens`，命中率无法在此验收（见上一节）。
 
+## 第四轮审查后的修正（2026-11-12）
+
+上一轮的 `edit` 正则方向对、代价错；另外三处新问题靠对照代码与实测发现。
+
+| 项 | 问题 | 处理 | 用例 |
+|---|---|---|---|
+| `edit` 正则是二次的 | 2 MB 全 `a` + 长 oldText 14.3 s，期间 GIL 不释放（另一线程只被调度 1 次） | 折叠后用 `str.find`（两路算法，线性）；行尾空白去一次并记删除点，`bisect` 映射回原文；ASCII 文件跳过折叠 | `test_a_repeated_two_megabyte_file_is_searched_in_linear_time`、`test_a_csv_of_repeated_lines_edits_in_linear_time`、`test_the_worst_case_does_not_hold_the_gil` |
+| 内存 | 5 MB 折叠副本 | 2 MB 中文模糊编辑峰值 8 MiB | `test_a_two_megabyte_chinese_edit_stays_inside_the_agent_memory_budget` |
+| `_file_error` 吞掉 410/503 | 租约丢失变成"Could not read file"，run 不中断 | 只映射 400/404/413，其余原样抛出 | `test_a_lost_lease_during_read_or_edit_stops_the_run`（去掉修复即失败） |
+| `search_images` 只认 400 | 每个工作区第一次搜图都会失败 | 按 404 判断；fake 与路由共用 `contracts/files.py` 常量 | `test_search_images_puts_pictures_and_credits_into_the_sandbox`、`test_file_errors_carry_the_reason_the_agent_needs` |
+| `save_skill(path=…)` | 文件不存在只有"工具请求失败" | 404 → "文件不存在：…" | `test_a_missing_skill_file_is_named_as_missing` |
+| 提示词版本共用 | 升版本号会让所有 Chat 对话重建 | `PROMPT_VERSIONS` 按模式拆开 | `test_a_chat_conversation_keeps_its_prefix_across_this_deploy`（Chat 系统提示哈希钉在 origin/main） |
+| 旧目录重建但规则没换 | 模型看到"用 exec_wait"却只被提供新工具 | 在 `ContextManager.build` 的同一个边界里重建目录并刷新 `messages[0]` | `test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary` |
+| 边界原因记错 | 只有提示词变也记成 `model_changed` | 依次判断 model / 工具 / 提示词；API 的结论优先 | `test_deploy_prompt_and_tool_changes_preserve_resumed_checkpoint`、`test_below_trigger_rebuild_validates_checkpoint_and_first_wire_request[model_changed]` |
+| `edit` 先传 10 MB 再拒绝 | 白传一份自己说放不下的文件 | Broker `get_file` 支持 `max_bytes`，先 `file_size` 再决定 | `test_file_errors_carry_the_reason_the_agent_needs`（`max_bytes=1024`） |
+| 只读调用串行 | 每次多一次沙箱往返 | 连续 `read`/`ls`/`grep`/`find` 用 `gather` 并发，结果按 ordinal 回填 | `test_read_only_calls_in_one_reply_run_at_the_same_time`、`test_a_read_never_runs_beside_a_write` |
+| `read` 整份持有 | 2000 行也要拿 10 MB | Broker 支持 `offset`/`length`，Agent 取 2 MiB 窗口 | `test_a_large_file_is_read_through_a_byte_window`、`test_an_offset_beyond_the_read_window_points_at_grep_instead_of_lying` |
+
+**验证**（同一工作树，arm64 macOS）：
+
+- `ruff check` / `format --check` 干净（705 文件）。
+- 全量 `pytest tests -q -n auto`：**3192 项 / 16 失败 / 276 跳过**，新增失败 0（`comm` 与未改基线逐条比对）。16 项仍是缺 OCR/渲染依赖的既有失败。
+- 改动模块定向：15 个文件 **471 项全过**。
+- 整栈 E2E：**210 项 / 0 失败 / 15 跳过**。
+
 ## 没覆盖到 / 风险
 
 - 镜像只在本机 arm64 构建并冒烟，没有做 amd64/双架构构建，也没有导入 k3s/gVisor 跑 `tests/t1_image.sh` 的第 3、4 步。

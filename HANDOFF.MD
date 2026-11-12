@@ -1623,3 +1623,15 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 判断"命令结果丢失"只能看 helper 写的 `lost`，不能看 `exit_code == -1`：被 SIGHUP 杀掉的命令 returncode 也是 -1。
 - bash 输出缺口的字节数用 helper 返回的读取起点 `from` 算；用 `len(delta.encode())` 会在非法 UTF-8 上算错甚至为负。
 - 同一条回复里可能有多个 `run_subtasks`：子任务调用编号必须包含父调用（`{invocation}/sub{index}:…`），只用父 step 会让两批同槽位撞上同一个句柄。
+
+## 工作区工具（2026-11-12 第四轮）
+
+- `edit` 的容错匹配是"折叠后 `str.find`"，不是正则。字符类正则的耗时是"文件长度 × oldText 长度"，2 MB 重复内容要 14 s；CPython 的 `re` 全程持有 GIL，`to_thread` 救不了；`str.find` 是两路算法，线性。
+- 折叠用 `str.translate`（一对一，长度不变，下标即原文下标）。纯 ASCII 文件跳过折叠——所有折叠源都是非 ASCII，省 130 ms/2 MB。行尾空白用"删除点 + 累计删除量"两个 `array('l')` 加 `bisect` 映射回原文，不要建逐字符表。
+- `_file_error` 只映射 400/404/413。410（租约丢失）、503、401/403、5xx 必须原样抛给 `_run_tool`，否则 run 会在失效的租约上继续工作。
+- 改文件状态码契约时，搜遍所有调用方**和测试里的 fake**：`search_images` 曾把 400 当"不存在"，路由改成 404 后它在真实环境里第一次调用必失败，而 fake 仍抛 400，测试全绿。状态码常量放 `contracts/files.py`，路由与 fake 共用。
+- 提示词版本按模式拆：共用一个版本号，升它会让不该变的模式（Chat）整段重建、前缀缓存全丢。
+- 恢复时重建冻结目录要连 `messages[0]` 一起刷新，否则规则写着 `exec_wait`、工具里只有 `bash_wait`。重建在 `ContextManager.build` 里做，`messages[1:]` 不动。
+- 边界原因要区分：模型变 / 只有工具变 / 提示词变。只比较工具和提示词就把一切都记成 `model_changed`。
+- 只读工具（`read`/`ls`/`grep`/`find`）的连续前缀可以 `gather` 并发，结果必须按 ordinal 回填，`bash`/`write`/`edit` 仍串行。
+- `read` 用 Broker 的 `offset`/`length` 取窗口（2 MiB + 1 字节区分"正好读完"）；窗口外不要伪造 `total_lines`。

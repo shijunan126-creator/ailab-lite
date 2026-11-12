@@ -775,6 +775,9 @@ async def _register_web_images(ctx: ToolContext, images: list[dict]) -> list[dic
     return response["images"]
 
 
+READ_WINDOW_BYTES = 2 * 1024 * 1024
+
+
 def _workspace_path(path: str, under: str = WORKSPACE) -> str:
     try:
         return normalize_path(path, under)
@@ -786,13 +789,21 @@ def _file_error(path: str, verb: str, exc: ClientError) -> ToolError:
     """Turn the Broker's file error into the next action, never into a blanket ENOENT.
 
     Every failure used to read ``ENOENT``, so a model that wanted to edit a 12 MB file was told the
-    file does not exist and rewrote it with ``write``. The Broker now separates 404 / 413 / 400.
+    file does not exist and rewrote it with ``write``. The Broker now separates 404 / 413 / 400;
+    everything else (410 lost lease, 503 ownership rebuild, 401/403, a 5xx) is not the model's
+    business: it must reach ``_run_tool``, which turns 410 into ``LeaseInterrupted``, so the run
+    stops instead of the model working on a lease that no longer exists.
     """
-    if exc.status == 404:
-        return ToolError(f"Could not {verb} file: {path}. Error code: ENOENT.")
     if exc.status == 413:
+        if verb == "edit":
+            limit = settings.max_edit_bytes / (1024 * 1024)
+            return ToolError(f"文件超过 edit 上限 {limit:g} MB；用 bash 运行脚本修改。")
         limit = settings.max_sandbox_read_bytes // (1024 * 1024)
         return ToolError(f"文件超过 {limit}MB 读取上限，未读取：{path}。用 bash 的 sed -n 或 head -c 分段查看。")
+    if exc.status not in (400, 404):
+        raise exc
+    if exc.status == 404:
+        return ToolError(f"Could not {verb} file: {path}. Error code: ENOENT.")
     try:
         detail = json.loads(exc.body).get("detail")
     except (ValueError, AttributeError, TypeError):
@@ -955,10 +966,15 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         for label, value in (("offset", offset), ("limit", limit)):
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
                 raise ToolError(f"{label} 须是正整数")
+        # A byte window, not the whole file: the Agent is the 256 MiB pod, and 2000 lines of a
+        # 10 MB log are the first few hundred KB of it. One extra byte tells a complete read apart.
         try:
-            data = await broker.get_file(lease_id, path)
+            data = await broker.get_file(lease_id, path, length=READ_WINDOW_BYTES + 1)
         except ClientError as exc:
             raise _file_error(path, "read", exc) from exc
+        complete = len(data) <= READ_WINDOW_BYTES
+        if not complete:
+            data = data[:READ_WINDOW_BYTES]
         if _looks_binary(data):
             # Decoding an image/zip as text would put ~100k characters of noise into the context.
             return {
@@ -966,11 +982,23 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
                 "path": path,
                 "error": f"二进制文件（{len(data)} 字节）；read 只读文本，看图片或版式用 view_workspace_file",
             }
+        text = data.decode("utf-8", "replace")
+        if not complete and (cut := text.rfind("\n")) >= 0:
+            text = text[: cut + 1]  # never show half a line
         try:
-            window = read_lines(data.decode("utf-8", "replace"), path, offset, limit)
+            window = read_lines(text, path, offset, limit)
         except ValueError as exc:
-            raise ToolError(str(exc)) from exc
-        result = {"ok": True, "path": path, "content": window.text, "total_lines": window.total_lines}
+            if complete:
+                raise ToolError(str(exc)) from exc
+            raise ToolError(
+                f"文件超过 {READ_WINDOW_BYTES // (1024 * 1024)}MB，只读取了开头；offset={offset} 不在已读范围内。"
+                "用 grep 定位行号再读附近内容，或用 bash 的 sed -n 读指定行。"
+            ) from exc
+        result = {"ok": True, "path": path, "content": window.text}
+        if complete:
+            result["total_lines"] = window.total_lines
+        else:
+            result["partial"] = True  # the line count and the notices only cover the window
         if window.next_offset is not None:
             result["next_offset"] = window.next_offset
         if window.truncation.truncated:
@@ -982,7 +1010,7 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         pairs = _edit_pairs(args)
         async with with_file_mutation_queue(f"{lease_id}:{path}"):
             try:
-                data = await broker.get_file(lease_id, path)
+                data = await broker.get_file(lease_id, path, max_bytes=settings.max_edit_bytes)
             except ClientError as exc:
                 raise _file_error(path, "edit", exc) from exc
             if len(data) > settings.max_edit_bytes:
@@ -996,7 +1024,9 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             except UnicodeDecodeError as exc:
                 raise ToolError(f"Could not edit file: {path}. It is not a UTF-8 text file.") from exc
             try:
-                # A large file is matched by regex in a worker thread: the loop keeps serving other runs.
+                # Matching is linear, and a worker thread keeps a slow disk or a big encode off the
+                # loop. It is not what makes the search cheap: a search holding the GIL would block
+                # every run in this process, so the algorithm does (see domain/text_edit.py).
                 final = await asyncio.to_thread(edit_text, raw, pairs, path)
             except EditError as exc:
                 raise ToolError(str(exc)) from exc
@@ -1102,7 +1132,7 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         try:
             existing = await broker.get_file(lease_id, credits_path)
         except ClientError as exc:
-            if exc.status != 400:  # a 400 is the broker's "the path is not there"; a lost lease or auth failure must surface
+            if exc.status != 404:  # 404 is "credits.json is not there yet"; a lost lease or auth failure must surface
                 raise
             existing = None
         await broker.put_file(lease_id, credits_path, images.merge_credits(existing, found))
