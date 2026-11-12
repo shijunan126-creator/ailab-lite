@@ -50,10 +50,17 @@ def summary_instruction(text, allowed):
     )
 
 
-def parse_summary(response, allowed):
+def parse_summary(response, allowed, aliases=None):
     if response.tool_calls:
         raise ValueError("summary returned tool calls")
-    summary = validate_summary(response.content, allowed)
+    content = response.content
+    if aliases and len(content.encode("utf-8")) <= 16000:  # an oversized raw summary fails below as everywhere
+        # Inherited fork text names source runs; the summary must name this branch's copies.
+        summary = ContextSummary.model_validate_json(content)
+        for source in summary.sources():
+            source.run_id = aliases.get(source.run_id, source.run_id)
+        content = canonical_summary(summary)
+    summary = validate_summary(content, allowed)
     summary.read_modules = []  # navigation is exclusively derived from program-owned evidence
     return summary
 

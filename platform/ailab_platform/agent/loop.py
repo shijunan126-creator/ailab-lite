@@ -889,7 +889,8 @@ class AgentLoop:
             quiet=quiet,
             tool_choice=tool_choice,
             continues_prefix=continues_prefix,
-            session=run.get("conversation_id") or run_id,
+            # A fork asks under its lineage's session: the provider caches per session.
+            session=run.get("cache_session") or run.get("conversation_id") or run_id,
             reasoning=(run.get("options") or {}).get("reasoning") or "",
         )
         try:
@@ -1202,6 +1203,7 @@ class AgentLoop:
             mode=(turn.run.get("options") or {}).get("mode", "work"),
             document_tools_version=catalog_version(turn.run.get("options")),
         )
+        ctx.run_aliases = self._states[run_id].get("run_aliases") or {}
         budget = self._budgets[run_id]
         budget.update()
         ctx.exec_lifetime_seconds = max(1, settings.run_max_seconds - budget.data["active_seconds"])
@@ -1645,6 +1647,7 @@ class AgentLoop:
                     mode=(turn.run.get("options") or {}).get("mode", "work"),
                     document_tools_version=catalog_version(turn.run.get("options")),
                 )
+                ctx.run_aliases = self._states[run_id].get("run_aliases") or {}
                 budget = self._budgets[run_id]
                 budget.update()
                 ctx.exec_lifetime_seconds = (

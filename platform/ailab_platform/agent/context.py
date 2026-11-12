@@ -138,9 +138,11 @@ class ContextManager:
     def validate_safe_boundary(self, messages, state=None):
         return validate_safe_compaction_point(messages, self.state if state is None else state)
 
-    async def _revoked_recall_results(self, run_id, messages):
+    async def _revoked_recall_results(self, run_id, messages, aliases=None):
         if not hasattr(self.platform, "recall"):
             return []
+        # Inherited fork text names source runs; check the branch copy that the model would now reach.
+        aliases = (self.state.get("run_aliases") or {}) if aliases is None else aliases
         revoked = []
         validated = self.state.setdefault("validated_recall_run_ids", [])
         known = set(validated)
@@ -157,7 +159,7 @@ class ContextManager:
             for record in records:
                 if not isinstance(record, dict) or not record.get("run_id"):
                     continue
-                source_id = record["run_id"]
+                source_id = aliases.get(record["run_id"], record["run_id"])
                 if source_id in known:
                     continue
                 try:
@@ -330,7 +332,7 @@ class ContextManager:
             attempt_digest = self._attempt_digest(band, [*prefix, fixed[-1]], {**self.state, "memory_observed": observed}, context_tools)
             response = await self._summary_response(self.llm or llm_for(model), run_id, run, model, prompt, -1, context_tools)
             try:
-                semantic = parse_summary(response, allowed)
+                semantic = parse_summary(response, allowed, self.state.get("run_aliases"))
             except ValueError as exc:
                 metrics.CONTEXT_COMPACTION_FAILURES.labels("invalid_summary").inc()
                 raise ContextPause("上下文整理未返回有效摘要，旧进度已保留") from exc
@@ -545,7 +547,7 @@ class ContextManager:
         response = await self._summary_response(llm, run_id, run, model, prompt, -3, tools)
         operational["prompt_anchors"] = self.state.get("prompt_anchors", [])
         try:
-            semantic = parse_summary(response, allowed)
+            semantic = parse_summary(response, allowed, self.state.get("run_aliases"))
         except ValueError as exc:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("invalid_summary").inc()
             raise ContextPause("上下文整理未返回有效摘要，请继续或新建对话") from exc
@@ -627,7 +629,7 @@ class ContextManager:
             raise ContextPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
         response = await self._summary_response(llm, run_id, turn.run, model, prompt, -3, tools)
         try:
-            semantic = parse_summary(response, allowed)
+            semantic = parse_summary(response, allowed, self.state.get("run_aliases"))
         except ValueError as exc:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("invalid_summary").inc()
             raise ContextPause("上下文整理未返回有效摘要，请继续或新建对话") from exc
@@ -801,7 +803,7 @@ class ContextManager:
                         state["messages"] = staged.messages
                         state["user_message_index"] = staged.current_indices[0] if staged.current_indices else None
                         state["active_user_indices"] = staged.current_indices
-            elif previous and await self._revoked_recall_results(run_id, previous.get("messages", [])):
+            elif previous and await self._revoked_recall_results(run_id, previous.get("messages", []), previous.get("run_aliases") or {}):
                 state["memory_observed"] = boundary_memory
                 state["memory_snapshot_signature"] = self._memory_signature(boundary_memory)
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
@@ -822,6 +824,9 @@ class ContextManager:
                 )
             elif previous and previous.get("tools") == state["tool_catalog_v1"] and previous.get("messages", [{}])[0] == messages[0]:
                 state["prompt_anchors"] = deepcopy(previous.get("prompt_anchors", []))
+                if previous.get("run_aliases"):
+                    # A forked branch keeps the source's run handles in its inherited text.
+                    state["run_aliases"] = dict(previous["run_aliases"])
                 prior = {"messages": previous["messages"]}
                 await self.runtime._restore_images(run_id, run, prior)
                 state["memory_observed"] = previous.get("memory_observed", boundary_memory)

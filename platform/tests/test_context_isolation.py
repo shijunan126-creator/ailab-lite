@@ -239,17 +239,15 @@ def test_fork_siblings_share_ancestor_bytes_but_advance_epochs_independently(api
     assert sibling["context_epoch"] == 7 and sibling["messages"][:-1] == ancestor
     assert api.get(f"/internal/runs/{first}/checkpoint", headers=SERVICE).json()["state"]["context_epoch"] == 8
     assert api.get(f"/internal/runs/{parent}/checkpoint", headers=SERVICE).json()["state"] == state
-    # The separate copy-conversation operation deliberately rebuilds. Its copied
-    # ancestor is immutable history, not a live reference to either sibling.
+    # A same-mode copy-conversation continues from its own copy of the forked turn's exact
+    # context: the ancestor bytes, never either sibling's later compaction.
     for label in ["copy-A", "copy-B"]:
         fork = api.post(f"/v1/conversations/{conv}/fork", headers=AUTH, json={"run_id": parent, "mode": "work"})
         assert fork.status_code == 201, fork.text
         rid = api.post(f"/v1/conversations/{fork.json()['id']}/messages", headers=AUTH, json={"prompt": label}).json()["id"]
-        bootstrap = api.get(f"/internal/runs/{rid}/model-input", headers=SERVICE).json()
-        assert "previous_model_context" not in bootstrap
-        history = api.get(f"/internal/runs/{rid}/model-context", headers=SERVICE).json()["history"]
-        assert [item["prompt"] for item in history] == ["parent"]
-        assert "A-compacted" not in wire(history).decode()
+        prior = api.get(f"/internal/runs/{rid}/model-input", headers=SERVICE).json()["previous_model_context"]
+        assert wire(prior["messages"]) == wire(ancestor) and prior["context_epoch"] == 7
+        assert "A-compacted" not in wire(prior).decode()
 
 
 def test_rebuild_revalidates_deleted_file_before_reusing_checkpoint(api):  # noqa: F811

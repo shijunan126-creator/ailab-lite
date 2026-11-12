@@ -272,7 +272,10 @@ def test_readiness_returns_unavailable_when_a_dependency_or_consumer_is_down(mon
 
 def test_api_stays_ready_but_degraded_without_redis(monkeypatch):
     from ailab_platform.api import main as api_main
+    from ailab_platform.config import settings
 
+    # Startup creates the storage mount; without the lifespan, a worker's first test would find none and get 503.
+    settings.ensure_dirs()
     monkeypatch.setattr(api_main, "get_queue", lambda: SimpleNamespace(ping=lambda: False))
     response = TestClient(api_main.app).get("/readyz")
     assert response.status_code == 200  # login, conversations and downloads keep working
