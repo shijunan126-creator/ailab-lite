@@ -22,7 +22,7 @@ from ..skill_registry import catalog as skills
 # The version belongs to one mode's rules. Chat's text is unchanged by the workspace-tool
 # deployment, and a shared version number would rewrite messages[0] of every Chat conversation
 # once: the prefix cache of all of them would miss, for a change none of them can see.
-PROMPT_VERSIONS = {"chat": "2026-11-08-genui-core", "work": "2026-11-12-workspace-tools"}
+PROMPT_VERSIONS = {"chat": "2026-11-08-genui-core", "work": "2026-11-13-subtasks-on-request"}
 
 
 def prompt_version(mode: str) -> str:
@@ -44,7 +44,7 @@ BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题�
 - 长构建、下载、批处理直接用 bash，跑不完就用 bash_wait(handle, offset) 接着等；窗口结束不是失败，命令还在跑，
   长时间没有输出不等于卡死。命令期限由平台决定，等待不会延长它；后台进程只在当前租约内存活，恢复后先检查文件再决定。
 - 收到平台每小时自查提示时，检查计划、方向和已有成果；收到收尾提示时保存文件并说明未完成部分。
-- 任务能拆成 2–4 个互不依赖、各需多步的部分（分别调研几个主题、分别处理几个文件）时，用 run_subtasks 并行完成，
+- 默认自己按顺序完成任务，不派子任务。只有用户明确要求并行或拆成子任务时才用 run_subtasks（2–4 个互不依赖的部分），
   给每个子任务写清目标、输入和中间文件路径（如 /workspace/work/<主题>/）；收到报告后由你汇总、生成和交付成品。
 
 # 读写文件
