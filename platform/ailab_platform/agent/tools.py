@@ -766,6 +766,7 @@ class ToolContext:
         self.messages = messages if messages is not None else []
         self.budget = budget or net_tools.Budget()
         self.exec_lifetime_seconds = settings.run_max_seconds
+        self.run_aliases: dict[str, str] = {}  # source run handle -> this fork's copy
 
 
 async def _register_web_images(ctx: ToolContext, images: list[dict]) -> list[dict]:
@@ -918,6 +919,8 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         for key in ("cursor", "run_id", "before", "after"):
             if isinstance(args.get(key), str):
                 payload[key] = args[key][:80]
+        if payload.get("run_id") in ctx.run_aliases:
+            payload["run_id"] = ctx.run_aliases[payload["run_id"]]
         days = args.get("days")
         if isinstance(days, int) and not isinstance(days, bool):
             payload["days"] = max(1, min(days, 3650))

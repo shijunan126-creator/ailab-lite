@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
@@ -27,6 +29,8 @@ from ..schemas import (
 )
 from .routes_runs import start_run
 from .serializers import run_dict, run_dicts
+
+log = logging.getLogger("ailab.api.conversations")
 
 router = APIRouter(prefix="/v1/conversations", tags=["conversations"])
 
@@ -376,6 +380,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
             db.flush()
             mapping = {}
             capture_count = 0
+            capture_map = {}
 
             def copy_object(src, dst):
                 nonlocal total_bytes
@@ -386,7 +391,29 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 copied_keys.append(dst)
                 storage.copy(src, dst)
 
-            from .fork_context import copy_message_sources, copy_summary
+            def put_optional(key, data):
+                """The inherited snapshot is an optimization: without room or storage, the branch rebuilds."""
+                nonlocal total_bytes
+                if (
+                    time.monotonic() >= deadline - 5
+                    or total_bytes + len(data) > 2 * 1024**3
+                    or len(copied_keys) + len(copies.items) >= 10000
+                ):
+                    return False
+                copied_keys.append(key)
+                try:
+                    storage.put_bytes(key, data, "application/gzip")
+                except Exception:
+                    log.warning("fork snapshot copy failed; the branch rebuilds its context", exc_info=True)
+                    try:
+                        storage.delete(key)
+                    except Exception:
+                        pass  # an unreferenced checkpoint object is collected by the orphan sweep
+                    return False
+                total_bytes += len(data)
+                return True
+
+            from .fork_context import copy_message_sources, copy_summary, fork_checkpoint, store_fork_checkpoint
             from .source_lifecycle import invalid_history
 
             invalid_sources = invalid_history(db, [turn.id for turn in turns])
@@ -438,6 +465,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     else {}
                 )
                 capture_count += len(captures)
+                capture_map.update(captures)
                 new.result = remap_captures(new.result, captures)
                 mapping[old.id] = new
                 if old.id in invalid_sources:
@@ -506,6 +534,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 copies.publish(db, new)
             conv.active_run_id = mapping[target.id].id
             copy_summary(db, source, conv, mapping, invalid_sources)
+            workspace_cloned = False
             if body.mode == "work":
                 newest = next((r for r in reversed(turns) if workspace_data(r) or "workspace_saved" in (r.result or {})), None)
                 if newest:
@@ -526,6 +555,24 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                         "workspace_saved_at": datetime.now(UTC).isoformat(),
                         "workspace_bytes": storage.info(dest).size,
                     }
+                    workspace_cloned = True
+            # Same mode: the branch continues from the exact request it forks, not a rebuilt history.
+            inherited = None
+            if time.monotonic() < deadline - 5:
+                try:
+                    inherited = fork_checkpoint(
+                        db,
+                        target,
+                        {old_id: run.id for old_id, run in mapping.items()},
+                        capture_map,
+                        mode=body.mode,
+                        workspace=workspace_cloned,
+                        invalid=invalid_sources,
+                    )
+                except Exception:
+                    log.warning("fork snapshot unreadable; the branch rebuilds its context", exc_info=True)
+            if inherited is not None:
+                store_fork_checkpoint(db, mapping[target.id], inherited, put_optional)
             db.commit()
             committed = True
             return conversation_out(conv, target.status)

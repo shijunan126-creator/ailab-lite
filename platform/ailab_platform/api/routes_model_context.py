@@ -29,6 +29,10 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     out = run_dict(db, run, detail=True)
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
     out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
+    if conversation is not None:
+        from .fork_context import cache_session
+
+        out["cache_session"] = cache_session(db, conversation)
     from ..context_settings import context_settings
 
     out["context_settings"] = context_settings(db)
@@ -98,6 +102,8 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
                                 out["previous_model_context"]["memory_snapshot_signature"] = state["memory_snapshot_signature"]
                             if state.get("context_sources"):
                                 out["previous_model_context"]["context_sources"] = state["context_sources"]
+                            if state.get("run_aliases"):
+                                out["previous_model_context"]["run_aliases"] = state["run_aliases"]
                             if "memory_observed" in state:
                                 out["previous_model_context"]["memory_observed"] = state["memory_observed"]
                 else:

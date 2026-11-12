@@ -2991,3 +2991,69 @@ def test_the_reduced_catalog_still_fits_the_smallest_model_budget():
     names = {tool["function"]["name"] for tool in reduced}
     assert {"read", "write", "edit", "bash"} <= names
     assert token_estimator.raw(reduced) <= budget
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_same_mode_fork_extends_the_forked_turns_last_request(mode):
+    """Real API + Agent: the branch's first request is the source's last request plus the new turn."""
+    import httpx
+    from fastapi.testclient import TestClient
+
+    from ailab_platform.api.main import app
+    from ailab_platform.clients import AsyncPlatformClient
+    from ailab_platform.llm import LLMClient, ToolCall, model_call
+    from tests.run_claims import attempt_headers
+    from tests.test_conversations import AUTH
+
+    class Recorder(LLMClient):
+        def __init__(self, script):
+            self.script, self.requests = list(script), []
+
+        async def chat_stream(self, messages, tools, model, user_id=None, on_text=None, on_reasoning=None, **kwargs):
+            return await self.chat(messages, tools, model, user_id)
+
+        async def chat(self, messages, tools, model, user_id=None, **kwargs):
+            if "会话标题" in json.dumps([messages[0], messages[-1]], ensure_ascii=False):
+                return LLMResponse(content="标题", usage={"prompt_tokens": 1, "completion_tokens": 1})
+            session = model_call.get().session
+            self.requests.append({"messages": copy.deepcopy(messages), "tools": copy.deepcopy(tools), "session": session})
+            return self.script.pop(0)
+
+    def run(c, run_id, model):
+        async def go():
+            platform = AsyncPlatformClient("http://testserver", token="test-service")
+            await platform._http.aclose()
+            platform._http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app))
+            try:
+                owner = attempt_headers(c, run_id)
+                await AgentLoop(platform=platform, broker=FakeBroker(), llm=model).process(run_id, attempt_id=owner["X-Run-Attempt"])
+            finally:
+                await platform.aclose()
+
+        asyncio.run(go())
+        assert c.get(f"/v1/runs/{run_id}", headers=AUTH).json()["status"] == "succeeded"
+        return [e for e in c.get(f"/v1/runs/{run_id}/events/history", headers=AUTH).json() if e["type"] == "agent.context_boundary"]
+
+    usage = {"prompt_tokens": 10, "completion_tokens": 1}
+    plan = ToolCall("plan", "update_plan", {"steps": ["finish"]})
+    first = [LLMResponse(tool_calls=[plan], usage=usage)] if mode == "work" else []
+    source_model = Recorder([*first, LLMResponse(content="first answer", usage=usage)])
+    branch_model = Recorder([LLMResponse(content="second answer", usage=usage)])
+    with TestClient(app) as c:
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()["id"]
+        source = c.post(f"/v1/conversations/{conv}/messages", headers=AUTH, json={"prompt": "first", "mode": mode}).json()["id"]
+        run(c, source, source_model)
+        branch = c.post(f"/v1/conversations/{conv}/fork", headers=AUTH, json={"run_id": source, "mode": mode})
+        assert branch.status_code == 201, branch.text
+        second = c.post(f"/v1/conversations/{branch.json()['id']}/messages", headers=AUTH, json={"prompt": "second", "mode": mode})
+        boundaries = run(c, second.json()["id"], branch_model)
+    last, forked = source_model.requests[-1], branch_model.requests[0]
+    assert forked["tools"] == last["tools"]
+    assert forked["session"] == last["session"] == conv  # the provider caches per session
+    assert forked["messages"][: len(last["messages"])] == last["messages"]
+    assert forked["messages"][len(last["messages"])]["content"] == "first answer"
+    assert forked["messages"][-1] == {"role": "user", "content": "second"}
+    assert len(forked["messages"]) == len(last["messages"]) + 2
+    if mode == "work":  # tool traffic survives the fork instead of being flattened into history text
+        assert any(message.get("role") == "tool" for message in forked["messages"])
+    assert not boundaries

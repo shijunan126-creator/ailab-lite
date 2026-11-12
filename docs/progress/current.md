@@ -1,3 +1,12 @@
+# 同模式分叉沿用 checkpoint（2026-11-12）
+
+- 用户要求：按讨论的设计实施——同模式分叉复用被分叉轮次的 checkpoint，测试充分，并确保分叉/checkpoint 的各种删除路径没有残留。分支 `feat/fork-reuse-checkpoint`，base `main@cf758dd1`；未授权合并与部署。
+- 已完成：分叉复制完成快照给分支叶子（结构化引用迁移、正文 run ID 记别名）、分支沿用血缘根会话头；复制失败退回重建。决定见 [ADR 0041](../architecture/adr/0041-fork-reuses-checkpoint.md)，验证与真模型数字见[记录](updates/2026-11-12-fork-checkpoint.md)。
+- 真模型：分支第一次调用命中 Work 98.4%、Chat 97.9%（改前均为 0）。
+- 下一步：等 PR 的 CI；合并、部署需用户当次明确要求。
+
+---
+
 # 小文件按行窗口免 exec（2026-11-12）
 
 - 用户要求：OpenSandbox 上 `read` 从第 N 行起读时，小文件不再起 exec，改为文件 API 流过来在 Broker 里跳行（"本地切"）。分支 `perf/osb-offset-read`，base `main@d6651ce2`；未授权部署。
