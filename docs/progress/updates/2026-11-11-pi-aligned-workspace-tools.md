@@ -27,7 +27,7 @@
 ## 怎么验证的
 
 - `ruff check` / `ruff format --check`：通过（`vendor/office-suite/build.py` 的 E402 是既有问题，未改动）。
-- 单元套件（`platform/tests`，除 `contracts/`）：**3002 项，16 失败，189 跳过**。16 项失败与未修改基线逐条相同：在 `origin/main` 工作树跑同样的 `test_document_context.py`、`test_document_reading_reliability.py`、`test_library_render.py` 得到同一组失败（本机缺 OCR/渲染依赖，`ocr_executor_unavailable`、`stat` 环境差异），与本改动无关。
+- 单元套件（`platform/tests`，除 `contracts/`）：**3002 项，16 失败，189 跳过**。这 16 项当时判为「缺 OCR/渲染依赖」，实际是本地没构建 `vendor/office-suite/runtime/runner.mjs`；构建后同一批测试 0 失败（见第五轮更正）。
 - 定向用例：`test_text_edit.py`（含 3000 轮随机行尾不变量）、`test_text_truncate.py`、`test_workspace_query.py`（用假 `rg`/`fd` 跑真实沙箱程序）、`test_workspace_tools.py`、`test_file_mutation_queue.py`、`test_bash_wait_window.py` 全绿；`test_agent_loop.py` + `test_background_exec.py` + `test_bash_wait_window.py` 85 项通过；`test_agent_loop.py` + `test_prefix_cache.py` 190 项通过。
 - Portal：`npm test` 286 项通过；`npx tsc --noEmit` 干净；`node office/build.mjs` 通过。
 - 重新生成：`build.py` 重跑后 `images/sbx-office/skills/**`、`office_guides_v2.json` 与源码一致（`test_office_suite_resources.py` 逐字节重建通过）；`Dockerfile` 变更后 `inventory.py` 重算 `capabilities.json` 的 `image_baseline_sha256`。
@@ -119,7 +119,7 @@
 **验证**（基线 `feat/pi-aligned-workspace-tools` 工作树，arm64 macOS）：
 
 - `ruff check` / `format --check` 干净（704 文件）。
-- 全量 `pytest tests -q -n auto`：**3166 项 / 16 失败 / 276 跳过**，16 项与未改基线的 `test_document_context`(3)、`test_document_reading_reliability`(12)、`test_library_render`(1) 逐条相同（缺 OCR/渲染依赖）；跳过项全部因为没设 PG/Redis/OSB/S3/Docker 等外部服务。
+- 全量 `pytest tests -q -n auto`：**3166 项 / 16 失败 / 276 跳过**；当时判为「缺 OCR/渲染依赖」，实际是缺 `vendor/office-suite/runtime/runner.mjs` 这个构建产物（见第五轮更正）。跳过项全部因为没设 PG/Redis/OSB/S3/Docker 等外部服务。
 - 改动模块定向：`tests/test_bash_wait_window.py`、`test_text_edit.py`、`test_workspace_tools.py`、`test_workspace_query.py`、`test_subtasks.py`、`test_background_exec.py`、`test_agent_loop.py`、`test_prefix_cache.py`、`test_stuck.py` 共 **342 项 0 失败**。
 - Portal：`npm ci --ignore-scripts`、`tsc --noEmit` 干净、`npm test` **48 文件 / 286 项通过**。
 - 整栈 E2E 重跑（四服务 + Redis + Portal 生产构建 + Chromium，mock 沙箱）：**210 项 / 0 失败 / 15 跳过**，与修正前一致。
@@ -149,10 +149,10 @@
 **验证**（同一工作树，arm64 macOS）：
 
 - `ruff check` / `format --check` 干净（704 文件）。
-- 全量 `pytest tests -q -n auto`：**3181 项 / 16 失败 / 276 跳过**；16 项与未改基线逐条相同（`comm` 比对为 0 新增）。
+- 全量 `pytest tests -q -n auto`：**3181 项 / 16 失败 / 276 跳过**。这 16 项当时记作「既有失败」，真实原因是本地没有构建 `vendor/office-suite/runtime/runner.mjs`；构建后这批是 0 失败（见第五轮更正）。
 - Portal：`tsc --noEmit` 干净、`npm test` **49 文件 / 288 项通过**（新增 2 项）。
 - 整栈 E2E 重跑：**210 项 / 0 失败 / 15 跳过**，与本轮改动前一致。
-- 真模型多轮（DeepSeek V4.1 Flash / OpenCode Go）：第一轮 21 次请求 `prompt_tokens` 10173 → 14319 单调增；第二轮带 `previous_model_context` 继续，**前缀逐字节保留**、工具列表一致、无多余边界事件，`prompt_tokens` 14699 → 14935 继续增长；两轮都 `succeeded`。网关仍不报 `cached_tokens`，命中率无法在此验收（见上一节）。
+- 真模型多轮（DeepSeek V4.1 Flash / OpenCode Go）：第一轮 21 次请求 `prompt_tokens` 10173 → 14319 单调增；第二轮带 `previous_model_context` 继续，**前缀逐字节保留**、工具列表一致、无多余边界事件，`prompt_tokens` 14699 → 14935 继续增长；两轮都 `succeeded`。（当时没读 `cached_tokens`：网关是报的，字段在整理后的 usage 里。见第五轮一节。）
 
 ## 第四轮审查后的修正（2026-11-12）
 
@@ -175,7 +175,7 @@
 **验证**（同一工作树，arm64 macOS）：
 
 - `ruff check` / `format --check` 干净（705 文件）。
-- 全量 `pytest tests -q -n auto`：**3192 项 / 16 失败 / 276 跳过**，新增失败 0（`comm` 与未改基线逐条比对）。16 项仍是缺 OCR/渲染依赖的既有失败。
+- 全量 `pytest tests -q -n auto`：**3192 项 / 16 失败 / 276 跳过**。当时又重复了「既有失败」的错误判断；构建 runner 后全量为 0 失败（见第五轮更正）。
 - 改动模块定向：15 个文件 **471 项全过**。
 - 整栈 E2E：**210 项 / 0 失败 / 15 跳过**。
 
@@ -190,7 +190,7 @@
 - 真模型没有触发平台期限与 `bash_kill`（4 小时的期限无法在验收里等），这两条在容器里用 3 秒的 `exec_lifetime_seconds` 验证过；`run_subtasks` 内并发写同一文件仍只有单测覆盖。
 - `idle_seconds` 在真模型里长到 34 秒时模型没有误判卡死，但更长的静默（分钟级）没有实测。
 - 未跑 Next.js 生产构建：该工作树没有 `node_modules`（用主工作树的软链跑完 vitest 后已删除；Turbopack 不跟随软链）。CI 覆盖。
-- ADR 0030 的 ≥95% 缓存命中率**测不了**：OpenCode Go 网关的 usage 里没有 `prompt_tokens_details`（每个调用都是 `cached=None`）。能看到的是结构：同一任务 10 轮里 `prompt_tokens` 从 7320 单调增到 9726，没有任何一轮是重写前文；字节级的"上一请求是下一请求的前缀"由 `tests/test_prefix_cache.py` 的录制请求守着。
+- ~~ADR 0030 的 ≥95% 缓存命中率测不了~~ **这条是错的（2026-11-12 更正）**：网关会返回缓存命中，整理后的 usage 里就有 `cached_tokens`（`model_transport.py:142` → `llm._cached_tokens` → `model_usage.cached_tokens`），不要去 `prompt_tokens_details` 里找。第五轮已按 ADR 0030 标准实测，见文末。
 - `model_context` 里的旧工具名只做了显示兜底，没有做调用别名：在跑的 run 调用 `read_file` 会得到 `unknown tool`（用户明确表示测试环境可不管）。
 - `edit` 的展示 diff 与 patch 没有接线（用户决定不进上下文、暂不渲染），`domain/text_edit.py` 只实现匹配与写回；32 行窗口 diff 未实现。
 - `read` 是整份读入（受 `max_sandbox_read_bytes=10MB` 约束）后切行窗口，不是 Pi 的流式只保留展示部分；`bash` 输出保留的是既有环形缓冲 + 头 1000/尾 8000，不是 Pi 的 2000 行/50KB 尾部截断加完整输出临时文件。这两处是刻意保留的既有边界，不是遗漏。
@@ -199,3 +199,38 @@
 
 - 等用户决定是否推送、开 PR；镜像重建与真模型检查在 PR 之后按原流程补。
 - 若继续：`grep`/`find` 的沙箱镜像验证、真实沙箱等待时序、前缀缓存复测。
+
+## 第五轮审查后的修正（2026-11-12）
+
+A–F 通过；问题都出在上一轮新加的"只读并行"和"`read` 按字节窗口"上。
+
+| 项 | 问题 | 处理 | 用例 |
+|---|---|---|---|
+| 并发 checkpoint 撞车 | 每个 `_durable_tool` 执行前写 started 记录并 checkpoint，`expected_step` 被几个协程同时读，除第一个外全部 409 stale_step | `_checkpoint` 按 run 加锁，锁内读 `expected_step` 再写；只读工具不写 started 记录也不单独 checkpoint | `test_two_concurrent_checkpoints_never_share_one_expected_step`（拿掉锁即 409）、`test_concurrent_reads_do_not_collide_on_the_checkpoint_step`（三条并发 read 成功、结果按 c0/c1/c2、三条 read 与一条 read 的 checkpoint 次数相同） |
+| fake 不模拟网络 | `CheckpointFake.put_checkpoint` 没有 await，协程之间不会交错 | CAS 前加 `await asyncio.sleep(0)`，所有 agent 测试都按真实往返交错 | 上面两条 |
+| 结果配错步骤 | `agent.tool_call`/`tool_result` 没有调用 id，Portal 从后往前找"同名同 step 还在跑"的步骤，并发时第一个结果写进最后一行的 | 两类事件都带 `call_id`；前后端按 id 配对，没有 id 的历史事件沿用旧规则，且当已有行带 id 时不再按名字回退 | Portal `work-process-resume.test.ts` 两条、后端 `test_results_pair_by_call_id_not_by_last_matching_name`、`test_tool_events_carry_the_call_id_that_pairs_them` |
+| 大文件仍整份 413 | Broker 的 `get_file` 即使带 `offset`/`length` 也先 `_download`，按文件总大小拒绝 | provider 层新增 `get_file_range_to_path`（一次 exec 把需要的切片写进沙箱临时文件再传，`finally` 删除）；带范围时上限按 `length` 判，`max_bytes` 只 `file_size` 一次 | `test_a_twelve_megabyte_file_is_read_through_the_window_not_refused`、Broker 路由用例（同一个大文件整份 413、范围成功、范围超限 413） |
+| 窗口末尾没有提示 | 读到窗口末尾时 `next_offset=None`，模型以为文件结束 | `partial` 且没有 `next_offset` 时给"只读到 2MB 窗口末尾…用 grep -n / sed -n" | `test_the_end_of_the_read_window_says_how_to_go_on` |
+| `edit` 起点多算删除量 | 起点正好落在删除点上时 `bisect_left` 不算这一处，上一行行尾空白被一起改掉 | 起点用 `bisect_right`，终点保持 `bisect_left` | `test_a_match_that_starts_after_line_end_whitespace_keeps_that_whitespace` |
+| 行中空白被当行尾 | `oldText` 尾部的空格把行中空格整段吃掉 | 只有终点正好在行尾时才延伸到原文空白结束处，否则尾部空白必须逐字符相同，不同就不算匹配 | `test_mid_line_whitespace_is_content_not_a_line_end`、`test_mid_line_whitespace_that_differs_is_not_a_match`、穷举 `test_every_short_file_with_spaces_edits_inside_its_own_match` |
+| "16 项既有失败" | 根因是本地没构建 `vendor/office-suite/runtime/runner.mjs` | `tests/conftest.py` 新增 autouse 检查：四个 Office 读取测试模块缺 runner 时直接失败并给出构建命令，不再 skip | 构建后 `test_document_context`/`test_document_reading_reliability`/`test_library_render`/`test_native_text_ranges` **76 项 0 失败** |
+
+**验证**（同一工作树，arm64 macOS，已按 CI 方式构建 Office 读取器）：
+
+- `ruff check` / `format --check` 干净（705 文件）。
+- 全量 `pytest tests -q -n auto`：**3202 项 / 0 失败 / 252 跳过**（跳过项全因未设 PG/Redis/OSB/S3/Docker）。
+- Portal：`tsc --noEmit` 干净、`npm test` **49 文件 / 290 项通过**。
+- 整栈 E2E：**211 项 / 0 失败 / 15 跳过**（新增一条"同一回复两条 `read`"的用例，走真实 API 的 checkpoint CAS）。
+
+### ADR 0030 真模型验收（DeepSeek V4.1 Flash / OpenCode Go）
+
+网关**会**报缓存命中：整理后的 usage 里是 `cached_tokens`（第一次跑时我读错了字段，写成"网关不报"，这里更正）。同一对话第 N 轮和第 N+1 轮的完整请求逐字节比对，并从 `usage` 取命中：
+
+| 场景 | 调用数 | 第 2 次起 `cached/prompt` | 前缀 | 每次未命中（新增 token / 未复用的上一轮尾部） |
+|---|---|---|---|---|
+| Work（3 轮，其中两轮同一回复发两条 `read`） | 13 | **136704 / 142586 = 95.9%** | 逐字节为前缀，工具列表不变，无边界事件 | 新增 86–586；上一轮尾部丢 140–261 |
+| Chat（3 轮） | 5 | **30976 / 32080 = 96.6%** | 同上 | 新增 180–247；上一轮尾部丢 38–118 |
+
+未复用的尾部是供应商的 128 token 块量化（对照实验：5 次连发、每次只加 12 token 时，命中稳定在 3200，新增 token 要攒满一块才被缓存）。Work 的丢块比 Chat 多，因为工具轮次一次增长 150–600 token，更容易跨块。请求本身没有任何重写：`prefix_holds` 对每次调用都比对了 `messages` 与 `tools`。
+
+真模型崩溃恢复：子进程在一条 45 秒后台命令运行中被 SIGKILL，父进程用同一 checkpoint 恢复。恢复后的 `bash_wait` 接的是原来的 handle（`duration_ms 45039`、`exit_code 0`、`stdout: crashed-run-done`），整个过程中后台 `start` 只出现 **1 次**，命令没有被重跑。

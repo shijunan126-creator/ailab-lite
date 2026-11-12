@@ -13,7 +13,9 @@
 - 验证：ruff 干净；全量 3181 项 / 16 失败（与未改基线一致）/ 276 跳过；Portal 288 项 + `tsc` 干净；整栈 E2E 210 项 0 失败；真模型两轮 Work，第二轮前缀逐字节保留、`prompt_tokens` 单调增。
 - 第四轮审查（2026-11-12）的 4 条必须修已落地：`edit` 从正则改成线性折叠匹配（2 MB 最坏用例 14.3 s → 6 ms，峰值 8 MiB，GIL 不再被整段占住）、`_file_error` 只映射 400/404/413（410 重新触发租约中断）、`search_images`/`save_skill` 按 404 判断、提示词版本按模式拆开（Chat 不重建）。另外：旧目录重建时同一边界刷新 `messages[0]`、边界原因区分 `model_changed`/`tool_catalog_changed`/`platform_rules_changed`、`edit` 用 `max_bytes` 提前 413；两个后续项也做了——同一回复里连续 `read`/`ls`/`grep`/`find` 并发执行（结果按 ordinal 回填），`read` 走 Broker 的 `offset`/`length` 只取 2 MiB 窗口。
 - 验证：ruff 干净；全量 3192 项 / 16 失败（与未改基线一致）/ 276 跳过；改动模块 471 项全过；整栈 E2E 210 项 0 失败。
-- 下一步：等用户决定是否推送/开 PR；镜像重建在前缀缓存真模型复测之后。
+- 第五轮审查（2026-11-12）的 4 条必须修已落地：并发 `_checkpoint` 按 run 加锁（只读工具不再写 started 记录、也不单独 checkpoint）、`agent.tool_call`/`tool_result` 带 `call_id` 且前后端按 id 配对、provider 层实现真正的字节范围读取（大文件不再整份 413，Broker 只传窗口）、`read` 到窗口末尾给续读提示、`edit` 起点/行中空白的两个边界修正。
+- 验收：全量 **3202 项 / 0 失败 / 252 跳过**（先按 CI 方式构建 `vendor/office-suite/runtime/runner.mjs`；此前记的"16 项既有失败"是缺这个构建产物，已在 dated update 更正）；Portal 290 项 + `tsc` 干净；整栈 E2E 211 项 0 失败。真模型 ADR 0030：Work 13 次调用 `cached/prompt` **95.9%**、Chat 5 次 **96.6%**，每次调用都是上一请求的逐字节前缀；真模型崩溃恢复里后台命令只启动一次，恢复用原 handle 等到了结果。
+- 下一步：等用户决定是否推送/开 PR；镜像重建在 PR 之后。
 
 ---
 

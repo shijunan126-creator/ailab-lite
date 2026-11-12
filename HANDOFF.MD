@@ -1635,3 +1635,13 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 边界原因要区分：模型变 / 只有工具变 / 提示词变。只比较工具和提示词就把一切都记成 `model_changed`。
 - 只读工具（`read`/`ls`/`grep`/`find`）的连续前缀可以 `gather` 并发，结果必须按 ordinal 回填，`bash`/`write`/`edit` 仍串行。
 - `read` 用 Broker 的 `offset`/`length` 取窗口（2 MiB + 1 字节区分"正好读完"）；窗口外不要伪造 `total_lines`。
+
+## 工作区工具（2026-11-12 第五轮）
+
+- 并发写 checkpoint 必须串行：`expected_step` 的 CAS 只能有一个在途。`_checkpoint` 用按 run 的 `asyncio.Lock` 把"读 expected_step + 写"包住；heartbeat、预算暂停、并发工具都会走到这里。只读工具（read/ls/grep/find）不写 started 记录、也不单独 checkpoint，恢复时重跑。
+- 测试 fake 必须会让出执行权：`CheckpointFake.put_checkpoint` 在 CAS 前 `await asyncio.sleep(0)`。没有这一句，协程之间不会交错，并发缺陷在单测里完全看不见（上一轮的 409 stale_step 就是这样漏掉的）。
+- 事件配对要靠 id：`agent.tool_call`/`agent.tool_result` 带 `call_id`，Portal 与 `process_view` 按 id 找步骤；没有 id 的历史事件才按"最后一个同名同 step"回退，且已有行带 id 时不要回退（那说明原步骤已经不在了）。
+- 大文件读：provider 的 `get_file_range_to_path` 用一次 exec 把切片写进沙箱 `/tmp` 再传，`finally` 删除；带范围时上限按 `length` 判，不按文件大小。`read` 到窗口末尾 `next_offset` 是 None，必须显式告诉模型"后面还有内容"。
+- `edit` 的行尾空白映射：起点落在删除点上要算这处删除（`bisect_right`），终点不算（`bisect_left`）；行中空白是内容，不是行尾空白，`oldText` 的尾部空格必须逐字符相同，不同就不算匹配。
+- 本地全量基线是 **0 失败**：先 `cd vendor/office-suite/runtime && npm ci --ignore-scripts && npm run build`。缺 `runner.mjs` 时 `tests/conftest.py` 的 autouse 检查会直接失败并提示这条命令——不要用 skip 盖住，也不要把这批失败记成"既有失败"。
+- OpenCode Go 网关**会**报缓存命中：整理后的 usage 里是 `cached_tokens`（`model_transport.py` → `llm._cached_tokens` → `model_usage.cached_tokens`），不要在事件或 `prompt_tokens_details` 里找。会话头取 `conversation_id or run_id`：只给 run 就没有跨轮缓存（实测每轮都整份未命中）。

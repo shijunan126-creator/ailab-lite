@@ -279,3 +279,30 @@ Broker 过去把 `get_file` 的所有 `SandboxError` 都映射成 400，Agent �
 
 - **同一回复里的只读调用并行**：`read`/`ls`/`grep`/`find` 的连续前缀用 `asyncio.gather` 并发执行，结果按 ordinal 顺序回填（前缀稳定），`bash`/`write`/`edit` 仍严格串行，每次调用照旧单独写 `tool_log` 并逐个 checkpoint。用例断言三条 `read` 的并发峰值是 3、结果按 `c0/c1/c2` 追加；`read` 与 `write` 相邻时峰值是 1。
 - **`read` 走字节范围**：Broker 的 `get_file` 接受 `offset`/`length`，Agent 只取开头 2 MiB（多取 1 字节用来区分"正好读完"），按行窗口返回；文件更大时结果带 `partial: true`，不再返回会误导的 `total_lines`，`offset` 超出已读范围就明确告诉模型用 `grep` 定位或 `sed -n`。Agent 不再为 2000 行内容持有 10 MB。
+
+## 第五轮审查后的修正（2026-11-12）
+
+上一轮的"只读并行"和"`read` 字节窗口"各留下一个真问题。
+
+### 一个 run 同时只有一个 checkpoint 在途
+
+`_checkpoint` 用 `expected_step` 做 CAS。三个 `read` 用 `gather` 并发后，几个协程读到同一个 `expected_step`，第一个写成功、其余全部 409 stale_step，run 直接失败。现在按 run 加一把 `asyncio.Lock`，锁内读 `expected_step` 再写。同时只读工具不再写 started 记录、也不单独 checkpoint：它们没有副作用，恢复时重跑即可，每条还省掉一次 gzip + 对象存储 + DB 写入。
+
+测试的 fake 以前在 `put_checkpoint` 里没有任何 await，协程之间根本不会交错，所以并发缺陷在单测里看不见。`CheckpointFake` 现在在 CAS 前 `await asyncio.sleep(0)`，所有 agent 测试都按真实往返的调度跑。
+
+### 结果靠调用 id 配对
+
+`agent.tool_call` / `agent.tool_result` 现在都带 `call_id`。Portal 和 `process_view` 有 id 时按 id 找步骤，没有 id 的历史事件沿用"最后一个同名同 step 还在跑的步骤"。已经带 id 的行不会被另一个 id 的结果按名字顶替——那说明原步骤已经不在了，宁可不动。
+
+### 真正的字节范围读取
+
+provider 基类新增 `get_file_range_to_path`：一次 exec 把 `[offset, offset+length)` 写进沙箱里的临时文件（`head -c` + `tail -c +`，路径 `shlex.quote`），再用既有的受限下载取回，`finally` 删除临时文件。Broker 带范围时按 `length` 判断上限，不再按文件总大小：50 MB 的日志可以只读开头 2 MiB，Broker 与 Agent 的内存和磁盘都只付出窗口那么大。`max_bytes` 那条路径只 `file_size` 一次。
+
+`read` 到达窗口末尾时 `next_offset` 是 None，看起来像"文件结束"，所以此时额外给一句"只读到 2MB 窗口末尾，文件后面还有内容；用 grep -n 或 sed -n 读指定行"。
+
+### `edit` 匹配边界的两个字符
+
+1. 起点正好落在"被删掉的行尾空白"上时，起点必须把这处删除量算进去（`bisect_right`），终点不算（`bisect_left`）——否则上一行的行尾空白被一起改掉：`"bar   \nfoo  \nbaz\n"` 里改 `"\nfoo\nbaz"` 会把 `bar` 后面的空格删掉。
+2. 行中间的空白是内容，不是行尾空白：只有去尾后的匹配终点正好落在行尾时，才把终点延伸到原文的行尾空白结束处；否则 `oldText` 尾部的空白必须在折叠后的原文里逐字符相同，不同就不算匹配。
+
+两条都进了新的穷举用例（`{a, 空格, 换行}` 长度 ≤ 5，加一个全角引号字母表），断言"匹配区间必须以 `oldText` 的首字符开始、行中尾部空白长度必须相等"。
