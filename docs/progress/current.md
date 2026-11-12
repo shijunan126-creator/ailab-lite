@@ -2,7 +2,9 @@
 
 - 用户要求：OpenSandbox 上 `read` 从第 N 行起读时，小文件不再起 exec，改为文件 API 流过来在 Broker 里跳行（"本地切"）。分支 `perf/osb-offset-read`，base `main@d6651ce2`；未授权部署。
 - 已完成：文件不大于窗口（2 MiB + 1）时零 exec，真实 OpenSandbox 上 1024 ms → 5 ms，输出与 `tail` 逐字节一致；更大的文件仍一次 exec。详见[记录](updates/2026-11-11-pi-aligned-workspace-tools.md) 末节。
-- 下一步：等 PR 的 CI；合并、部署由用户决定（本机整栈用 Docker provider，部署不改变本机行为）。
+- CI：首轮 SQLite 挂 1 项既有的竞态用例（见记录），修后 `320ac94e` 11 项全绿。
+- 已合并：用户要求合并，[PR #189](https://github.com/shijunan126-creator/ailab-lite/pull/189) squash 为 `c783fd80`，提交树与 `320ac94e` 一致；分支已删除。
+- 下一步：无待办；OpenSandbox 在 Kubernetes/gVisor 下的耗时仍未测。
 
 ---
 
