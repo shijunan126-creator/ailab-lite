@@ -19,7 +19,7 @@ from ailab_platform.agent.tools import ToolContext, execute_tool
 from ailab_platform.contracts.context_summary import ContextSummary, canonical_summary
 from ailab_platform.db import SessionLocal
 from ailab_platform.llm import LLMResponse
-from ailab_platform.models import Conversation, LifecycleDeletion, Run, RunCheckpoint
+from ailab_platform.models import Conversation, FileSourceInvalidation, LifecycleDeletion, Run, RunCheckpoint
 from ailab_platform.storage import get_storage
 from tests.test_ledger_protocol import AUTH, SERVICE, api  # noqa: F401
 from tests.test_runtime_protocol import save
@@ -408,7 +408,8 @@ def test_branch_snapshot_ages_after_its_child_and_survives_orphan_sweeps(api):  
 
 
 def test_invalidated_file_source_removes_the_branch_snapshot(api):  # noqa: F811
-    from ailab_platform.api.source_lifecycle import drain_invalidations
+    from ailab_platform.api.source_lifecycle import _drain_invalidation
+    from ailab_platform.locks import user_critical_section
     from tests.test_document_context import upload
 
     fid = upload(api, "fork-source.txt", b"PRIVATE", "text/plain")
@@ -424,9 +425,16 @@ def test_invalidated_file_source_removes_the_branch_snapshot(api):  # noqa: F811
     assert len(checkpoint_keys(leaf)) == 1
     assert api.delete(f"/v1/files/{fid}", headers=AUTH).status_code == 204
     with SessionLocal() as db:
-        for _ in range(50):
-            if not drain_invalidations(db):
+        # A stage can finish with nothing to report (return 0) and still leave later stages; drain by state.
+        active = ("pending", "events", "dreams", "deliveries")
+        for _ in range(200):
+            item = select(FileSourceInvalidation.file_id).where(FileSourceInvalidation.file_id == fid)
+            if db.scalar(item.where(FileSourceInvalidation.state.in_(active))) is None:
                 break
+            owner = db.scalar(select(FileSourceInvalidation.user_id).where(FileSourceInvalidation.file_id == fid))
+            with user_critical_section(db, owner):  # this file only: other tests may leave older work queued
+                _drain_invalidation(db, fid, 100)
+        assert db.scalar(item) is not None
         settle(db)
         assert db.scalar(select(RunCheckpoint).where(RunCheckpoint.run_id == leaf)) is None
     assert checkpoint_keys(leaf) == [] and checkpoint_keys(source) == []
