@@ -49,7 +49,8 @@ class Client:
         self.model: str | None = None
 
     def close(self) -> None:
-        # Leave nothing behind in the account the scenarios ran in.
+        # Leave nothing behind in the account the scenarios ran in: deliverables outlive their conversation.
+        self.files.extend(a["file_id"] for turn in self.turns for a in turn.run.get("artifacts") or [])
         for cid in self.conversations:
             self.http.delete(f"/v1/conversations/{cid}")
         for fid in self.files:
@@ -84,7 +85,14 @@ class Client:
 
     def send(self, cid: str, prompt: str, *, mode: str, **body) -> str:
         payload = {"prompt": prompt, "mode": mode, "model": self.model, "client_send_id": uuid.uuid4().hex, **body}
-        return self._ok(self.http.post(f"/v1/conversations/{cid}/messages", json=payload))["id"]
+        end = time.monotonic() + 180
+        while True:
+            response = self.http.post(f"/v1/conversations/{cid}/messages", json=payload)
+            # A Chat attachment is prepared after upload; the Portal waits for it the same way.
+            preparing = response.status_code == 409 and "attachment_processing" in response.text
+            if not preparing or time.monotonic() > end:
+                return self._ok(response)["id"]
+            time.sleep(3)
 
     def wait(self, run_id: str, *, deadline: float = 900) -> Turn:
         end = time.monotonic() + deadline

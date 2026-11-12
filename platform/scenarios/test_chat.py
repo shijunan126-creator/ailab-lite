@@ -32,3 +32,13 @@ def test_selected_passages_answer_the_question_and_keep_the_prefix(api):
     second = api.ask(cid, "再看这段：哪件事最需要在 11 月推进？一句话。", mode="chat", doc_refs=[ref(risk)])
     contracts(second, later=True)
     assert "续约" in second.reply
+
+
+def test_attached_document_answers_follow_ups(api):
+    file = api.upload("经营简报.docx", quarterly_report(), DOCX)
+    cid, first = api.start("这份简报里第三季度净利润是多少？一句话。", mode="chat", file_ids=[file["id"]])
+    contracts(first)
+    assert "37.5" in first.reply
+    second = api.ask(cid, "第三部分提到了什么风险？一句话。", mode="chat")
+    contracts(second, later=True)
+    assert "续约" in second.reply or "到期" in second.reply

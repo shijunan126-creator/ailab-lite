@@ -555,9 +555,8 @@ def test_opening_metadata_does_not_start_viewer_or_native_jobs_and_structure_rem
 
 def test_history_rebuilds_the_exact_text_the_model_first_read(api):  # noqa: F811
     """Selected passages, an offsetless skill and a schedule header: both history endpoints repeat the live text."""
-    from tests.test_conversations import _finish
-
     from ailab_platform.agent.prompts import history_messages, user_text
+    from tests.test_conversations import _finish
 
     fid, version, _ = document(api)
     cid = conv(api)
@@ -569,7 +568,9 @@ def test_history_rebuilds_the_exact_text_the_model_first_read(api):  # noqa: F81
         db.commit()
     live = api.get(f"/internal/runs/{first['id']}", headers=SERVICE).json()
     expected = user_text(live["prompt"], skills=live["options"]["skills"], refs=live["doc_refs"], schedule=schedule)
-    assert expected.endswith("Explain this selection[技能：PPT 设计]\n\n<document_references>\nview.docx (p:1)\nquoted words\n</document_references>")
+    assert expected.endswith(
+        "Explain this selection[技能：PPT 设计]\n\n<document_references>\nview.docx (p:1)\nquoted words\n</document_references>"
+    )
     _finish(api, first["id"], "done")
     later = send(api, cid, []).json()["id"]
     for path in (f"/internal/runs/{later}", f"/internal/runs/{later}/model-context"):
