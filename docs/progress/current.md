@@ -3,7 +3,8 @@
 - 用户要求：按讨论的设计实施——同模式分叉复用被分叉轮次的 checkpoint，测试充分，并确保分叉/checkpoint 的各种删除路径没有残留。分支 `feat/fork-reuse-checkpoint`，base `main@cf758dd1`；未授权合并与部署。
 - 已完成：分叉复制完成快照给分支叶子（结构化引用迁移、正文 run ID 记别名）、分支沿用血缘根会话头；复制失败退回重建。决定见 [ADR 0041](../architecture/adr/0041-fork-reuses-checkpoint.md)，验证与真模型数字见[记录](updates/2026-11-12-fork-checkpoint.md)。
 - 真模型：分支第一次调用命中 Work 98.4%、Chat 97.9%（改前均为 0）。
-- 下一步：等 PR 的 CI；合并、部署需用户当次明确要求。
+- CI：[PR #190](https://github.com/shijunan126-creator/ailab-lite/pull/190) 在 `bcf7bdf1` 11 项全绿；首轮两项失败均为测试问题（见记录 CI 一节）。
+- 下一步：等用户决定是否合并；部署需用户当次明确要求（API + Agent 镜像，无迁移）。
 
 ---
 
