@@ -400,6 +400,7 @@ class AgentLoop:
         self._states: dict[str, dict] = {}
         self._turns: dict[str, _Turn] = {}
         self._steps: dict[str, int] = {}
+        self._checkpoint_locks: dict[str, asyncio.Lock] = {}
         self._lease_errors: dict[str, Exception] = {}
         self._steer_pending: set[str] = set()
         self._budgets: dict[str, WorkBudget] = {}
@@ -1406,7 +1407,13 @@ class AgentLoop:
         image_start = len(self._states[run_id].get("pending_image_inputs", []))
         shown_name = event_name or call.name
         if announce:
-            await self._event(run_id, "agent.tool_call", {"step": step, "name": shown_name, "arguments": _clip_arguments(call.arguments)})
+            await self._event(
+                run_id,
+                "agent.tool_call",
+                # call_id pairs the result with this exact call: several calls in one reply are
+                # announced back to back, so "the last running step with this name" is the wrong one.
+                {"step": step, "name": shown_name, "call_id": call.id, "arguments": _clip_arguments(call.arguments)},
+            )
         tool = metrics.tool_label(call.name)
         tool_started = time.perf_counter()
         wanted = None
@@ -1751,6 +1758,7 @@ class AgentLoop:
             {
                 "step": step,
                 "name": shown_name,
+                "call_id": call.id,
                 "ok": bool(result.get("ok")),
                 "exit_code": result.get("exit_code"),
                 "stdout": (result.get("stdout") or result.get("output") or (f"已读取技能说明（{len(shown)} 字）" if shown else ""))[:2000],
@@ -1852,14 +1860,23 @@ class AgentLoop:
         payload, exceeded = bounded_checkpoint(
             self._context(run_id).snapshot(turn.run.get("_image_files", {})), settings.checkpoint_max_bytes
         )
-        saved = await self.platform.put_checkpoint(run_id, {"expected_step": self._steps.get(run_id, 0), "state": payload})
-        self._steps[run_id] = saved["step"]
+        # The API stores a checkpoint with a compare-and-set on the step it had seen. Two coroutines
+        # that read the same expected_step both succeed locally and one gets 409 stale_step over the
+        # wire, so one run has exactly one CAS in flight: the lock covers the read of expected_step
+        # and the write, not the serialization above.
+        async with self._checkpoint_lock(run_id):
+            expected = self._steps.get(run_id, 0)
+            saved = await self.platform.put_checkpoint(run_id, {"expected_step": expected, "state": payload})
+            self._steps[run_id] = saved["step"]
         if exceeded:
             state.clear()
             state.update(payload)
             turn.messages = state["messages"]
             turn.artifacts, turn.delivered = state["artifacts"], state["delivered"]
             raise BudgetPause(CAPACITY_NOTE)
+
+    def _checkpoint_lock(self, run_id: str) -> asyncio.Lock:
+        return self._checkpoint_locks.setdefault(run_id, asyncio.Lock())
 
     async def _workspace_checkpoint(self, run_id: str, turn: _Turn, *, force=False) -> None:
         if not turn.lease_id or not turn.lease_used:  # an unused early sandbox holds the restored workspace unchanged
@@ -1939,7 +1956,7 @@ class AgentLoop:
             if resumed.get("lost") or unobserved:
                 return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True, "handle": handle}
             return {**resumed, "resumed": True}
-        if not record:
+        if not record and call.name not in READ_ONLY_TOOLS:
             record = {"name": call.name, "started": True}
             if call.name == "bash":
                 # Deterministic, so a resumed run can wait on the same execution.
@@ -1948,6 +1965,9 @@ class AgentLoop:
             if call.name in FILE_TOOLS:
                 state["workspace_dirty"] = True
             await self._checkpoint(run_id, turn)
+        # A read-only lookup writes no started record and is not checkpointed on its own: it has no
+        # side effect, a resume may simply repeat it, and a batch of them would otherwise cost a
+        # gzip + object store + DB write per file. The step-end checkpoint still persists the results.
         if call.name == "ask_user":
             # An answer only ever satisfies the question it was given for; a stale one cannot leak into a later question.
             answered = state.get("answer") or {}
@@ -2472,7 +2492,8 @@ class AgentLoop:
                         state["workspace_dirty"] = True
                         if call.name in {"bash_wait", "bash_kill"}:
                             state["snapshotted_execs"] = [*state.get("snapshotted_execs", [])[-7:], job_handle]
-                    await self._checkpoint(run_id, turn)
+                    if call.name not in READ_ONLY_TOOLS:
+                        await self._checkpoint(run_id, turn)
                     if changed:
                         await self._workspace_checkpoint(run_id, turn)
 

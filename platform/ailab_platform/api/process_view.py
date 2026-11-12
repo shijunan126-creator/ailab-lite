@@ -119,6 +119,31 @@ def describe_tool(name, args):
     return {"label": label, **({"detail": detail} if detail is not None else {})}
 
 
+def _matching_step(items, p):
+    """The running step a result belongs to.
+
+    Several calls in one reply are announced back to back and answer as they finish, so the call id
+    decides. A result without one (an event recorded before ids existed) falls back to the last
+    running step with the same name and model step, which is what a serial run produced anyway.
+    """
+    running = [step for item in items if item["kind"] == "steps" for step in item["steps"] if step["status"] == "running"]
+    if p.get("call_id"):
+        for step in reversed(running):
+            if step.get("callId") == p["call_id"]:
+                return step
+        if any(step.get("callId") is not None for step in running):
+            # Rows carry ids, so this id belongs to a row that is gone; pairing by name would
+            # attach this result to someone else's call.
+            return None
+    for step in reversed(running):
+        if step["name"] != p.get("name"):
+            continue
+        if "step" in p and step.get("modelStep") != p["step"]:
+            continue
+        return step
+    return None
+
+
 def push_step(items, step):
     if items and items[-1]["kind"] == "steps":
         items[-1]["steps"].append(step)
@@ -168,6 +193,7 @@ def reduce_event(items, type_, p):
                 **describe_tool(p["name"], p.get("arguments")),
                 "status": "running",
                 **({"modelStep": p["step"]} if "step" in p else {}),
+                **({"callId": p["call_id"]} if p.get("call_id") else {}),
             },
         )
     elif type_ == "agent.tool_result":
@@ -178,23 +204,18 @@ def reduce_event(items, type_, p):
                         if step.get("jobKey") == p["job_key"] and step.get("background"):
                             step.pop("background", None)
                             step["status"] = "ok" if p.get("ok") else "failed"
-        for item in reversed(items):
-            if item["kind"] != "steps":
-                continue
-            for step in reversed(item["steps"]):
-                if step["name"] != p.get("name") or step["status"] != "running" or ("step" in p and step.get("modelStep") != p["step"]):
-                    continue
-                step.update(
-                    status="ok" if p.get("ok") else "failed",
-                    output="\n".join(str(p[k]) for k in ("error", "stdout", "stderr") if p.get(k))[:1500],
-                )
-                if p.get("job_key"):
-                    step["jobKey"] = p["job_key"]
-                if p.get("running"):
-                    step.update(background=True, status="note")
-                if isinstance(p.get("sources"), list):
-                    step["sources"] = [s for s in p["sources"] if s and re.match(r"^https?://", s.get("url") or "")][:10]
-                return
+        step = _matching_step(items, p)
+        if step is not None:
+            step.update(
+                status="ok" if p.get("ok") else "failed",
+                output="\n".join(str(p[k]) for k in ("error", "stdout", "stderr") if p.get(k))[:1500],
+            )
+            if p.get("job_key"):
+                step["jobKey"] = p["job_key"]
+            if p.get("running"):
+                step.update(background=True, status="note")
+            if isinstance(p.get("sources"), list):
+                step["sources"] = [s for s in p["sources"] if s and re.match(r"^https?://", s.get("url") or "")][:10]
     elif type_ == "plan.updated":
         before = {s["id"]: s for i in items if i["kind"] == "plan" for s in i["steps"]}
         changed = [

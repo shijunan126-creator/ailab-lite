@@ -551,6 +551,61 @@ def test_read_only_calls_in_one_reply_run_at_the_same_time() -> None:
     assert [m["tool_call_id"] for m in llm.seen_messages[-1] if m["role"] == "tool"] == ["c0", "c1", "c2"]
 
 
+def test_tool_events_carry_the_call_id_that_pairs_them() -> None:
+    """Several calls in one reply are announced back to back: the UI needs the id, not "the last one"."""
+    broker = FakeBroker()
+
+    async def get_file(lease_id, path, **kwargs):
+        return b"line\n"
+
+    broker.get_file = get_file
+    calls = [ToolCall(id=f"c{i}", name="read", arguments={"path": f"/workspace/work/{i}.txt"}) for i in range(2)]
+    llm = ScriptedLLM([LLMResponse(tool_calls=calls), LLMResponse(content="ok")])
+    platform, _ = _run(llm, broker=broker)
+    announced = [p for t, p in platform.events if t == "agent.tool_call"]
+    results = [p for t, p in platform.events if t == "agent.tool_result"]
+    assert [p["call_id"] for p in announced] == ["c0", "c1"]
+    assert [p["call_id"] for p in results] == ["c0", "c1"]
+
+
+def test_two_concurrent_checkpoints_never_share_one_expected_step() -> None:
+    """The lock is what makes the step CAS safe for any concurrent writer, not only the read batch."""
+    from ailab_platform.adapters.runtime import fresh_state
+
+    platform = FakePlatform()
+    loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ScriptedLLM([]))
+    loop._states["r"] = fresh_state()
+    loop._steps["r"] = 0
+    turn = loop._turns["r"] = _Turn({"id": "r", "model": "m"})
+
+    async def both():
+        await asyncio.gather(loop._checkpoint("r", turn), loop._checkpoint("r", turn))
+
+    asyncio.run(both())
+    assert platform.checkpoint["step"] == 2
+
+
+def test_concurrent_reads_do_not_collide_on_the_checkpoint_step() -> None:
+    """Each concurrent call used to read the same expected_step; every write but one got 409 stale_step."""
+    broker = FakeBroker()
+
+    async def get_file(lease_id, path, **kwargs):
+        await asyncio.sleep(0.01)
+        return b"line\n"
+
+    broker.get_file = get_file
+    calls = [ToolCall(id=f"c{i}", name="read", arguments={"path": f"/workspace/work/{i}.txt"}) for i in range(3)]
+    llm = ScriptedLLM([LLMResponse(tool_calls=calls), LLMResponse(content="ok")])
+    platform, _ = _run(llm, broker=broker)
+    assert platform.statuses[-1][0] == "succeeded"
+    assert [m["tool_call_id"] for m in llm.seen_messages[-1] if m["role"] == "tool"] == ["c0", "c1", "c2"]
+
+    # Three reads cost exactly as many checkpoints as one: a read-only call writes none of its own.
+    single = ScriptedLLM([LLMResponse(tool_calls=calls[:1]), LLMResponse(content="ok")])
+    control, _ = _run(single, broker=broker)
+    assert platform.checkpoints == control.checkpoints
+
+
 def test_a_read_never_runs_beside_a_write() -> None:
     """Only read-only lookups overlap: bash, write and edit stay in reply order."""
     broker = FakeBroker()

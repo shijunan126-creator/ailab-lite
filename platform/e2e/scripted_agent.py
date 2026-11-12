@@ -173,6 +173,35 @@ class QuestionThenAnswer(LLMClient):
                 )
                 return LLMResponse(tool_calls=[ToolCall("office_view", name, args)])
             return LLMResponse(content="文档查看结果：" + json.dumps(views[-1], ensure_ascii=False))
+        if prompt.startswith("并行读取"):
+            # Two reads in one reply: concurrent tool calls against the real API's checkpoint CAS
+            # and two steps the UI must pair with their own results.
+            turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
+            results = [m for m in messages[turn + 1 :] if m.get("role") == "tool"]
+            if not any(m.get("name") == "bash" for m in results):
+                return LLMResponse(
+                    tool_calls=[
+                        ToolCall(
+                            "make_files",
+                            "bash",
+                            {
+                                "command": (
+                                    "printf 'alpha-1\\nalpha-2\\n' > /workspace/work/a.txt; printf 'beta-1\\n' > /workspace/work/b.txt"
+                                )
+                            },
+                        )
+                    ]
+                )
+            reads = [json.loads(m["content"]) for m in results if m.get("name") == "read"]
+            if len(reads) < 2:
+                return LLMResponse(
+                    tool_calls=[
+                        ToolCall("read_a", "read", {"path": "/workspace/work/a.txt"}),
+                        ToolCall("read_b", "read", {"path": "/workspace/work/b.txt"}),
+                    ]
+                )
+            firsts = [r["content"].strip().splitlines()[0] for r in reads]
+            return LLMResponse(content="并行读取完成：" + " / ".join(firsts))
         if prompt.startswith("PPT模板链路"):
             current_turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
             results = [

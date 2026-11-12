@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from ailab_platform.clients import ClientError
@@ -18,6 +19,10 @@ class CheckpointFake:
         return self.checkpoint
 
     async def put_checkpoint(self, run_id, payload):
+        # The CAS above is a network round trip in production: yielding here lets concurrent coroutines
+        # interleave exactly as they do against the API, so a fake cannot hide a lost update.
+        await asyncio.sleep(0)
+        self.checkpoints = getattr(self, "checkpoints", 0) + 1
         step = self.checkpoint["step"] if self.checkpoint else 0
         if payload["expected_step"] != step:
             raise ClientError("PUT", f"/internal/runs/{run_id}/checkpoint", 409, "stale_step")
