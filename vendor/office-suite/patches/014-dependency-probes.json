@@ -1,0 +1,84 @@
+[
+  {
+    "path": "documents-plugin/skills/docx/env_setup/env_check.sh",
+    "before_sha256": "41c99b416ac569381f5e91752dfd7c6f788d13dc3d6b9fddf8d660757a824543",
+    "after_sha256": "8acdffb83779deb7e3d86e4ded17ba80d9dcb1ceac89c5cd34fc924b40788cb8",
+    "edits": [
+      {
+        "start": 888,
+        "end": 1707,
+        "before": "if a task needs it you MUST install it, not substitute it. FORBIDDEN: using Word/WPS/Pages instead, or skipping the PDF/visual check; a large download is NOT a reason to skip. REQUIRED: explain the necessity to the user, say the package is large, then INSTALL (preferred source: https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/), THEN register it on PATH and re-verify 'soffice --version' (Linux/macOS: ln -sf the binary into /usr/local/bin; Windows: setx the program dir onto the user PATH) — see env_setup/setup.md \\\"Register the binary on PATH\\\". FIRST check whether it is already installed but merely off PATH (/opt/libreoffice*/program/soffice, /Applications/LibreOffice.app/Contents/MacOS/soffice) — if so register it instead of reinstalling. No install attempt = no substitute program.",
+        "after": "it is preinstalled in this sandbox, so its absence is an environment fault. Report it to the user and stop the route that needs it; do not install it, download it, or substitute another program."
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/env_setup/env_check.sh",
+    "before_sha256": "903a785d085dca4277e7d6121af174eb4d5c9223319d11f4e461e424c9251c0b",
+    "after_sha256": "8b194e4e276578baf9065d50d8b192a69482ab47204fd704b59580efde380453",
+    "edits": [
+      {
+        "start": 879,
+        "end": 1694,
+        "before": "if a task needs it you MUST install it, not substitute it. FORBIDDEN: using Excel/WPS/Numbers instead, or skipping recalculation; a large download is NOT a reason to skip. REQUIRED: explain the necessity to the user, say the package is large, then INSTALL (preferred source: https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/), THEN register it on PATH and re-verify 'soffice --version' (Linux/macOS: ln -sf the binary into /usr/local/bin; Windows: setx the program dir onto the user PATH) — see env_setup/setup.md \\\"Register the binary on PATH\\\". FIRST check whether it is already installed but merely off PATH (/opt/libreoffice*/program/soffice, /Applications/LibreOffice.app/Contents/MacOS/soffice) — if so register it instead of reinstalling. No install attempt = no substitute program.",
+        "after": "it is preinstalled in this sandbox, so its absence is an environment fault. Report it to the user and stop the route that needs it; do not install it, download it, or substitute another program."
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/env_setup/env_check.sh",
+    "before_sha256": "08454b18d14ff2f0e1e1159f788f79d9ae9e1f7ee3245c63fcc78737b2ee53a9",
+    "after_sha256": "4f6491df1318944014f42218f73b6cefd130b6d1e809ab76bcbb3c45c0fbb615",
+    "edits": [
+      {
+        "start": 815,
+        "end": 865,
+        "before": "echo \"optional MISSING: $desc (install on demand)\"",
+        "after": "echo \"optional MISSING: $desc (report it; nothing is installed at runtime)\""
+      },
+      {
+        "start": 873,
+        "end": 1105,
+        "before": "# LibreOffice is install-on-demand like the others, but it is NOT substitutable: when an\n# Office→PDF route needs it and it is absent, the model must explain + warn + install, never\n# silently switch to the user's local Office/WPS.\n",
+        "after": "# LibreOffice is preinstalled and NOT substitutable: when an Office→PDF route needs it and it is\n# absent, report the fault and stop; never silently switch to another office program.\n"
+      },
+      {
+        "start": 1264,
+        "end": 2058,
+        "before": "if a route needs it you MUST install it, not substitute it. FORBIDDEN: using Word/WPS/Keynote/Pages instead; a large download is NOT a reason to skip. REQUIRED: explain the necessity to the user, say the package is large, then INSTALL (preferred source: https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/), THEN register it on PATH and re-verify 'soffice --version' (Linux/macOS: ln -sf the binary into /usr/local/bin; Windows: setx the program dir onto the user PATH) — see env_setup/setup.md \\\"Register the binary on PATH\\\". FIRST check whether it is already installed but merely off PATH (/opt/libreoffice*/program/soffice, /Applications/LibreOffice.app/Contents/MacOS/soffice) — if so register it instead of reinstalling. No install attempt = no substitute program.",
+        "after": "it is preinstalled in this sandbox, so its absence is an environment fault. Report it to the user and stop the route that needs it; do not install it, download it, or substitute another program."
+      },
+      {
+        "start": 3202,
+        "end": 3475,
+        "before": "# ── OPTIONAL: Academic/LaTeX pipeline (Tectonic) ──\nif [ -x \"$PDF_SKILL_DIR/scripts/tectonic\" ] || command -v tectonic &>/dev/null; then\n    $QUIET || echo \"optional OK: tectonic\"\nelse\n    $QUIET || echo \"optional MISSING: tectonic (LaTeX/Academic; install on demand)\"\nfi\n",
+        "after": "# ── OPTIONAL: Academic/LaTeX pipeline (offline XeLaTeX; `pdf.py convert.latex` uses it) ──\noptional \"offline XeLaTeX\" command -v xelatex\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/pdf.py",
+    "before_sha256": "8168a9c128b2bdc285d1fa44c19d9a2d69fcb3402616c98c1dbb3382f68cf0e9",
+    "after_sha256": "ca99c2d2cebfa1434a98501edfef3e0e92250115557e9558239884b2b2b88915",
+    "edits": [
+      {
+        "start": 9864,
+        "end": 9958,
+        "before": "    \"\"\"Check if Playwright Chromium browser is installed.\"\"\"\n    import platform as _platform\n",
+        "after": "    \"\"\"Check if Playwright Chromium browser is installed.\"\"\"\n    configured = os.environ.get('PLAYWRIGHT_CHROMIUM_PATH')\n    if configured and Path(configured).is_file(): return ('ok', configured)\n    import platform as _platform\n"
+      },
+      {
+        "start": 12185,
+        "end": 12640,
+        "before": "            print(f'  ○ {name} (not installed — MUST be installed, not substituted)')\n            print(f'      → FORBIDDEN: using Word/WPS/Keynote/Pages instead of installing it.')\n            print(f'        A large download is NOT a reason to skip it.')\n            print(f'        REQUIRED: explain the necessity to the user, tell them the package is')\n            print(f'        large, then INSTALL it. No install attempt = no substitute program.')\n",
+        "after": "            print(f'  ○ {name} (missing — preinstalled in this sandbox, so this is an environment fault)')\n            print(f'      → Report it and stop the route that needs it; do not install it or substitute another program.')\n"
+      },
+      {
+        "start": 12663,
+        "end": 12742,
+        "before": "            print(f'  ○ {name} (optional, not installed — install on demand)')\n",
+        "after": "            print(f'  ○ {name} (optional, missing — report it; nothing is installed at runtime)')\n"
+      }
+    ]
+  }
+]

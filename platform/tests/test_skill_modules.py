@@ -208,3 +208,48 @@ def test_unknown_package_is_an_explicit_error():
 def test_chat_cannot_read_work_review_role_with_shell_setup():
     with pytest.raises(ValueError, match="unavailable"):
         read_module("platform.docx", "chat", "agents/visual-judge.md")
+
+
+@pytest.mark.parametrize("old_version", [None, "1.1.0"])
+@pytest.mark.parametrize("version", [1, 2])
+def test_conversation_loaded_before_a_package_update_switches_to_the_installed_package(version, old_version):
+    """A deploy replaces the package; the earlier text stays in history and the next read says it is superseded."""
+
+    async def exercise():
+        from ailab_platform.adapters.runtime import fresh_state
+        from ailab_platform.agent.loop import SKILL_PACKAGE_UPDATED
+
+        loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker())
+        turn = _Turn({"options": {"mode": "work", "document_tools_version": version}, "_fixed_catalog": [LOAD_SKILL]})
+        earlier = {
+            **read_module("platform.docx", "work", "routes/edit.md", document_tools_version=version),
+            "package_hash": "0" * 64,
+        }
+        if old_version:
+            earlier["version"] = old_version
+        if version == 2:
+            earlier["guide_revision"] = "1" * 64
+        turn.messages = [{"role": "system", "content": "rules"}, *paired(earlier, "earlier")]
+        prefix = copy.deepcopy(turn.messages)
+        loop._states["r"] = {**fresh_state(), "messages": turn.messages}
+        loop._register_carried_skills(turn, "r")
+
+        async def read(call_id, **arguments):
+            call = ToolCall(call_id, "load_skill", {"name": "platform.docx", **arguments})
+            result = await loop._run_tool(turn, "r", call, 0)
+            turn.messages.extend(paired({**result, "name": "platform.docx", **arguments}, call_id)[:1])
+            turn.messages.append(tool_result_message(call_id, "load_skill", result))
+            return result
+
+        navigation = await read("nav")
+        assert navigation["ok"] and navigation["skill"] and navigation["note"] == SKILL_PACKAGE_UPDATED
+        assert navigation["package_hash"] == catalog()["platform.docx"]["sha256"]
+        # The text read before the update is not "already shown": it is the old package's.
+        resource = await read("edit", resource="routes/edit.md")
+        assert resource["ok"] and resource["skill"] and "note" not in resource and not resource.get("already_loaded")
+        assert (await read("again", resource="routes/edit.md"))["already_loaded"]
+        assert turn.messages[: len(prefix)] == prefix
+        stale = await loop._run_tool(turn, "r", ToolCall("old", "load_skill", {"name": "platform.docx", "version": "1.1.0"}), 0)
+        assert not stale["ok"] and "1.2.0" in stale["error"]
+
+    asyncio.run(exercise())

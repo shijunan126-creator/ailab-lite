@@ -1,10 +1,10 @@
 {
-  "adapter_revision": "a4712f939be8e817dbbbdfaea7bf4fd45dd623a93cda5911a4f1e793763f889e",
+  "adapter_revision": "388a4bbf6aa728eeed258929dc55b61cbddfbb04288a9b0c976fbc67dbdbd287",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
       "deps": [],
-      "estimated_tokens": 1469,
+      "estimated_tokens": 1482,
       "logical_path": "spreadsheets-plugin/agents/visual-judge.md",
       "modes": [
         "work"
@@ -14,7 +14,7 @@
         "013-tool-name-residue.json"
       ],
       "path": "agents/visual-judge.md",
-      "sha256": "395b3063a5b28b69d62a7248b1a2da7097457aecca69cf1b74feb136d65ebe70"
+      "sha256": "5fcd7123bcdff9973fa86ae9e55d921924fd2f092aee3e1115d339063c6bff1f"
     },
     {
       "deps": [],
@@ -119,17 +119,17 @@
       "sha256": "d6cbf6c9f9657ef8cc4f503c7520678f6bccc862f3b9a3912b47e73db1803fba"
     },
     {
-      "deps": [
-        "spreadsheets-plugin/skills/xlsx/env_setup/setup.md"
-      ],
-      "estimated_tokens": 725,
+      "deps": [],
+      "estimated_tokens": 567,
       "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/env_check.sh",
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "env_setup/env_check.sh",
-      "sha256": "903a785d085dca4277e7d6121af174eb4d5c9223319d11f4e461e424c9251c0b"
+      "sha256": "8b194e4e276578baf9065d50d8b192a69482ab47204fd704b59580efde380453"
     },
     {
       "deps": [],

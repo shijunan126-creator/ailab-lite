@@ -12,6 +12,8 @@
 - 改 `vendor/office-suite/patches/*.json` 里任何一个文件，`vendor/office-suite/runtime/UPSTREAM.json` 的 `adapter_revision` 也会变（它哈希整个补丁目录）。只重建 skills 不重建 runtime 时，`test_runtime_rebase_is_reproducible_and_keeps_original_sources` 会失败：用 `vendor/office-suite/build.py --runtime-output vendor/office-suite/runtime` 一起重建。
 - 新增补丁不能改上游原文：它的 `before_sha256` 必须是前一个补丁的 `after_sha256`，`start/end` 是对该状态文本的偏移（同一文件多个 edit 按输入文本计算，构建时倒序应用）。改完 `before`/`after` 长度要先确认原文只匹配一次，再重算两侧哈希。
 - `images/sbx-office/skills/index.json` 一变，Agent 的 `skill_verification` 就和旧镜像对不上，`load_skill` 直接拒绝。部署 Agent 必须同时重建 sbx-office 镜像。
+- 旧包不随镜像保留：技能包一更新，会话历史里的技能正文就是旧包的。按上下文里实际可见的模块判断过期并追加说明，不能按 `loaded_skills` 拒读（2026-11-12 前的实现会让旧会话永远读不了该技能）。
+- 上游技能按它自家镜像写字体路径（`env_setup/font_list.txt` 就是那份清单）和探针（Chromium 查 `~/.cache/ms-playwright`）；改技能前先在 sbx-office 的 apt 清单里核对路径是否真的存在，ReportLab 读不了 Noto CJK 的 CFF 轮廓。
 
 ## 2026-11-11 Outbox 唤醒
 

@@ -2,7 +2,7 @@
 
 审查对象：`vendor/office-suite/`（固定上游 `a60ba6a7`）与它生成的 `images/sbx-office/skills/`，加上 `platform/ailab_platform/agent/` 的 `tools.py`、`prompts.py`、`discovery.py`、`office_guides_v2.json`。
 
-基线 `origin/main@bc5c5b5c`。「已修」的三项在分支 `fix/office-skill-residue`；其余是待决定的事实记录，不代表已同意实施。
+基线 `origin/main@bc5c5b5c`；工具名已按 PR #188（`d6651ce2`，工作区工具对齐 Pi）更新到 `main@99602a5a`。2026-11-12 复核的新发现与修复见[复核记录](../progress/updates/2026-11-12-office-skill-recheck.md)。
 
 ## 结论
 
@@ -17,7 +17,7 @@
 
 | 模式 | 数量 | 工具 |
 |---|---|---|
-| Work | 24 | ask_user, copy_library_file, deliver_file, exec, exec_kill, exec_wait, list_files, load_skill, memory, ocr_workspace_image, read_file, recall_history, resolve_attachment, review_artifact, run_js, run_subtasks, save_skill, schedule, search_images, search_library, ui_components, update_plan, view_workspace_file, write_file |
+| Work | 27 | ask_user, bash, bash_kill, bash_wait, copy_library_file, deliver_file, edit, find, grep, load_skill, ls, memory, ocr_workspace_image, read, recall_history, resolve_attachment, review_artifact, run_js, run_subtasks, save_skill, schedule, search_images, search_library, ui_components, update_plan, view_workspace_file, write |
 | Chat | 12 | load_skill, memory, read_document, recall_history, resolve_attachment, run_js, save_skill, schedule, search_document, search_library, ui_components, view_document |
 
 会随部署或模型变化的：
@@ -34,7 +34,7 @@
 | 名字 | 出现位置 | 性质 |
 |---|---|---|
 | `office-read` | 4 份导航 + 4 份 viewer | 沙箱 CLI（`/usr/local/bin/office-read` → `runner.mjs`），不是模型工具 |
-| `exec` / `exec_wait` | 4 份导航 | 平台工具 |
+| `bash` / `bash_wait` | 4 份导航（v1 导航写 `bash(command=...)`） | 平台工具 |
 | `deliver_file` | 4 份导航 + 4 份 `resources/SKILL.md` 的引用段 | 平台工具 |
 | `copy_library_file` | 4 份导航 + `resources/SKILL.md` | 平台工具 |
 | `view_workspace_file` / `review_artifact` | `visual-judge.md`、pptx `resources/SKILL.md` | 平台工具 |
@@ -46,7 +46,7 @@
 | `load_skill` / `save_skill` | 导航、`auto-skill` | 平台工具 |
 | `run_subtasks` | `visual-judge.md`、pptx `resources/SKILL.md` | 平台工具（本分支新加） |
 
-`exec_kill`、`read_file`、`write_file`、`list_files`、`ask_user`、`update_plan`、`web_search`、`read_url`、`download_url`、`fetch_repo`、`fetch_packages`、`memory`、`recall_history`、`run_js`、`search_images`、`ui_components`、`schedule` **在技能里一次都没出现**；`read_file` 只出现在 `prompts.py` 的「外部技能用 read_file 阅读」一句里。
+`bash_kill`、`read`、`write`、`edit`、`ls`、`grep`、`find`、`ask_user`、`update_plan`、`web_search`、`read_url`、`download_url`、`fetch_repo`、`fetch_packages`、`memory`、`recall_history`、`run_js`、`search_images`、`ui_components`、`schedule` **在技能里一次都没出现**；`read_file` 只出现在 `prompts.py` 的「外部技能用 read_file 阅读」一句里。
 
 ## v1 冻结 vs v2 覆盖
 
@@ -70,7 +70,7 @@
 | `platform.pptx/resources/SKILL.md:155` | `use the visual-judge subagent` |
 | `platform.pdf/briefs/creative.md:630` | `ask the user via user clarification`（不存在的工具名，且让模型去装 Playwright） |
 
-**其中 visual-judge 那句是判断，不是事实修正，且我第一次写错了**：`run_subtasks` 的 schema 是 `minItems: 2`，所以「交给一个子任务」不成立；平台的默认视觉门禁也不是子任务，而是常驻的 `review_artifact`。正确的主次是「先用 `review_artifact`/`view_workspace_file` 自己逐页判定，长成品再拆给 2–4 个子任务」，待确认后再改。
+visual-judge 那句第一版写成「交给一个子任务」，不成立（`run_subtasks` 是 2–4 个，平台默认门禁是 `review_artifact`）；2026-11-12 已改为「自己用 `review_artifact`/`view_workspace_file` 逐页判定，长成品拆给 2–4 个子任务」。
 
 ## 未修残留
 
@@ -104,29 +104,9 @@
 
 仍保留上游的 `color: yellow` 和 `tools: [view_workspace_file]`。AILab 不解析资源文件 frontmatter，无功能影响；`model:` 和 `thoughtLevel:` 在补丁 001 里已经删掉。
 
-## 与 Pi 的 read / bash / edit / write 对照
+## 与 Pi 工具的对照
 
-| Pi | AILab 现状 | 差距 |
-|---|---|---|
-| `read` | `read_file(path, offset, limit)`，窗口 30 000 字符（`tools.py:691`），**不返回行号**，二进制直接拒绝 | 无行号；`edit` 的定位信息缺失 |
-| `bash` | `exec(cmd, yield_seconds≤120，默认 30)` → 句柄；`exec_wait(handle, seconds, offset)`；`exec_kill`；单命令 ≤10 分钟；后台进程随租约存活 | 基本等价 |
-| `write` | `write_file(path, content)`，整份覆盖，UTF-8，无大小上限 | 等价 |
-| `edit` | **不存在** | 改文本只能 `read_file` + 整份 `write_file`；改 Office 文件本来就是写脚本重新生成（`routes/edit.md`） |
-| `grep` / `find` / `ls` | 无独立工具；`list_files` 只列一层、上限 500；镜像里没有 ripgrep（apt 清单无，`grep`/`find` 为 Debian 基础包） | 搜内容/找路径只能 `exec` 里 `grep`/`find`，靠模型自己拼命令 |
-
-`run_subtasks` 子任务可用：list_files, read_file, write_file, exec, exec_wait, exec_kill, search_library, resolve_attachment, copy_library_file, view_workspace_file, ocr_workspace_image, web_search, read_url, search_images, recall_history；不能交付、提问、再派子任务。
-
-## 若要对齐 Pi，需要动的位置
-
-- `vendor/office-suite/build.py`：`navigation()`、`document_guide()`、`viewer_guide()` 生成技能正文与 `office_guides_v2.json`，`reader/viewer` 名字在这里按模式选。
-- `vendor/office-suite/patches/*.json`：上游文本改写清单，改后要重算两侧哈希与偏移。
-- `platform/ailab_platform/agent/tools.py`：schema、handler、`SANDBOX_TOOLS`、`_current_recall`。
-- `platform/ailab_platform/agent/prompts.py`：`BASE_PROMPT`、`CHAT_MODE_NOTE`、文档引用段；有锚点断言（替换文本缺失即 `ValueError`）。
-- `platform/ailab_platform/agent/discovery.py`：`REDUCED_V1`/`REDUCED_V2` 预算裁剪名单。
-- `platform/ailab_platform/domain/document_tools.py`：`permitted()` 的 v1/v2 门禁。
-- `platform/ailab_platform/metrics.py:93`：`KNOWN_TOOLS`。
-- `platform/ailab_platform/agent/office_guides_v2.json`（生成物，不手改）。
-- 工具目录是请求前缀的一部分（ADR 0030）：改名字等于新的 tool catalog 版本，要记 `agent.context_boundary` 并复测 `cached_tokens / prompt_tokens`。
+已由 PR #188 实施：`read`/`write`/`edit`/`ls`/`grep`/`find`/`bash`/`bash_wait`/`bash_kill`，旧名见 `agent/tools.py::RETIRED_TOOLS`。子任务可用的工具以 `agent/subtasks.py::allowed()` 为准（不含 `load_skill`、`review_artifact`、`deliver_file`）。
 
 ## 未验证
 
@@ -136,6 +116,5 @@
 
 ## 待确认
 
-1. 残留清理范围：只清 R1+R2（验证清单化），还是连 R3/R5 一起（把 `chatglm.cn` 和镜像表清成 0 命中）？R4 的测试缺口补不补？
-2. `visual-judge` 那句是否按「先自己用 `review_artifact` 判定，长成品再拆 2–4 个子任务」改正？
-3. 对齐 Pi 的方案范围：只补 `edit` + 打开 `grep`/`find`，还是把 `read_file`/`write_file` 也改名成 `read`/`write`（改名会改变工具目录与前缀缓存边界）。
+1. 残留清理范围：R1/R2/R5（setup 文档的安装说明与厂商 CDN）仍未清；R3 与 pdf `env.check` 的安装提示已在 2026-11-12 改成「报告并停止」。
+2. 字体与镜像依赖对齐（2026-11-12 新发现，见复核记录）单独开 PR。

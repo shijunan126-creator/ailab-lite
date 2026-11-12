@@ -212,6 +212,8 @@ def _probe_playwright_npm() -> tuple[str, str]:
     return ('missing', '')
 def _probe_chromium() -> tuple[str, str]:
     """Check if Playwright Chromium browser is installed."""
+    configured = os.environ.get('PLAYWRIGHT_CHROMIUM_PATH')
+    if configured and Path(configured).is_file(): return ('ok', configured)
     import platform as _platform
     home = Path.home()
     if _platform.system() == 'Darwin':
@@ -255,13 +257,10 @@ def env_check(argv: list):
             detail = f' ({d})' if d else ''
             print(f'  ✓ {name}{detail}')
         elif on_demand_required:
-            print(f'  ○ {name} (not installed — MUST be installed, not substituted)')
-            print(f'      → FORBIDDEN: using Word/WPS/Keynote/Pages instead of installing it.')
-            print(f'        A large download is NOT a reason to skip it.')
-            print(f'        REQUIRED: explain the necessity to the user, tell them the package is')
-            print(f'        large, then INSTALL it. No install attempt = no substitute program.')
+            print(f'  ○ {name} (missing — preinstalled in this sandbox, so this is an environment fault)')
+            print(f'      → Report it and stop the route that needs it; do not install it or substitute another program.')
         elif optional:
-            print(f'  ○ {name} (optional, not installed — install on demand)')
+            print(f'  ○ {name} (optional, missing — report it; nothing is installed at runtime)')
         else:
             print(f'  ✗ {name} (missing)')
             rc = 2

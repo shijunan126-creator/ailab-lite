@@ -10,11 +10,10 @@
 QUIET=false; [ "${1:-}" = "--quiet" ] && QUIET=true
 FAIL=0
 check() { local desc="$1"; shift; if ! "$@" &>/dev/null; then $QUIET || echo "MISSING (core): $desc"; FAIL=1; fi; }
-optional() { local desc="$1"; shift; if "$@" &>/dev/null; then $QUIET || echo "optional OK: $desc"; else $QUIET || echo "optional MISSING: $desc (install on demand)"; fi; }
-# LibreOffice is install-on-demand like the others, but it is NOT substitutable: when an
-# Office→PDF route needs it and it is absent, the model must explain + warn + install, never
-# silently switch to the user's local Office/WPS.
-required_on_demand() { local desc="$1"; shift; if "$@" &>/dev/null; then $QUIET || echo "on-demand OK: $desc"; else $QUIET || echo "on-demand MISSING: $desc — if a route needs it you MUST install it, not substitute it. FORBIDDEN: using Word/WPS/Keynote/Pages instead; a large download is NOT a reason to skip. REQUIRED: explain the necessity to the user, say the package is large, then INSTALL (preferred source: https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/), THEN register it on PATH and re-verify 'soffice --version' (Linux/macOS: ln -sf the binary into /usr/local/bin; Windows: setx the program dir onto the user PATH) — see env_setup/setup.md \"Register the binary on PATH\". FIRST check whether it is already installed but merely off PATH (/opt/libreoffice*/program/soffice, /Applications/LibreOffice.app/Contents/MacOS/soffice) — if so register it instead of reinstalling. No install attempt = no substitute program."; fi; }
+optional() { local desc="$1"; shift; if "$@" &>/dev/null; then $QUIET || echo "optional OK: $desc"; else $QUIET || echo "optional MISSING: $desc (report it; nothing is installed at runtime)"; fi; }
+# LibreOffice is preinstalled and NOT substitutable: when an Office→PDF route needs it and it is
+# absent, report the fault and stop; never silently switch to another office program.
+required_on_demand() { local desc="$1"; shift; if "$@" &>/dev/null; then $QUIET || echo "on-demand OK: $desc"; else $QUIET || echo "on-demand MISSING: $desc — it is preinstalled in this sandbox, so its absence is an environment fault. Report it to the user and stop the route that needs it; do not install it, download it, or substitute another program."; fi; }
 
 # ── Resolve PDF_SKILL_DIR & FONT_DIR ──
 _ENV_CHECK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -46,12 +45,8 @@ fi
 optional "node"       command -v node
 optional "playwright (npm)" node -e "require('playwright')"
 
-# ── OPTIONAL: Academic/LaTeX pipeline (Tectonic) ──
-if [ -x "$PDF_SKILL_DIR/scripts/tectonic" ] || command -v tectonic &>/dev/null; then
-    $QUIET || echo "optional OK: tectonic"
-else
-    $QUIET || echo "optional MISSING: tectonic (LaTeX/Academic; install on demand)"
-fi
+# ── OPTIONAL: Academic/LaTeX pipeline (offline XeLaTeX; `pdf.py convert.latex` uses it) ──
+optional "offline XeLaTeX" command -v xelatex
 
 # ── ON-DEMAND but NOT substitutable: Office→PDF (LibreOffice/soffice) ──
 required_on_demand "libreoffice (soffice)" command -v soffice

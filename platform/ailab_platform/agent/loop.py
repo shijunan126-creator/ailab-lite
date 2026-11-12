@@ -101,6 +101,7 @@ WORKSPACE_RECLAIMED_NOTE = (
 )
 RECLAIM_WAIT_SECONDS = 240  # the Broker packs the workspace before deleting the sandbox
 WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保存下来，工作区是空的。需要的文件请重新生成。）"
+SKILL_PACKAGE_UPDATED = "技能包已更新：上文更早读到的本技能导航和资源已过期，以本次结果为准；仍要用的资源请重新读取。"
 
 
 def _tools_for_run(run):
@@ -1457,22 +1458,24 @@ class AgentLoop:
                 raise ToolError("load_skill reads whole files; cursor is unsupported")
             if wanted in BASE_SKILLS:
                 mode = (turn.run.get("options") or {}).get("mode", "work")
-                installed = next((item for item in self._states[run_id].get("loaded_skills", []) if item["name"] == wanted), {})
-                if installed.get("package_hash", skills()[wanted]["sha256"]) != skills()[wanted]["sha256"]:
-                    raise ToolError("installed skill package changed; rebuild context explicitly")
-                if installed.get("version", skills()[wanted]["version"]) != skills()[wanted]["version"]:
-                    raise ToolError("installed skill version is unavailable; rebuild context explicitly")
-                if call.arguments.get("version") not in (None, skills()[wanted]["version"]):
-                    raise ToolError("requested skill version is unavailable; rebuild context explicitly")
+                current = skills()[wanted]["version"]
+                if call.arguments.get("version") not in (None, current):
+                    raise ToolError(f"技能 {wanted} 只提供当前版本 {current}；不传 version 即可读取")
                 try:
                     result = read_module(
                         wanted, mode, call.arguments.get("resource"), document_tools_version=catalog_version(turn.run.get("options"))
                     )
                 except (ValueError, OSError) as exc:
                     raise ToolError(str(exc)) from exc
-                if installed.get("guide_revision", result.get("guide_revision")) != result.get("guide_revision"):
-                    raise ToolError("installed document guide changed; rebuild context explicitly")
-                if module_identity(result) in self._module_views.setdefault(run_id, ModuleVisibility()).read(turn.messages):
+                # Only the installed package can be read; the one this conversation read earlier is gone after a
+                # deploy. Switch to it in an appended result and say so once: the earlier text stays in history
+                # (prefix cache), the model learns it is superseded, and the run is never left with no way to read.
+                visible = self._module_views.setdefault(run_id, ModuleVisibility()).read(turn.messages)
+                shown = [entry for entry in visible.values() if entry.get("name") == wanted]
+                package = ("package_hash", "version", "guide_revision")
+                if shown and not any(all(entry.get(key) == result.get(key) for key in package) for entry in shown):
+                    result["note"] = SKILL_PACKAGE_UPDATED
+                elif module_identity(result) in visible:
                     result = {k: v for k, v in result.items() if k != "skill"}
                     result.update(already_loaded=True, note="already shown above；正文已在当前上下文中")
             elif call.name == "load_skill" and call.arguments.get("resource") is not None:
@@ -1720,8 +1723,12 @@ class AgentLoop:
                 if result.get("guide_revision"):
                     entry["guide_revision"] = result["guide_revision"]
                 loaded = state.setdefault("loaded_skills", [])
-                if not any(item["name"] == wanted for item in loaded):
+                existing = next((item for item in loaded if item["name"] == wanted), None)
+                if existing is None:
                     loaded.append(entry)
+                elif wanted in BASE_SKILLS:
+                    # The package this read came from is the one the run uses from now on.
+                    existing.update({key: entry[key] for key in ("version", "package_hash", "guide_revision") if key in entry})
             title = (turn.personal.get(wanted) or skills().get(wanted) or {}).get("title") or wanted
             await self._event(
                 run_id,

@@ -2,13 +2,13 @@
   {
     "path": "documents-plugin/agents/visual-judge.md",
     "before_sha256": "36730c9b37ca2460172618daeb23b5d208fa93b5a9e2c01eee8361d141dc8637",
-    "after_sha256": "a628fa8b681fd0c98c249eda4a4ccc50338631bd813f16ade93edd462cb73a9b",
+    "after_sha256": "fb0873641150389640a9b2e8ed6e2ae424f318d4f466bffd9ae31b60c0fe5f4c",
     "edits": [
       {
         "start": 268,
         "end": 396,
         "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
-        "after": "pick one gate — hand these criteria to a `run_subtasks` child with the page images, or (when no child is dispatched) apply them yourself — and do not pre-screen"
+        "after": "pick one gate — judge the pages yourself from `review_artifact` or `view_workspace_file`, or, for a long deliverable, split the pages across 2–4 `run_subtasks` children with these criteria — and do not pre-screen"
       },
       {
         "start": 1141,
@@ -27,13 +27,13 @@
   {
     "path": "spreadsheets-plugin/agents/visual-judge.md",
     "before_sha256": "af70849f74ec1d740f8514a30991782b324ec327601a274ee0287ab4e11ac015",
-    "after_sha256": "395b3063a5b28b69d62a7248b1a2da7097457aecca69cf1b74feb136d65ebe70",
+    "after_sha256": "5fcd7123bcdff9973fa86ae9e55d921924fd2f092aee3e1115d339063c6bff1f",
     "edits": [
       {
         "start": 268,
         "end": 396,
         "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
-        "after": "pick one gate — hand these criteria to a `run_subtasks` child with the page images, or (when no child is dispatched) apply them yourself — and do not pre-screen"
+        "after": "pick one gate — judge the pages yourself from `review_artifact` or `view_workspace_file`, or, for a long deliverable, split the pages across 2–4 `run_subtasks` children with these criteria — and do not pre-screen"
       },
       {
         "start": 1141,
@@ -52,13 +52,13 @@
   {
     "path": "presentations-plugin/agents/visual-judge.md",
     "before_sha256": "e3d0876411b50e0007f199e4f16ac4226feab56e6f4e720ef6aab42800811ff3",
-    "after_sha256": "8d2e4420c284161cdb987a761223d0344b59de854a6c5f4b324ef7cbce1a72c3",
+    "after_sha256": "02a54ff240072ac52373ed07c72f72cb000d79d8ae71c511efa6917a582607d2",
     "edits": [
       {
         "start": 268,
         "end": 396,
         "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
-        "after": "pick one gate — hand these criteria to a `run_subtasks` child with the page images, or (when no child is dispatched) apply them yourself — and do not pre-screen"
+        "after": "pick one gate — judge the pages yourself from `review_artifact` or `view_workspace_file`, or, for a long deliverable, split the pages across 2–4 `run_subtasks` children with these criteria — and do not pre-screen"
       },
       {
         "start": 1141,
@@ -77,13 +77,13 @@
   {
     "path": "pdf-plugin/agents/visual-judge.md",
     "before_sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db",
-    "after_sha256": "cd26d4dcf0c8e56e75f983306a59ce4601795c8cf2d7ae656a0b0103df07311c",
+    "after_sha256": "6fb353b48f711f77f06fb822eee7171cbc4fc80d14f0710a48a28e9ed76f8463",
     "edits": [
       {
         "start": 268,
         "end": 396,
         "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
-        "after": "pick one gate — hand these criteria to a `run_subtasks` child with the page images, or (when no child is dispatched) apply them yourself — and do not pre-screen"
+        "after": "pick one gate — judge the pages yourself from `review_artifact` or `view_workspace_file`, or, for a long deliverable, split the pages across 2–4 `run_subtasks` children with these criteria — and do not pre-screen"
       },
       {
         "start": 1141,

@@ -1,10 +1,10 @@
 {
-  "adapter_revision": "a4712f939be8e817dbbbdfaea7bf4fd45dd623a93cda5911a4f1e793763f889e",
+  "adapter_revision": "388a4bbf6aa728eeed258929dc55b61cbddfbb04288a9b0c976fbc67dbdbd287",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
       "deps": [],
-      "estimated_tokens": 1467,
+      "estimated_tokens": 1481,
       "logical_path": "pdf-plugin/agents/visual-judge.md",
       "modes": [
         "work"
@@ -14,7 +14,7 @@
         "013-tool-name-residue.json"
       ],
       "path": "agents/visual-judge.md",
-      "sha256": "cd26d4dcf0c8e56e75f983306a59ce4601795c8cf2d7ae656a0b0103df07311c"
+      "sha256": "6fb353b48f711f77f06fb822eee7171cbc4fc80d14f0710a48a28e9ed76f8463"
     },
     {
       "deps": [],
@@ -269,17 +269,17 @@
       "sha256": "a5771a77feb28e99bca5f2e5651a47d3588098672a7636c16889e830fd40c13f"
     },
     {
-      "deps": [
-        "pdf-plugin/skills/pdf/env_setup/setup.md"
-      ],
-      "estimated_tokens": 1027,
+      "deps": [],
+      "estimated_tokens": 832,
       "logical_path": "pdf-plugin/skills/pdf/env_setup/env_check.sh",
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "env_setup/env_check.sh",
-      "sha256": "08454b18d14ff2f0e1e1159f788f79d9ae9e1f7ee3245c63fcc78737b2ee53a9"
+      "sha256": "4f6491df1318944014f42218f73b6cefd130b6d1e809ab76bcbb3c45c0fbb615"
     },
     {
       "deps": [],
@@ -434,7 +434,7 @@
         "pdf-plugin/skills/pdf/scripts/design_engine.py",
         "pdf-plugin/skills/pdf/scripts/toc_validate.py"
       ],
-      "estimated_tokens": 23619,
+      "estimated_tokens": 23602,
       "logical_path": "pdf-plugin/skills/pdf/scripts/pdf.py",
       "modes": [
         "work"
@@ -443,10 +443,11 @@
         "002-execution-contracts.json",
         "005-offline-production.json",
         "006-output-and-offline-errors.json",
-        "007-readable-resource-limits.json"
+        "007-readable-resource-limits.json",
+        "014-dependency-probes.json"
       ],
       "path": "scripts/pdf.py",
-      "sha256": "8168a9c128b2bdc285d1fa44c19d9a2d69fcb3402616c98c1dbb3382f68cf0e9"
+      "sha256": "ca99c2d2cebfa1434a98501edfef3e0e92250115557e9558239884b2b2b88915"
     },
     {
       "deps": [],

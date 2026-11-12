@@ -1,10 +1,10 @@
 {
-  "adapter_revision": "a4712f939be8e817dbbbdfaea7bf4fd45dd623a93cda5911a4f1e793763f889e",
+  "adapter_revision": "388a4bbf6aa728eeed258929dc55b61cbddfbb04288a9b0c976fbc67dbdbd287",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
       "deps": [],
-      "estimated_tokens": 1469,
+      "estimated_tokens": 1482,
       "logical_path": "documents-plugin/agents/visual-judge.md",
       "modes": [
         "work"
@@ -14,7 +14,7 @@
         "013-tool-name-residue.json"
       ],
       "path": "agents/visual-judge.md",
-      "sha256": "a628fa8b681fd0c98c249eda4a4ccc50338631bd813f16ade93edd462cb73a9b"
+      "sha256": "fb0873641150389640a9b2e8ed6e2ae424f318d4f466bffd9ae31b60c0fe5f4c"
     },
     {
       "deps": [],
@@ -66,17 +66,17 @@
       "sha256": "67406550ee1c75a8f794011740a720117c0b49e9e4e96ded66679a37cf76065e"
     },
     {
-      "deps": [
-        "documents-plugin/skills/docx/env_setup/setup.md"
-      ],
-      "estimated_tokens": 725,
+      "deps": [],
+      "estimated_tokens": 567,
       "logical_path": "documents-plugin/skills/docx/env_setup/env_check.sh",
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "env_setup/env_check.sh",
-      "sha256": "41c99b416ac569381f5e91752dfd7c6f788d13dc3d6b9fddf8d660757a824543"
+      "sha256": "8acdffb83779deb7e3d86e4ded17ba80d9dcb1ceac89c5cd34fc924b40788cb8"
     },
     {
       "deps": [],

@@ -50,5 +50,9 @@
   {
     "file": "013-tool-name-residue.json",
     "reason": "Name the real subtask, review and clarification tools instead of the source assistant's subagent and preflight wording."
+  },
+  {
+    "file": "014-dependency-probes.json",
+    "reason": "Probe the dependencies this image installs (Chromium via PLAYWRIGHT_CHROMIUM_PATH, offline XeLaTeX) and treat a missing one as report-and-stop instead of a runtime install."
   }
 ]

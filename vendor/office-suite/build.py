@@ -223,7 +223,7 @@ def navigation(fmt: str, modules: list[dict]) -> str:
     text += f"根目录 /opt/skills/platform.{fmt}/；先 copy_library_file 到 /workspace/inputs，原件只读，"
     text += "新版本写 /workspace/outputs。依赖应预装；缺失则报告，不联网安装。"
     text += "工作区用 office-read SOURCE NEW_OUTPUT_DIRECTORY 重读（输出目录须不存在）。"
-    text += "bash(cmd=...) 执行，后台用 bash_wait；先 scripts/check.py，再 view_workspace_file 核对，最后 deliver_file。\n"
+    text += "bash(command=...) 执行，后台用 bash_wait；先 scripts/check.py，再 view_workspace_file 核对，最后 deliver_file。\n"
     text += (
         f"兼容 JSON 规格入口：/opt/skills/platform.{fmt}/scripts/"
         + {
