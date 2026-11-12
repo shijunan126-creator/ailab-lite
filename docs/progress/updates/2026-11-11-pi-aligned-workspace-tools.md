@@ -308,3 +308,4 @@ A–F 通过；问题都出在上一轮新加的"只读并行"和"`read` 按字�
 - 契约（Docker + OpenSandbox + mock）：`test_sandbox_lifecycle.py` + `test_sandbox_transfer.py` **27 passed / 1 skipped**，新增小文件跨行与越过末行的窗口断言。
 - 单测：新增与真实 `tail` 逐字节对照（空文件、无结尾换行、连续空行、CRLF、多字节中文，行 1–6 × 窗口 1/2/5/100 字节）与 1/2/3/7 字节分块的跳行用例，并断言只有"行 > 1 且文件大于窗口"才起 exec；去掉改动后 9 项失败。相关模块 78 passed / 2 skipped，ruff 干净。
 - 没覆盖到：Kubernetes 运行时/gVisor 下的耗时；本机整栈用 Docker provider，这个改动不影响它。
+- 首轮 CI（`4d4e79a6`）：SQLite 只挂 `test_a_retried_start_waits_on_the_running_command_instead_of_launching_it_twice`（PostgreSQL 同一用例通过），与本改动无关。原因：后台 `start` 在进程登记（`meta`）后就返回，不等它的 shell 跑完 `echo`，测试立刻读标记文件，赶上就报文件不存在。改为断言第二次 start 后登记的进程（pid + 启动时间）不变、只有一个任务；去掉 helper 的重试保护时仍会失败。

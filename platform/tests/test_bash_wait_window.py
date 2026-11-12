@@ -139,16 +139,21 @@ def test_command_handle_is_stable_per_call_and_content():
 
 def test_a_retried_start_waits_on_the_running_command_instead_of_launching_it_twice(tmp_path):
     broker = LocalBroker(tmp_path)
-    marker = tmp_path / "runs.txt"
     handle = command_handle("run", "1:0", "append")
 
+    def launched():
+        # Start returns once the process is recorded, not once its shell has run a line, so the
+        # recorded process (pid + start time) is what tells one launch from two.
+        return {path.parent.name: path.read_text() for path in (tmp_path / "jobs").glob("*/meta")}
+
     async def scenario():
-        command = {"cmd": f"echo run >> {marker}; sleep 20", "background": True}
+        command = {"cmd": "sleep 20", "background": True}
         first = await background_exec("bash", command, "lease", broker, handle=handle)
+        before = launched()
         second = await background_exec("bash", command, "lease", broker, handle=handle)
         try:
             assert first["running"] and second["running"] and second["handle"] == handle
-            assert marker.read_text().count("run") == 1
+            assert len(before) == 1 and launched() == before
         finally:
             await background_exec("bash_kill", {"handle": handle}, "lease", broker)
 
