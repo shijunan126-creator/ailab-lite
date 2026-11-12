@@ -41,6 +41,8 @@
 
 - 最终 `bcf7bdf1` 的 11 项 CI 全绿：SQLite 3046 passed / 225 skipped，PostgreSQL 3180 / 91，E2E 三片 66 / 61 / 69 passed，quality、crawler、shell、storage-contracts 通过。
 
+已合并：用户要求合并，PR #190 squash 为 `adb0ecf8`，提交树与 `6ffc2be6` 一致。
+
 ## 没覆盖到 / 风险
 
 - 已有的分叉会话在部署后第一次调用会从自己的会话头切到根会话头，冷启动一次；跨模式分支也共用根会话头（本来就整段不命中，无额外损失）。

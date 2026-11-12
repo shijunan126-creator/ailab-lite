@@ -1,4 +1,4 @@
-2026-11-12 同模式分叉沿用被分叉轮次的 checkpoint 与血缘根会话头（`feat/fork-reuse-checkpoint`，base `main@cf758dd1`）：分支第一次调用真模型命中 Work 98.4%、Chat 97.9%（改前 0）；跨模式仍重建。未合并/部署，见 [ADR 0041](adr/0041-fork-reuses-checkpoint.md) 与[记录](../progress/updates/2026-11-12-fork-checkpoint.md)。
+2026-11-12 同模式分叉沿用被分叉轮次的 checkpoint 与血缘根会话头（`feat/fork-reuse-checkpoint`，base `main@cf758dd1`）：分支第一次调用真模型命中 Work 98.4%、Chat 97.9%（改前 0）；跨模式仍重建。[PR #190](https://github.com/shijunan126-creator/ailab-lite/pull/190) CI 全绿并合并为 `main@adb0ecf8`，见 [ADR 0041](adr/0041-fork-reuses-checkpoint.md) 与[记录](../progress/updates/2026-11-12-fork-checkpoint.md)。
 
 2026-11-11 定时任务绑定会话（ADR0040，`feat/schedule-in-conversation`）：每个任务一个会话，到点在原会话追加一轮；对话内 `schedule` 工具、页面新建为 Work、会话忙时顺延、一次性任务（迁移0071）。定向测试与真实模型（定时轮缓存 93–95%）通过，[PR #184](https://github.com/shijunan126-creator/ailab-lite/pull/184) CI 全绿并合并为 `main@4b4628c4`，未部署。见[记录](../progress/updates/2026-11-11-schedule-conversation.md)。
 
