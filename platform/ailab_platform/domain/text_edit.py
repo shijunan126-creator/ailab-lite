@@ -216,9 +216,12 @@ def _fuzzy_spans(content: str, old_text: str) -> list[tuple[int, int]]:
         stripped_file, points, amounts = strip_line_ends(folded)
     for hit in find_all(stripped_file, stripped, limit=OCCURRENCE_REPORT_CAP):
         start = hit + _removed_before(hit, points, amounts, inclusive=True)
-        end = hit + len(stripped) + _removed_before(hit + len(stripped), points, amounts)
+        stripped_end = hit + len(stripped)
+        end = stripped_end + _removed_before(stripped_end, points, amounts)
         if trailing:  # the quoted trailing spaces are consumed, not left behind
-            if end == len(folded) or folded[end] == "\n":
+            # Ask the stripped text: ``end`` stops before the whitespace stripping removed, so in the
+            # original a line end looks like a space and would be held to the quoted run literally.
+            if stripped_end == len(stripped_file) or stripped_file[stripped_end] == "\n":
                 # At a line end the quoted run stands for whatever whitespace the file has there.
                 while end < len(folded) and folded[end] in " \t":
                     end += 1

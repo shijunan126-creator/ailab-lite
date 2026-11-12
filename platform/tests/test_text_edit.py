@@ -182,6 +182,17 @@ class TestWhitespaceBoundaries:
         # Only a line-end run is optional; here the quoted space has to match the file as written.
         assert edit("say “hi”   bar", [('say "hi" ', 'say "yo" ')], "/workspace/work/a.txt") == 'say "yo"   bar'
 
+    @pytest.mark.parametrize("file_spaces", ["", " ", "   ", "\t \t"])
+    def test_line_end_whitespace_matches_whatever_the_file_has_there(self, file_spaces):
+        # The line-end test used to read the original text, where the end of the stripped match sits
+        # before the file's own spaces: one space in the file made three quoted ones "not found".
+        content = f"say “hi”{file_spaces}\nbar\n"
+        assert edit(content, [('say "hi"   ', 'say "yo"')], "/workspace/work/a.txt") == 'say "yo"\nbar\n'
+
+    def test_line_end_whitespace_is_consumed_not_left_behind(self):
+        assert edit("say “hi”   \nbar\n", [('say "hi" ', 'say "yo" ')], "/workspace/work/a.txt") == 'say "yo" \nbar\n'
+        assert edit("say “hi”  ", [('say "hi" ', "y")], "/workspace/work/a.txt") == "y"
+
     def test_mid_line_whitespace_that_differs_is_not_a_match(self):
         with pytest.raises(EditError, match="Could not find the exact text"):
             edit("say “hi”bar", [('say "hi" ', 'say "yo" ')], "/workspace/work/a.txt")
