@@ -1,10 +1,10 @@
 {
-  "adapter_revision": "388a4bbf6aa728eeed258929dc55b61cbddfbb04288a9b0c976fbc67dbdbd287",
+  "adapter_revision": "f085705f43d45be8c1c3254a686786a8829727aff8638702e5b3fdb1de60862a",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
       "deps": [],
-      "estimated_tokens": 1482,
+      "estimated_tokens": 1293,
       "logical_path": "documents-plugin/agents/visual-judge.md",
       "modes": [
         "work"
@@ -14,7 +14,7 @@
         "013-tool-name-residue.json"
       ],
       "path": "agents/visual-judge.md",
-      "sha256": "fb0873641150389640a9b2e8ed6e2ae424f318d4f466bffd9ae31b60c0fe5f4c"
+      "sha256": "78e98cb4fc64e21d5649732af7093b2bb4a3703f42c67f32dacb420684b5a840"
     },
     {
       "deps": [],
@@ -79,68 +79,76 @@
       "sha256": "8acdffb83779deb7e3d86e4ded17ba80d9dcb1ceac89c5cd34fc924b40788cb8"
     },
     {
-      "deps": [],
-      "estimated_tokens": 1223,
+      "deps": [
+        "documents-plugin/skills/docx/env_setup/setup.md"
+      ],
+      "estimated_tokens": 61,
       "logical_path": "documents-plugin/skills/docx/env_setup/font_list.txt",
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "env_setup/font_list.txt",
-      "sha256": "7ed6413cf9a17f739fd98776858e4b467301d9cc863097e4e681eb9ffaaa6906"
+      "sha256": "1d1cf4052769ae23283166d31bdd858af94adb01f74935d3f4378da870a2914c"
     },
     {
       "deps": [],
-      "estimated_tokens": 2971,
+      "estimated_tokens": 600,
       "logical_path": "documents-plugin/skills/docx/env_setup/setup.md",
       "modes": [
         "work"
       ],
       "patches": [
         "001-tools-and-roots.json",
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "env_setup/setup.md",
-      "sha256": "af2d5bf3bd1b522901263ee2e86e003a4eb5535069cdf91118816551963765b2"
+      "sha256": "c94b917742c558845a94b150fa51b684d3138e073adc944894c14b61c7311346"
     },
     {
       "deps": [],
-      "estimated_tokens": 2567,
+      "estimated_tokens": 78,
       "logical_path": "documents-plugin/skills/docx/env_setup/setup_mac_linux.sh",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "env_setup/setup_mac_linux.sh",
-      "sha256": "6cc4602183905dbe8506699927ac963ede39dea77dd102ac6f5224df29af5921"
+      "sha256": "0542f6d23ccc77df40942b8b8670bfe0ff42a350a2a16cb569ef29801567c2d5"
     },
     {
       "deps": [],
-      "estimated_tokens": 2544,
+      "estimated_tokens": 52,
       "logical_path": "documents-plugin/skills/docx/env_setup/setup_windows.ps1",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "env_setup/setup_windows.ps1",
-      "sha256": "619570b89034c9b245128da6320021bb24c0fc43870f19facef9af6fb2cad3e4"
+      "sha256": "07f6599c65d50b9b68d45e047ead84f6cb154eea222861048f3c8bfb06626d95"
     },
     {
       "deps": [],
-      "estimated_tokens": 3544,
+      "estimated_tokens": 3558,
       "logical_path": "documents-plugin/skills/docx/references/chart-templates.md",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "references/chart-templates.md",
-      "sha256": "2f4cd7569765300da356c83cd3bfb14c85bdb7d97301cf15af29dc7705e2aa7c"
+      "sha256": "c1896d63693e200e43ff9b51dd5497806d8d8f6874d8cc5b5567b2c9d9d2cad3"
     },
     {
       "deps": [
@@ -173,16 +181,17 @@
         "documents-plugin/skills/docx/references/common-rules.md",
         "documents-plugin/skills/docx/references/decorations.md"
       ],
-      "estimated_tokens": 20534,
+      "estimated_tokens": 20547,
       "logical_path": "documents-plugin/skills/docx/references/design-system.md",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "references/design-system.md",
-      "sha256": "7ba481e58dfeb3ef96ab25ca9c65459bbcb83fc459799ffa966ac8d7605ae2cc"
+      "sha256": "73cd47f4c4159017c1e7a53bfee682a3a777f1f714813c542f4b49f17d5f1ea5"
     },
     {
       "deps": [
@@ -219,14 +228,16 @@
         "documents-plugin/skills/docx/references/design-system.md",
         "documents-plugin/skills/docx/references/toc.md"
       ],
-      "estimated_tokens": 3162,
+      "estimated_tokens": 3169,
       "logical_path": "documents-plugin/skills/docx/references/faq.md",
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "references/faq.md",
-      "sha256": "4d3d0ff068b525500c0152c3ad2d2f5d509f00efd01996dde71500602c0790ac"
+      "sha256": "a869d939d496658b4500a1d88f317228afb4df5aa2ad92b5963900e1291fc1b8"
     },
     {
       "deps": [],
@@ -243,16 +254,17 @@
     },
     {
       "deps": [],
-      "estimated_tokens": 2541,
+      "estimated_tokens": 2546,
       "logical_path": "documents-plugin/skills/docx/references/ooxml.md",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "references/ooxml.md",
-      "sha256": "a6b9be9a5f678d16e047575c4c16b67dd1ec0325d4c35ff123c2baf0857cf67c"
+      "sha256": "adf9706327a347b9433f26f268070013ec9e0fe62795755783120e3b3ba191f2"
     },
     {
       "deps": [],
@@ -273,10 +285,11 @@
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "routes/comment.md",
-      "sha256": "6d494f1e5ab2e375fb49489d37c9573060e48427a832a44edcb2feb803d9164a"
+      "sha256": "4873eab7fed120d9a946687378bd43a15b7dfd41fbd32c1cf942be2f54ae7121"
     },
     {
       "deps": [
@@ -461,14 +474,16 @@
     },
     {
       "deps": [],
-      "estimated_tokens": 13886,
+      "estimated_tokens": 13887,
       "logical_path": "documents-plugin/skills/docx/scripts/document.py",
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "scripts/document.py",
-      "sha256": "0daeed76c27f961fde591d0411dcaeb8ca2b0dd30e79dfced796838af52c9f7b"
+      "sha256": "fe11c4d9279e1cba44baad254941f87d9f227e4f44c55dbb416a6008de405d6e"
     },
     {
       "deps": [],
@@ -562,16 +577,17 @@
     },
     {
       "deps": [],
-      "estimated_tokens": 2210,
+      "estimated_tokens": 78,
       "logical_path": "documents-plugin/skills/docx/setup.sh",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "setup.sh",
-      "sha256": "4ad4950a8be992a3baf3dc3fe21ceabf934ea3625571534f518db2a859c6ae13"
+      "sha256": "0542f6d23ccc77df40942b8b8670bfe0ff42a350a2a16cb569ef29801567c2d5"
     }
   ],
   "package_id": "platform.docx",

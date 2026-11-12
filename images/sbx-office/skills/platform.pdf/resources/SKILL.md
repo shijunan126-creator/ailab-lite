@@ -18,7 +18,7 @@ Dependencies must be preinstalled; report missing dependencies.
 
 > **Core vs optional.** Only the **core** deps are needed up front: Python 3 + `reportlab`, `pypdf`,
 > `PyMuPDF`, `pikepdf`, `pdfplumber`, and a TrueType CJK font. These cover the Report route and all
-> covers (rendered with ReportLab). **Playwright/Chromium** (Creative/poster/HTML→PDF) and **Tectonic**
+> covers (rendered with ReportLab). **Playwright/Chromium** (Creative/poster/HTML→PDF) and **XeLaTeX**
 > (Academic/LaTeX) are **optional**. Engines must be preinstalled; report missing dependencies.
 
 > **Local-font-first.** Inspect available fonts and prefer a suitable installed font. Report missing font coverage; do not install fonts during a task.
@@ -62,10 +62,10 @@ User Request
 │  └─ ────────────────────────────────── → briefs/creative.md  (Playwright)
 │
 ├─ Academic paper / thesis / math / IEEE / ACM / LaTeX?
-│  └─ ────────────────────────────────── → briefs/academic.md  (Tectonic)
+│  └─ ────────────────────────────────── → briefs/academic.md  (XeLaTeX)
 │
 ├─ Math-heavy doc / TikZ diagram / algorithm pseudocode / Beamer slides?
-│  └─ ────────────────────────────────── → briefs/academic.md  (Tectonic, Scenarios A-D)
+│  └─ ────────────────────────────────── → briefs/academic.md  (XeLaTeX, Scenarios A-D)
 │
 ├─ Document needs complex embedded diagrams (flowcharts, architecture, neural nets)?
 │  └─ Route by target brief:
@@ -115,7 +115,7 @@ Below is an exhaustive map of every known PDF request type to its handling strat
 | Resume (ATS) | report.md | Plain text structure |
 | Resume (creative) | creative.md | Visual design |
 | Resume (academic CV) | academic.md | Publication list + BibTeX |
-| Academic paper | academic.md | LaTeX/Tectonic |
+| Academic paper | academic.md | LaTeX/XeLaTeX |
 | Math-heavy document | academic.md | LaTeX typesetting |
 | Presentation / PPT-style | creative.md | Landscape (1280×720), one topic per page |
 | Book / long document | report.md | Add TOC + chapter numbering, validate with toc_validate.py |
@@ -203,12 +203,12 @@ When embedding images in HTML documents (Creative pipeline, Playwright-rendered 
 | Image location | `<img src>` value | Example |
 |---|---|---|
 | **Local file** | **Relative path** from the HTML file's directory | `<img src="images/chart.png">` or `<img src="./diagram.png">` |
-| **Remote URL** | Full URL (no change needed) | `<img src="https://example.com/photo.jpg">` |
+| **Remote image** | Not reachable (no network in the sandbox): fetch it first with `download_url`, then use the local relative path | `<img src="images/photo.jpg">` |
 
 **Iron rules:**
 1. **NEVER use absolute paths** for local files in HTML `<img>`, `<source>`, CSS `url()`, or any other asset reference (e.g. `/Users/alice/project/img.png`). Absolute paths break portability across machines and environments.
 2. **Always use relative paths** anchored to the HTML file's own directory. If the image lives in a subdirectory, use `images/foo.png` or `./images/foo.png`.
-3. **Remote URLs (`http://` / `https://`) are fine as-is** — do not convert them to local paths.
+3. **Remote URLs (`http://` / `https://`) do not load** — the sandbox has no network; download the asset with `download_url` and reference the local copy.
 4. When generating HTML from a script or blueprint, ensure all referenced assets are either (a) in the same directory as the output HTML, or (b) in a clearly named subdirectory (e.g. `assets/`, `images/`), and referenced with relative paths.
 5. If a build script needs to resolve paths programmatically, compute relative paths at generation time (e.g. `os.path.relpath(image_path, html_dir)`) rather than embedding absolute filesystem paths.
 
@@ -270,8 +270,8 @@ Diagram rendering depends on the target brief - **NOT** a one-size-fits-all TikZ
 |---|---|---|
 | **Report** (ReportLab) | Playwright+CSS → PNG → `Image()` | No LaTeX compiler in this route; HTML/CSS handles any layout natively |
 | **Creative** (Playwright) | Directly in HTML (CSS flexbox/grid + JS connectors) | Already in browser context |
-| **Academic** (Tectonic) - simple (≤6 nodes) | TikZ native `tikzpicture` | Vector output, font consistency, LaTeX-native |
-| **Academic** (Tectonic) - complex (>6 nodes) | Playwright+CSS → PNG @2× → `\includegraphics` | TikZ branch logic is error-prone for models; 300dpi PNG is publication-ready |
+| **Academic** (XeLaTeX) - simple (≤6 nodes) | TikZ native `tikzpicture` | Vector output, font consistency, LaTeX-native |
+| **Academic** (XeLaTeX) - complex (>6 nodes) | Playwright+CSS → PNG @2× → `\includegraphics` | TikZ branch logic is error-prone for models; 300dpi PNG is publication-ready |
 
 **Playwright+CSS diagram pipeline (Report & Academic-complex):**
 
@@ -550,7 +550,7 @@ These CSS properties **silently break** in Playwright's PDF renderer:
 After generating any Playwright PDF, **verify every page has content** (pypdf text extraction, check non-empty).
 
 ### PDF Metadata (all briefs)
-ALL PDFs must have: Title, Author (default "Z.ai"), Creator, Subject.
+ALL PDFs must have: Title, Creator ("AILab"), Subject; Author only when the user or document owner is known — never a tool or vendor name.
 
 ### Delivery Summary (all briefs)
 Report to user: file path, size, page count. Academic adds word/image count. Creative adds per-page verification.
@@ -577,14 +577,14 @@ Dependencies are preinstalled; if missing report the dependency. Do not install 
 # Quality
 code.sanitize <script>       # Sanitize forbidden Unicode
 content.sanitize <file> [--apply]  # Fix content issues (CJK, encoding)
-meta.brand <pdf>             # Add Z.ai metadata
+meta.brand <pdf>             # Set the Title metadata
 font.check <pdf>             # Scan for missing glyphs
 toc.check <pdf>              # Validate TOC
 
 # Conversion
 convert.blueprint <llm_json_response.md> -o final.pdf  # CRITICAL FOR CREATIVE: Auto-extracts JSON, compiles, and renders PDF.
 convert.html <html>          # HTML → PDF (Playwright)
-convert.latex <tex>           # LaTeX → PDF (Tectonic). Bundled binary is macOS arm64 only; see academic.md for other-platform install.
+convert.latex <tex>           # LaTeX → PDF (offline XeLaTeX from TeX Live)
 convert.office <file>         # Office → PDF (LibreOffice)
 
 # Processing

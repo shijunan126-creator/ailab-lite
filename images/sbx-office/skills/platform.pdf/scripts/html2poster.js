@@ -164,7 +164,7 @@ async function main() {
     process.exit(1);
   }
   if (bInfo.status === 'fallback') {
-    console.log(`   ⚠ Using fallback Chromium: ${bInfo.executablePath}`);
+    console.log(`   Using Chromium: ${bInfo.executablePath}`);
   }
 
   // Launch browser

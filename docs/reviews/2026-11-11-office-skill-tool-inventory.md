@@ -44,7 +44,6 @@
 | `document_view` | 仅 4 份 `viewer/SKILL.md`（43 次） | **v1 工具**，v2 已剔除 |
 | `read_document` / `view_document` | 仅 V2 覆盖层；viewer 里的 `read_document` 是「没有这个独立工具」的说明句 | 平台工具，只 Chat v2 有 |
 | `load_skill` / `save_skill` | 导航、`auto-skill` | 平台工具 |
-| `run_subtasks` | `visual-judge.md`、pptx `resources/SKILL.md` | 平台工具（本分支新加） |
 
 `bash_kill`、`read`、`write`、`edit`、`ls`、`grep`、`find`、`ask_user`、`update_plan`、`web_search`、`read_url`、`download_url`、`fetch_repo`、`fetch_packages`、`memory`、`recall_history`、`run_js`、`search_images`、`ui_components`、`schedule` **在技能里一次都没出现**；`read_file` 只出现在 `prompts.py` 的「外部技能用 read_file 阅读」一句里。
 
@@ -70,39 +69,20 @@
 | `platform.pptx/resources/SKILL.md:155` | `use the visual-judge subagent` |
 | `platform.pdf/briefs/creative.md:630` | `ask the user via user clarification`（不存在的工具名，且让模型去装 Playwright） |
 
-visual-judge 那句第一版写成「交给一个子任务」，不成立（`run_subtasks` 是 2–4 个，平台默认门禁是 `review_artifact`）；2026-11-12 已改为「自己用 `review_artifact`/`view_workspace_file` 逐页判定，长成品拆给 2–4 个子任务」。
+visual-judge 那句第一版写成「交给一个子任务」，不成立（`run_subtasks` 是 2–4 个，平台默认门禁是 `review_artifact`）。最终版（2026-11-13）：每个成品由模型自己对 `review_artifact` 返回的页面图判定一次，技能里不再提子任务——Agent 默认不派子任务，用户明确要求时才派。
 
-## 未修残留
+## 残留 R1–R6（2026-11-13 已全部修复）
 
-### R1 三份 `env_setup/setup.md`（work 可读）
+| 编号 | 原问题 | 处理 |
+|---|---|---|
+| R1 | 三份 `env_setup/setup.md` 里 `choco`/`scoop`/字体下载/国内镜像命令，与「依赖预装」段落并存 | 补丁 014 重写为镜像实际依赖与字体表 |
+| R2 | pptx `resources/SKILL.md` `## Dependencies` 的 `sudo dpkg`/`hdiutil`/`msiexec`/`setx`/镜像表 | 缩成一段：依赖预装，缺失即报告并停止 |
+| R3 | `env_check.sh` 缺依赖时打印「MUST install」与清华镜像 | 改为「环境故障，报告并停止，不安装不替代」 |
+| R4 | 测试只断言 `setup*.sh` | 测试同时断言 `.sh` 只剩 4 行、`.ps1` 只剩一行 `throw` |
+| R5 | `z-cdn.chatglm.cn` 字体 CDN | 随 setup 文档与脚本删除；新测试 `test_generated_resources_only_promise_what_the_image_has` 拦住回流 |
+| R6 | `visual-judge.md` frontmatter 的 `color`/`tools` | 删除，内容并入描述 |
 
-| 文件 | 行数 | tokens | 仍保留 |
-|---|---|---|---|
-| `platform.docx/env_setup/setup.md` | 276 | 2971 | `choco install nodejs-lts python3`、`scoop install …`（62–63 行）；字体安装（66–133）；国内镜像与安装（134 行起） |
-| `platform.pdf/env_setup/setup.md` | 302 | 3314 | 同上，另有 `PLAYWRIGHT_DOWNLOAD_HOST=… npx playwright install chromium`（168 行） |
-| `platform.xlsx/env_setup/setup.md` | 257 | 2706 | 表 135–136 镜像、145 行起安装说明 |
-
-这些文件由补丁 002/006 把**段落**换成了「依赖预装、缺失即停」，但**表格和命令块留了下来**，于是同一文件里两套相反的指令并存。
-
-### R2 `platform.pptx/resources/SKILL.md` 的 `## Dependencies`（654–703 行）
-
-51 行里包含 `tar -xzf … && sudo dpkg -i …`、`hdiutil attach …`、`msiexec /i …`、`setx PATH …`、Tsinghua 镜像表，以及 7 次重复的「Dependencies must be preinstalled」占位段落。
-
-### R3 `env_setup/env_check.sh` 会在工具输出里打印安装指令
-
-`platform.docx/env_setup/env_check.sh:13`（pdf `:17`、xlsx `:13`）的 `required_on_demand` 在缺 `soffice` 时打印：`you MUST install it … preferred source: https://mirrors.tuna.tsinghua.edu.cn/… then register it on PATH (ln -sf / setx)`。文件可执行、也在导航里，比 `.md` 更容易出现在上下文。实际镜像装了 LibreOffice，所以正常路径不触发。
-
-### R4 安装脚本已中和，但测试只覆盖 `.sh`
-
-`setup*.sh` 第 2–4 行是 `echo … && exit 1`；`setup_windows.ps1` 第 1 行是 `throw "Dependencies must be preinstalled…"`。测试 `tests/test_office_suite_resources.py:67` 只断言 `setup*.sh`，`.ps1` 的中和没有断言，改坏不会被发现。
-
-### R5 `z-cdn.chatglm.cn`（上游厂商 CDN）
-
-6 处（2 份 `.md`）：`platform.docx/env_setup/setup.md:70/108/118`、`platform.pdf/env_setup/setup.md:89/127/137`；另有 `setup_mac_linux.sh`、`setup_windows.ps1` 的 `FONT_CDN_BASE`（已中和）。沙箱无网络，这些地址永远不可达，属于厂商残留而不只是失效指令。
-
-### R6 `visual-judge.md` frontmatter
-
-仍保留上游的 `color: yellow` 和 `tools: [view_workspace_file]`。AILab 不解析资源文件 frontmatter，无功能影响；`model:` 和 `thoughtLevel:` 在补丁 001 里已经删掉。
+镜像依赖、字体、品牌等其余发现与修复见[复核记录](../progress/updates/2026-11-12-office-skill-recheck.md)。
 
 ## 与 Pi 工具的对照
 

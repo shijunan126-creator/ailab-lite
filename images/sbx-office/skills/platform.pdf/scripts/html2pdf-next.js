@@ -559,7 +559,7 @@ async function convert(inputFile, outputFile, customCSS, options = {}) {
     process.exit(2);
   }
   if (bInfo.status === 'fallback') {
-    console.log(`⚠ Using fallback Chromium: ${bInfo.executablePath}`);
+    console.log(`Using Chromium: ${bInfo.executablePath}`);
   }
 
   const absIn = path.resolve(inputFile);

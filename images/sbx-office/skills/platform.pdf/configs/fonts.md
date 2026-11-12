@@ -4,21 +4,7 @@
 
 ### Creative Pipeline (Playwright / HTML)
 
-Fonts are loaded via Google Fonts CDN in the HTML `<head>`:
-
-```html
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700;900&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet">
-```
-
-#### Variable Font (for Tension Typesetting)
-
-When `tension_score` is used on `Glass_Canvas`, the engine switches to **Inter Variable** for continuous weight interpolation (100–900):
-
-```html
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
-```
-
-This enables `font-variation-settings: 'wght' <value>` for smooth, non-discrete weight transitions. The standard discrete-weight URL is still used when tension is not active.
+Fonts are installed locally; the sandbox has no network, so no web-font `<link>` is used. CSS names resolve through fontconfig: `Inter` → Inter Variable (weights 100–900, so `font-variation-settings: 'wght' <value>` works for tension typesetting), `Noto Sans SC`/`Noto Serif SC` → Noto Sans/Serif CJK SC, emoji → Noto Color Emoji. Playfair Display and Cormorant Garamond are not installed; the serif stack falls back to Noto Serif SC.
 
 | Variable | Stack | Usage |
 |----------|-------|-------|
@@ -39,7 +25,7 @@ pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))  # Song-ti (serif-like)
 
 > **⚠️ ReportLab CANNOT render emoji.** If content has emoji, route to Creative pipeline.
 
-### Academic Pipeline (Tectonic / LaTeX)
+### Academic Pipeline (XeLaTeX / LaTeX)
 
 CJK support via `ctex` package:
 ```latex

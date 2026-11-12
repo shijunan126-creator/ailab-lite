@@ -1680,8 +1680,8 @@ import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 
 font_paths = [
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",  # first: FontProperties does not check the file
     "/System/Library/Fonts/Supplemental/SimHei.ttf",
-    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
     "./SimHei.ttf",
 ]
 zh_font = None

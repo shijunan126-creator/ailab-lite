@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lightweight environment check for PDF skill.
 # Exit 0 = all CORE deps OK, exit 1 = missing CORE dependency.
-# Playwright/Chromium (Creative/HTML pipeline) and Tectonic (Academic/LaTeX) are
+# Playwright/Chromium (Creative/HTML pipeline) and XeLaTeX (Academic/LaTeX) are
 # OPTIONAL — reported as INFO, never cause a non-zero exit. Install them on demand
 # (with the user's confirmation) only when a route actually needs them.
 # Also resolves and exports PDF_SKILL_DIR and FONT_DIR.

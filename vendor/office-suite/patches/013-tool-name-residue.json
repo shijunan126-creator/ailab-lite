@@ -2,113 +2,113 @@
   {
     "path": "documents-plugin/agents/visual-judge.md",
     "before_sha256": "36730c9b37ca2460172618daeb23b5d208fa93b5a9e2c01eee8361d141dc8637",
-    "after_sha256": "fb0873641150389640a9b2e8ed6e2ae424f318d4f466bffd9ae31b60c0fe5f4c",
+    "after_sha256": "78e98cb4fc64e21d5649732af7093b2bb4a3703f42c67f32dacb420684b5a840",
     "edits": [
       {
-        "start": 268,
-        "end": 396,
-        "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
-        "after": "pick one gate — judge the pages yourself from `review_artifact` or `view_workspace_file`, or, for a long deliverable, split the pages across 2–4 `run_subtasks` children with these criteria — and do not pre-screen"
+        "start": 192,
+        "end": 1330,
+        "before": "Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only inspect pre-rendered page PNGs via view_workspace_file (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).\"\ncolor: yellow\ntools: [view_workspace_file]\n",
+        "after": "Apply it once per deliverable, yourself, to the page images returned by `review_artifact` (or by `view_workspace_file` for pages you rendered to PNG); do not pre-screen the pages and then review them again, which duplicates the same review. Its bar is user acceptance: everything the user will see — visual asset quality and layout & composition — judged page by page as pass/fail with evidence-backed issues; a clean programmatic/script check is no cover and no substitute. Finish every verdict before changing anything, then fix the failed pages and check only those again.\"\n"
       },
       {
-        "start": 1141,
-        "end": 1285,
-        "before": "Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).",
-        "after": "The gate runs once per deliverable, on pages returned by `review_artifact` or `view_workspace_file`; the run that produced the file fixes what it reports."
+        "start": 1566,
+        "end": 2139,
+        "before": "You are the visual acceptance reviewer for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Your job: judge each assigned page against the criteria below and verdict pass or fail.\n\nReview ONLY the pages assigned to you. No repairs, no looking at unassigned pages. You review only — edit nothing; never write into the deliverable or the workspace.\n\n## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths of your assigned pages and the user's request.",
+        "after": "These are the visual acceptance criteria for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Judge every page against them and give each a pass or fail verdict.\n\nWhile judging, edit nothing: finish every page's verdict first, then repair.\n\n## What you judge from\n\nThe page images returned by `review_artifact` or `view_workspace_file`, and the user's request."
       },
       {
-        "start": 1993,
-        "end": 2092,
-        "before": "## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths",
-        "after": "## What you will receive (in the subtask instruction)\n\nThe subtask instruction gives you: the image paths"
+        "start": 5356,
+        "end": 5437,
+        "before": "One line per assigned page, passing pages included; no prose, no extra narration.",
+        "after": "One line per page, passing pages included. Keep these verdicts in your own check; tell the user only what you fixed or could not verify."
       }
     ]
   },
   {
     "path": "spreadsheets-plugin/agents/visual-judge.md",
     "before_sha256": "af70849f74ec1d740f8514a30991782b324ec327601a274ee0287ab4e11ac015",
-    "after_sha256": "5fcd7123bcdff9973fa86ae9e55d921924fd2f092aee3e1115d339063c6bff1f",
+    "after_sha256": "2002ad4c6312af8bacc8aff704f32a23f66a907b0deead51d69fd948a8331353",
     "edits": [
       {
-        "start": 268,
-        "end": 396,
-        "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
-        "after": "pick one gate — judge the pages yourself from `review_artifact` or `view_workspace_file`, or, for a long deliverable, split the pages across 2–4 `run_subtasks` children with these criteria — and do not pre-screen"
+        "start": 192,
+        "end": 1330,
+        "before": "Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only inspect pre-rendered page PNGs via view_workspace_file (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).\"\ncolor: yellow\ntools: [view_workspace_file]\n",
+        "after": "Apply it once per deliverable, yourself, to the page images returned by `review_artifact` (or by `view_workspace_file` for pages you rendered to PNG); do not pre-screen the pages and then review them again, which duplicates the same review. Its bar is user acceptance: everything the user will see — visual asset quality and layout & composition — judged page by page as pass/fail with evidence-backed issues; a clean programmatic/script check is no cover and no substitute. Finish every verdict before changing anything, then fix the failed pages and check only those again.\"\n"
       },
       {
-        "start": 1141,
-        "end": 1285,
-        "before": "Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).",
-        "after": "The gate runs once per deliverable, on pages returned by `review_artifact` or `view_workspace_file`; the run that produced the file fixes what it reports."
+        "start": 1566,
+        "end": 2139,
+        "before": "You are the visual acceptance reviewer for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Your job: judge each assigned page against the criteria below and verdict pass or fail.\n\nReview ONLY the pages assigned to you. No repairs, no looking at unassigned pages. You review only — edit nothing; never write into the deliverable or the workspace.\n\n## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths of your assigned pages and the user's request.",
+        "after": "These are the visual acceptance criteria for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Judge every page against them and give each a pass or fail verdict.\n\nWhile judging, edit nothing: finish every page's verdict first, then repair.\n\n## What you judge from\n\nThe page images returned by `review_artifact` or `view_workspace_file`, and the user's request."
       },
       {
-        "start": 1993,
-        "end": 2092,
-        "before": "## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths",
-        "after": "## What you will receive (in the subtask instruction)\n\nThe subtask instruction gives you: the image paths"
+        "start": 5356,
+        "end": 5437,
+        "before": "One line per assigned page, passing pages included; no prose, no extra narration.",
+        "after": "One line per page, passing pages included. Keep these verdicts in your own check; tell the user only what you fixed or could not verify."
       }
     ]
   },
   {
     "path": "presentations-plugin/agents/visual-judge.md",
     "before_sha256": "e3d0876411b50e0007f199e4f16ac4226feab56e6f4e720ef6aab42800811ff3",
-    "after_sha256": "02a54ff240072ac52373ed07c72f72cb000d79d8ae71c511efa6917a582607d2",
+    "after_sha256": "49228a71e42a838fd0d49e1cd853532742a54c9c7a89f9e486b712f678a47222",
     "edits": [
       {
-        "start": 268,
-        "end": 396,
-        "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
-        "after": "pick one gate — judge the pages yourself from `review_artifact` or `view_workspace_file`, or, for a long deliverable, split the pages across 2–4 `run_subtasks` children with these criteria — and do not pre-screen"
+        "start": 192,
+        "end": 1330,
+        "before": "Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only inspect pre-rendered page PNGs via view_workspace_file (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).\"\ncolor: yellow\ntools: [view_workspace_file]\n",
+        "after": "Apply it once per deliverable, yourself, to the page images returned by `review_artifact` (or by `view_workspace_file` for pages you rendered to PNG); do not pre-screen the pages and then review them again, which duplicates the same review. Its bar is user acceptance: everything the user will see — visual asset quality and layout & composition — judged page by page as pass/fail with evidence-backed issues; a clean programmatic/script check is no cover and no substitute. Finish every verdict before changing anything, then fix the failed pages and check only those again.\"\n"
       },
       {
-        "start": 1141,
-        "end": 1285,
-        "before": "Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).",
-        "after": "The gate runs once per deliverable, on pages returned by `review_artifact` or `view_workspace_file`; the run that produced the file fixes what it reports."
+        "start": 1566,
+        "end": 2139,
+        "before": "You are the visual acceptance reviewer for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Your job: judge each assigned page against the criteria below and verdict pass or fail.\n\nReview ONLY the pages assigned to you. No repairs, no looking at unassigned pages. You review only — edit nothing; never write into the deliverable or the workspace.\n\n## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths of your assigned pages and the user's request.",
+        "after": "These are the visual acceptance criteria for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Judge every page against them and give each a pass or fail verdict.\n\nWhile judging, edit nothing: finish every page's verdict first, then repair.\n\n## What you judge from\n\nThe page images returned by `review_artifact` or `view_workspace_file`, and the user's request."
       },
       {
-        "start": 1993,
-        "end": 2092,
-        "before": "## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths",
-        "after": "## What you will receive (in the subtask instruction)\n\nThe subtask instruction gives you: the image paths"
+        "start": 5356,
+        "end": 5437,
+        "before": "One line per assigned page, passing pages included; no prose, no extra narration.",
+        "after": "One line per page, passing pages included. Keep these verdicts in your own check; tell the user only what you fixed or could not verify."
       }
     ]
   },
   {
     "path": "pdf-plugin/agents/visual-judge.md",
     "before_sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db",
-    "after_sha256": "6fb353b48f711f77f06fb822eee7171cbc4fc80d14f0710a48a28e9ed76f8463",
+    "after_sha256": "6d294099284cfcb63b5a465e0796a2892af2953de4ccc44242c6d9582d39dc65",
     "edits": [
       {
-        "start": 268,
-        "end": 396,
-        "before": "pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen",
-        "after": "pick one gate — judge the pages yourself from `review_artifact` or `view_workspace_file`, or, for a long deliverable, split the pages across 2–4 `run_subtasks` children with these criteria — and do not pre-screen"
+        "start": 192,
+        "end": 1330,
+        "before": "Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only inspect pre-rendered page PNGs via view_workspace_file (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).\"\ncolor: yellow\ntools: [view_workspace_file]\n",
+        "after": "Apply it once per deliverable, yourself, to the page images returned by `review_artifact` (or by `view_workspace_file` for pages you rendered to PNG); do not pre-screen the pages and then review them again, which duplicates the same review. Its bar is user acceptance: everything the user will see — visual asset quality and layout & composition — judged page by page as pass/fail with evidence-backed issues; a clean programmatic/script check is no cover and no substitute. Finish every verdict before changing anything, then fix the failed pages and check only those again.\"\n"
       },
       {
-        "start": 1141,
-        "end": 1285,
-        "before": "Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).",
-        "after": "The gate runs once per deliverable, on pages returned by `review_artifact` or `view_workspace_file`; the run that produced the file fixes what it reports."
+        "start": 1561,
+        "end": 2134,
+        "before": "You are the visual acceptance reviewer for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Your job: judge each assigned page against the criteria below and verdict pass or fail.\n\nReview ONLY the pages assigned to you. No repairs, no looking at unassigned pages. You review only — edit nothing; never write into the deliverable or the workspace.\n\n## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths of your assigned pages and the user's request.",
+        "after": "These are the visual acceptance criteria for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Judge every page against them and give each a pass or fail verdict.\n\nWhile judging, edit nothing: finish every page's verdict first, then repair.\n\n## What you judge from\n\nThe page images returned by `review_artifact` or `view_workspace_file`, and the user's request."
       },
       {
-        "start": 1988,
-        "end": 2087,
-        "before": "## What you will receive (in the dispatch message)\n\nThe dispatch message gives you: the image paths",
-        "after": "## What you will receive (in the subtask instruction)\n\nThe subtask instruction gives you: the image paths"
+        "start": 5351,
+        "end": 5432,
+        "before": "One line per assigned page, passing pages included; no prose, no extra narration.",
+        "after": "One line per page, passing pages included. Keep these verdicts in your own check; tell the user only what you fixed or could not verify."
       }
     ]
   },
   {
     "path": "presentations-plugin/skills/pptx/SKILL.md",
     "before_sha256": "05fd1cb4f47e32d794c4a13071e3a3604135a904ac2622c9b475dd41360c4c13",
-    "after_sha256": "9ece2443af06c7915dffd04763f88e928441ebcd937f09c40e371015997472b0",
+    "after_sha256": "ab831fda02ce257a51688bbc25292767f0fb95e22bcb25905cfd6764d8563596",
     "edits": [
       {
         "start": 15441,
         "end": 15636,
         "before": "**Visual QA** once only: render the deck to images and use the visual-judge subagent (if not present, check it yourself) when necessary. Do not call an external VLM to check slides for visual QA.",
-        "after": "**Visual QA** once only: render the deck to images and judge every page from `review_artifact` or `view_workspace_file`; for a long deck you may hand the pages and `agents/visual-judge.md` to `run_subtasks`. Do not call an external VLM to check slides for visual QA."
+        "after": "**Visual QA** once only: render the deck to images and judge every page yourself against `agents/visual-judge.md`, from the pages `review_artifact` returns. Do not call an external VLM to check slides for visual QA."
       }
     ]
   },

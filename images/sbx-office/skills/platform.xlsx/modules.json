@@ -1,10 +1,10 @@
 {
-  "adapter_revision": "388a4bbf6aa728eeed258929dc55b61cbddfbb04288a9b0c976fbc67dbdbd287",
+  "adapter_revision": "f085705f43d45be8c1c3254a686786a8829727aff8638702e5b3fdb1de60862a",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
       "deps": [],
-      "estimated_tokens": 1482,
+      "estimated_tokens": 1293,
       "logical_path": "spreadsheets-plugin/agents/visual-judge.md",
       "modes": [
         "work"
@@ -14,7 +14,7 @@
         "013-tool-name-residue.json"
       ],
       "path": "agents/visual-judge.md",
-      "sha256": "5fcd7123bcdff9973fa86ae9e55d921924fd2f092aee3e1115d339063c6bff1f"
+      "sha256": "2002ad4c6312af8bacc8aff704f32a23f66a907b0deead51d69fd948a8331353"
     },
     {
       "deps": [],
@@ -51,30 +51,33 @@
         "spreadsheets-plugin/skills/xlsx/templates/base.py",
         "spreadsheets-plugin/skills/xlsx/xlsx.py"
       ],
-      "estimated_tokens": 4251,
+      "estimated_tokens": 4267,
       "logical_path": "spreadsheets-plugin/skills/xlsx/SKILL.md",
       "modes": [
         "work"
       ],
       "patches": [
         "001-tools-and-roots.json",
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "resources/SKILL.md",
-      "sha256": "8591f5a64d2abc00d9763226ed56161b86c91b425172b77a43aed57415825252"
+      "sha256": "58f85873f5cb175e54c34c750fbe9889d66328c1e174ba4ca8e9199a90cea730"
     },
     {
       "deps": [
         "spreadsheets-plugin/skills/xlsx/engines/chart.md"
       ],
-      "estimated_tokens": 1282,
+      "estimated_tokens": 1279,
       "logical_path": "spreadsheets-plugin/skills/xlsx/engines/chart-templates.md",
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "engines/chart-templates.md",
-      "sha256": "8db3418424205eb5fec7d0826a18ceac6354c6765f3011000f5b5f74348bd538"
+      "sha256": "6d749e29979286f3f9e1c9c64892de807bfe04db7b2ba04336339b1161ab5cab"
     },
     {
       "deps": [
@@ -101,9 +104,11 @@
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "engines/design.md",
-      "sha256": "f060c1c5dd20ab1e7001af58488d685b95443d6b7c2f602c81af709b43a770a2"
+      "sha256": "15f43596ad6b8594a2afbcc5548281b39917a161ff9c9f6f1a434a72d4f60071"
     },
     {
       "deps": [
@@ -132,55 +137,62 @@
       "sha256": "8b194e4e276578baf9065d50d8b192a69482ab47204fd704b59580efde380453"
     },
     {
-      "deps": [],
-      "estimated_tokens": 1223,
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/env_setup/setup.md"
+      ],
+      "estimated_tokens": 61,
       "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/font_list.txt",
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "env_setup/font_list.txt",
-      "sha256": "7ed6413cf9a17f739fd98776858e4b467301d9cc863097e4e681eb9ffaaa6906"
+      "sha256": "1d1cf4052769ae23283166d31bdd858af94adb01f74935d3f4378da870a2914c"
     },
     {
       "deps": [],
-      "estimated_tokens": 2706,
+      "estimated_tokens": 582,
       "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/setup.md",
       "modes": [
         "work"
       ],
       "patches": [
         "001-tools-and-roots.json",
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "env_setup/setup.md",
-      "sha256": "e3ffb5fd786ec1a4546523b11547883d989b04e5f225e72bf2e020d13dbae5b3"
+      "sha256": "f19db2272e39055a5c4bc7bb9c7b6a42e6a9ec77994ed1c06f004eda1bdf9b86"
     },
     {
       "deps": [],
-      "estimated_tokens": 2278,
+      "estimated_tokens": 78,
       "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/setup_mac_linux.sh",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "env_setup/setup_mac_linux.sh",
-      "sha256": "1236c2eda4e3700c9c0b98f924eac27330ce3ff08f116fc87bbf4ac3abba82bb"
+      "sha256": "0542f6d23ccc77df40942b8b8670bfe0ff42a350a2a16cb569ef29801567c2d5"
     },
     {
       "deps": [],
-      "estimated_tokens": 2706,
+      "estimated_tokens": 52,
       "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/setup_windows.ps1",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "env_setup/setup_windows.ps1",
-      "sha256": "2f04a4c7cf4f5063e6d0696cf5f9693c57a1b3f9932a55faab6b4490800108b6"
+      "sha256": "07f6599c65d50b9b68d45e047ead84f6cb154eea222861048f3c8bfb06626d95"
     },
     {
       "deps": [
@@ -311,9 +323,11 @@
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "scenes/finance.md",
-      "sha256": "22502aff110524eb5e16ff86aa9895628abf92f5b48a96b94b6c4e97af08fb02"
+      "sha256": "542cd048b01e7666f0636f0bbf61c5b4bee3559059e8ffe5b8aeb357a73e5716"
     },
     {
       "deps": [
@@ -339,22 +353,25 @@
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "014-dependency-probes.json"
+      ],
       "path": "scenes/vba.md",
-      "sha256": "949fde2bb874fbdc6251c98358885df3cd1301035992ccf5932d167a0de245ef"
+      "sha256": "e8e8096902df4451cd1b48dc1fb386a9844a7631e5d03d1853fa94ca77fee5fb"
     },
     {
       "deps": [],
-      "estimated_tokens": 1704,
+      "estimated_tokens": 78,
       "logical_path": "spreadsheets-plugin/skills/xlsx/setup.sh",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "014-dependency-probes.json"
       ],
       "path": "setup.sh",
-      "sha256": "ab22cd1fa8f179d829ce3c51344f3029140cf80b8813c4975ecdb4dbc99327af"
+      "sha256": "0542f6d23ccc77df40942b8b8670bfe0ff42a350a2a16cb569ef29801567c2d5"
     },
     {
       "deps": [],

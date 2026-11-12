@@ -66,6 +66,37 @@ def test_generated_resources_are_platform_only_and_installers_are_disabled():
                     compile(data, str(path), "exec")
         for setup in package.rglob("setup*.sh"):
             assert setup.read_text().splitlines()[1:4][-1] == "exit 1"
+            assert len(setup.read_text().splitlines()) == 4, setup
+        for setup in package.rglob("setup*.ps1"):
+            assert setup.read_text().splitlines() == ['throw "Dependencies are preinstalled; report the missing one and stop."']
+
+
+# Text the sandbox cannot honour, or that would put the upstream vendor into a user's file.
+FOREIGN = [
+    rb"(?i)\bz\.ai\b",
+    rb"(?i)chatglm|zhipu",
+    rb"/mnt/skills",
+    rb"fonts\.googleapis",
+    rb"(?i)install on demand|MUST install|sudo |tuna\.tsinghua|npmmirror",
+    rb"(TTFont\(|addfont\(|fname=).*truetype/(chinese|english)/",
+    rb"Tectonic (auto-downloads|pulls)",
+    rb"Remote URLs \(`http://` / `https://`\) are fine",
+]
+
+
+def test_generated_resources_only_promise_what_the_image_has():
+    hits = []
+    for fmt in office.PACKAGES.values():
+        for path in (SKILLS / f"platform.{fmt}").rglob("*"):
+            if not path.is_file() or path.name in {"LICENSE", "NOTICE", "modules.json"} or path.suffix == ".png":
+                continue
+            data = path.read_bytes()
+            for pattern in FOREIGN:
+                for line in data.splitlines():
+                    # The resource frontmatter names the upstream author; it never reaches a user file.
+                    if re.search(pattern, line) and line.strip() != b"author: Z.AI":
+                        hits.append(f"{path.relative_to(SKILLS)}: {line[:120]!r}")
+    assert not hits, "\n".join(hits)
     pdf = (SKILLS / "platform.pdf/scripts/pdf.py").read_text()
     import ast
 

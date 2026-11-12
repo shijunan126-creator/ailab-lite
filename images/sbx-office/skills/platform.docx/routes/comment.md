@@ -10,7 +10,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from datetime import datetime
 
-def add_comment(paragraph, comment_text, author="AILab", initials="G"):
+def add_comment(paragraph, comment_text, author="AILab", initials="AI"):
     """Add a comment to an entire paragraph."""
     # Create comment reference
     comment_id = str(hash(comment_text) % 10000)

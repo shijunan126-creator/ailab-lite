@@ -1372,10 +1372,6 @@ def compile_blueprint(json_path, output_html_path):
             continuous_svgs = generate_continuous_flow_svg(canvas_w, canvas_h, total_pages, palette['accent'])
         elif svg_type != 'none':
             bg_svg = generate_generative_svg(svg_type, canvas_w, canvas_h, palette['accent'])
-    if has_tension:
-        font_url = 'https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Noto+Sans+SC:wght@300;400;500;700;900&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&display=swap'
-    else:
-        font_url = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700;900&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&display=swap'
     explicit_gap = art.get('grid_gap', None)
     if explicit_gap is not None:
         dynamic_gap = str(explicit_gap) if 'px' in str(explicit_gap) else f'{explicit_gap}px'
@@ -1393,7 +1389,7 @@ def compile_blueprint(json_path, output_html_path):
     if art.get('bleed', False):
         override_css += '.safe-zone { inset: 0 !important; padding: 0 !important; }\n'
     override_css += f'@media screen {{ body {{ scale: min(1, calc(100vw / {canvas_w}), calc(100vh / {canvas_h})); }} }}\n'
-    html = f'''<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <link href="{font_url}" rel="stylesheet">\n    <title>{blueprint.get('document_meta', {}).get('title', 'Document')}</title>\n    <style>\n        {css_vars}\n        {BASE_CSS}\n        {override_css}\n    </style>\n</head>\n<body>\n'''
+    html = f'''<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <title>{blueprint.get('document_meta', {}).get('title', 'Document')}</title>\n    <style>\n        {css_vars}\n        {BASE_CSS}\n        {override_css}\n    </style>\n</head>\n<body>\n'''
     if use_continuous:
         total_height = canvas_h * total_pages
         html += f'\n<div class="continuous-canvas" style="height: {total_height}px; background: var(--c-bg);">\n'

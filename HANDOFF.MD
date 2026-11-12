@@ -13,7 +13,9 @@
 - 新增补丁不能改上游原文：它的 `before_sha256` 必须是前一个补丁的 `after_sha256`，`start/end` 是对该状态文本的偏移（同一文件多个 edit 按输入文本计算，构建时倒序应用）。改完 `before`/`after` 长度要先确认原文只匹配一次，再重算两侧哈希。
 - `images/sbx-office/skills/index.json` 一变，Agent 的 `skill_verification` 就和旧镜像对不上，`load_skill` 直接拒绝。部署 Agent 必须同时重建 sbx-office 镜像。
 - 旧包不随镜像保留：技能包一更新，会话历史里的技能正文就是旧包的。按上下文里实际可见的模块判断过期并追加说明，不能按 `loaded_skills` 拒读（2026-11-12 前的实现会让旧会话永远读不了该技能）。
-- 上游技能按它自家镜像写字体路径（`env_setup/font_list.txt` 就是那份清单）和探针（Chromium 查 `~/.cache/ms-playwright`）；改技能前先在 sbx-office 的 apt 清单里核对路径是否真的存在，ReportLab 读不了 Noto CJK 的 CFF 轮廓。
+- 上游技能按它自家镜像写字体路径、探针和脚本名（`pdf.py convert.html` 曾调用从未发布的 `html2pdf.js`）。改技能后在构建出的镜像里断网实跑文档里的命令，并逐个核对代码块里的绝对路径；静态看 apt 清单不够。ReportLab 读不了 Noto CJK 的 CFF 轮廓，能嵌入的中文只有 `wqy-zenhei.ttc` 和 TeX Live 带入的 AR PL 字体。
+- fontconfig 别名要写 `binding="same"`，否则 Chromium（Skia）不认替代字体，`fc-match` 看着对、PDF 里仍是 DejaVu。matplotlib 不走 fontconfig，要 `addfont` 实际文件。`--no-install-recommends` 下 `gs`、DejaVu 都不会被带入。
+- colima 默认不挂 `/tmp`，`docker run -v /tmp/x:...` 得到空目录；脚本用 `-i` 从 stdin 传进容器。
 
 ## 2026-11-11 Outbox 唤醒
 

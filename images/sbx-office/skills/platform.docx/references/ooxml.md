@@ -14,11 +14,11 @@ Use the `Document` class from `"$DOCX_SCRIPTS/document.py"` for all edits, track
 
 ```bash
 # Find the docx skill root
-find /mnt/skills -name "document.py" -path "*/docx/scripts/*" 2>/dev/null | head -1
+find /opt/skills/platform.docx -name "document.py" -path "*/docx/scripts/*" 2>/dev/null | head -1
 # Skill root = parent of scripts/
 
 # Run with PYTHONPATH
-PYTHONPATH=/mnt/skills/docx python your_script.py
+PYTHONPATH="$DOCX_SKILL_DIR" python your_script.py
 ```
 
 ```python
@@ -117,7 +117,7 @@ doc["word/document.xml"].revert_deletion(del_elem)
 ### Comments
 
 ```python
-doc = Document('unpacked', author="Z.ai", initials="Z")
+doc = Document('unpacked', author="AILab", initials="AI")
 
 # Comment on a range
 start = doc["word/document.xml"].get_node(tag="w:del", attrs={"w:id": "1"})

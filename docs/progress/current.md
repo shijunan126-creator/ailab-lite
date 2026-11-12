@@ -1,10 +1,10 @@
-# 办公技能复核（2026-11-12）
+# 办公技能复核（2026-11-12 → 11-13）
 
-- 用户要求：#188 改工具名后复查办公技能的提示词冲突、缺依赖、调用逻辑与前缀缓存，并核对本分支已有记录。分支 `fix/office-skill-residue` 已 rebase 到 `main@99602a5a`；未推送、未部署。
-- 已完成：旧会话在技能包更新后读不了技能（死路错误）改为切到当前包并追加一次说明；v1 导航 `bash(command=...)`；visual-judge 措辞改正；补丁 014 修 pdf `env.check` 误报 Chromium 缺失和缺依赖时的安装提示。清单记录按 #188 更正。详见[复核记录](updates/2026-11-12-office-skill-recheck.md)。
-- 验证：ruff 通过，相关 10 个测试文件 311 passed，新增用例去掉修复即失败。
-- 未做：字体/`gs`/`qpdf` 与镜像不一致（PDF 报告路线的字体表在镜像里全不存在）需改镜像并实测渲染，单独 PR；setup 文档残留 R1/R2/R5 待定范围。
-- 下一步：用户确认后推送开 PR（部署须 Agent 与 sbx-office 镜像同时更新）；字体与镜像依赖对齐另开分支。
+- 用户要求：#188 改工具名后复查办公技能（提示词冲突、缺依赖、调用逻辑、前缀缓存），第二轮「全部都修、都要发现问题」，并且 Agent 默认不派子任务、用户要求才派。分支 `fix/office-skill-residue`，base `main@99602a5a`；未推送、未部署。
+- 已完成：旧会话跨部署读不了技能改为切到当前包并追加说明；Work 提示词与 `run_subtasks` 描述改为仅在用户要求时派子任务；`pdf.py convert.html`/`convert.blueprint` 调用不存在的 `html2pdf.js`（创意 PDF 主路线直接失败）已修；字体路径、封面字体、Google Fonts、`/mnt/skills`、Tectonic、安装提示、上游品牌全部按镜像实情改正；镜像补 `gs`/`qpdf` 与开源字体并修 fontconfig 别名。详见[复核记录](updates/2026-11-12-office-skill-recheck.md)。
+- 验证：ruff 通过；相关 23 个测试文件 387 passed；本机完整构建 sbx-office 后契约测试 5 passed，镜像内断网逐项实测字体嵌入、env 检查、gs/qpdf/XeLaTeX 均通过。
+- 未做：完整套件与 E2E 交给 CI；amd64 镜像、真模型跨部署多轮未测。
+- 下一步：提交后等用户确认推送开 PR；部署须 Agent 与 sbx-office 镜像同时更新，Work 会话部署后重建一次前缀。
 
 ---
 
