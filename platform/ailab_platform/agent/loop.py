@@ -55,10 +55,10 @@ from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
     load_skill,
     personal_header,
-    render_skill_mentions,
     skills,
     system_prompt_for,
     user_prompt,
+    user_text,
 )
 from .skill_modules import ModuleVisibility, read_module
 from .skill_modules import identity as module_identity
@@ -101,6 +101,7 @@ WORKSPACE_RECLAIMED_NOTE = (
 )
 RECLAIM_WAIT_SECONDS = 240  # the Broker packs the workspace before deleting the sandbox
 WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保存下来，工作区是空的。需要的文件请重新生成。）"
+SKILL_PACKAGE_UPDATED = "技能包已更新：上文更早读到的本技能导航和资源已过期，以本次结果为准；仍要用的资源请重新读取。"
 
 
 def _tools_for_run(run):
@@ -1260,10 +1261,8 @@ class AgentLoop:
         return await self._context(run_id).compact(run_id, *args, **kwargs)
 
     async def _user_content(self, run_id, run, model):
-        from ..contracts.document_view import text_block
-        from ..contracts.schedules import scheduled_prompt
-
-        prompt = scheduled_prompt(run["prompt"], (run.get("options") or {}).get("schedule")) + text_block(run.get("doc_refs"))
+        options = run.get("options") or {}
+        prompt = user_text(run["prompt"], skills=options.get("skills"), refs=run.get("doc_refs"), schedule=options.get("schedule"))
         prompt_options = (
             {"mode": (run.get("options") or {}).get("mode", "work"), "document_tools_version": 2}
             if catalog_version(run.get("options")) == 2
@@ -1292,12 +1291,12 @@ class AgentLoop:
                 for page in document_pages
             ]
         if not images and not document_pages:
-            return user_prompt(render_skill_mentions(prompt, (run.get("options") or {}).get("skills")), files, **prompt_options)
+            return user_prompt(prompt, files, **prompt_options)
         parts = [
             {
                 "type": "text",
                 "text": user_prompt(
-                    render_skill_mentions(prompt, (run.get("options") or {}).get("skills")),
+                    prompt,
                     files if prompt_options.get("document_tools_version") == 2 else [file for file in files if file not in images],
                     **prompt_options,
                 ),
@@ -1457,22 +1456,24 @@ class AgentLoop:
                 raise ToolError("load_skill reads whole files; cursor is unsupported")
             if wanted in BASE_SKILLS:
                 mode = (turn.run.get("options") or {}).get("mode", "work")
-                installed = next((item for item in self._states[run_id].get("loaded_skills", []) if item["name"] == wanted), {})
-                if installed.get("package_hash", skills()[wanted]["sha256"]) != skills()[wanted]["sha256"]:
-                    raise ToolError("installed skill package changed; rebuild context explicitly")
-                if installed.get("version", skills()[wanted]["version"]) != skills()[wanted]["version"]:
-                    raise ToolError("installed skill version is unavailable; rebuild context explicitly")
-                if call.arguments.get("version") not in (None, skills()[wanted]["version"]):
-                    raise ToolError("requested skill version is unavailable; rebuild context explicitly")
+                current = skills()[wanted]["version"]
+                if call.arguments.get("version") not in (None, current):
+                    raise ToolError(f"技能 {wanted} 只提供当前版本 {current}；不传 version 即可读取")
                 try:
                     result = read_module(
                         wanted, mode, call.arguments.get("resource"), document_tools_version=catalog_version(turn.run.get("options"))
                     )
                 except (ValueError, OSError) as exc:
                     raise ToolError(str(exc)) from exc
-                if installed.get("guide_revision", result.get("guide_revision")) != result.get("guide_revision"):
-                    raise ToolError("installed document guide changed; rebuild context explicitly")
-                if module_identity(result) in self._module_views.setdefault(run_id, ModuleVisibility()).read(turn.messages):
+                # Only the installed package can be read; the one this conversation read earlier is gone after a
+                # deploy. Switch to it in an appended result and say so once: the earlier text stays in history
+                # (prefix cache), the model learns it is superseded, and the run is never left with no way to read.
+                visible = self._module_views.setdefault(run_id, ModuleVisibility()).read(turn.messages)
+                shown = [entry for entry in visible.values() if entry.get("name") == wanted]
+                package = ("package_hash", "version", "guide_revision")
+                if shown and not any(all(entry.get(key) == result.get(key) for key in package) for entry in shown):
+                    result["note"] = SKILL_PACKAGE_UPDATED
+                elif module_identity(result) in visible:
                     result = {k: v for k, v in result.items() if k != "skill"}
                     result.update(already_loaded=True, note="already shown above；正文已在当前上下文中")
             elif call.name == "load_skill" and call.arguments.get("resource") is not None:
@@ -1720,8 +1721,12 @@ class AgentLoop:
                 if result.get("guide_revision"):
                     entry["guide_revision"] = result["guide_revision"]
                 loaded = state.setdefault("loaded_skills", [])
-                if not any(item["name"] == wanted for item in loaded):
+                existing = next((item for item in loaded if item["name"] == wanted), None)
+                if existing is None:
                     loaded.append(entry)
+                elif wanted in BASE_SKILLS:
+                    # The package this read came from is the one the run uses from now on.
+                    existing.update({key: entry[key] for key in ("version", "package_hash", "guide_revision") if key in entry})
             title = (turn.personal.get(wanted) or skills().get(wanted) or {}).get("title") or wanted
             await self._event(
                 run_id,
@@ -1833,7 +1838,8 @@ class AgentLoop:
                     "prompt": row["prompt"],
                     "input_files": row.get("input_files") or [],
                     "doc_refs": row.get("doc_refs") or [],
-                    "options": {**(turn.run.get("options") or {}), "skills": selections},
+                    # A steer is what the user typed now: it keeps the run's mode, never the run's schedule header.
+                    "options": {**{k: v for k, v in (turn.run.get("options") or {}).items() if k != "schedule"}, "skills": selections},
                 }
                 content = await self._user_content(run_id, message_run, turn.run.get("model"))
                 turn.run.setdefault("_image_files", {}).update(message_run.get("_image_files") or {})

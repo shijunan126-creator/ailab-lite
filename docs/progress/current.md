@@ -1,3 +1,13 @@
+# 办公技能复核（2026-11-12 → 11-13）
+
+- 用户要求：#188 改工具名后复查办公技能（提示词冲突、缺依赖、调用逻辑、前缀缓存），全部修复；Agent 默认不派子任务；再用真模型验证、检查 Chat/Work 选中交付件段落是否有问题或影响缓存、固化代表性场景用例，然后提 PR、合并、部署。分支 `fix/office-skill-residue`，base `main@99602a5a`。
+- 已完成：技能包更新后旧会话可读；默认不派子任务；`html2pdf.js` 缺失、字体路径、封面字体、Google Fonts、`/mnt/skills`、Tectonic、安装提示、上游品牌全部按镜像实情改正，镜像补 `gs`/`qpdf` 与开源字体；用户消息（技能标记、定时任务头、选中段落）在实时、追加与历史重建中统一由 `prompts.user_text` 拼，修掉三处不一致；新增 `platform/scenarios/` 真模型场景套件。详见[复核记录](updates/2026-11-12-office-skill-recheck.md)。
+- 验证：ruff 通过；改动模块测试通过；真模型 9 个场景全过，续轮缓存 95–99%，跨镜像续轮 Chat 无边界、Work 一次预期重建。
+- 未做：amd64 镜像；工作区路径形式的选中段落无真模型场景。
+- 下一步：PR 合并后按场景套件复核；改提示词/工具/技能/请求构造/沙箱镜像时先跑 `platform/scenarios`。
+
+---
+
 # 同模式分叉沿用 checkpoint（2026-11-12）
 
 - 用户要求：按讨论的设计实施——同模式分叉复用被分叉轮次的 checkpoint，测试充分，并确保分叉/checkpoint 的各种删除路径没有残留。分支 `feat/fork-reuse-checkpoint`，base `main@cf758dd1`；合并与部署按用户当次要求进行。

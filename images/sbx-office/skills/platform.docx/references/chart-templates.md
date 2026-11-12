@@ -22,8 +22,8 @@ from matplotlib.font_manager import FontProperties
 
 # ── CJK Font ──
 _FONT_PATHS = [
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",       # this sandbox (first: FontProperties does not check the file)
     "/System/Library/Fonts/Supplemental/SimHei.ttf",       # macOS
-    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",       # Linux
     "/usr/share/fonts/truetype/chinese/SimHei.ttf",        # custom install
     "./SimHei.ttf",                                         # current dir
 ]

@@ -318,9 +318,14 @@ When content is minimal, prioritize the following compact forms:
 
 ## 6.5 Icons and Illustrations
 
-- Use **Material Design Icons** (Google Fonts method):
+- Use **Material Design Icons** (installed locally; the sandbox has no network):
   ```html
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <style>
+  @font-face { font-family: 'Material Icons'; src: url('file:///usr/share/fonts/woff/material-design-icons-iconfont/MaterialIcons-Regular.woff2') format('woff2'); }
+  .material-icons { font-family: 'Material Icons'; font-weight: normal; font-style: normal; font-size: 24px; line-height: 1;
+    letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap; direction: ltr;
+    font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased; }
+  </style>
   <!-- Usage: -->
   <i class="material-icons">icon_name</i>
   ```

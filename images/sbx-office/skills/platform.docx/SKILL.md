@@ -17,7 +17,7 @@ extract_text/view_attachment 由平台管理等待；不要启动沙箱sleep、�
 
 <!-- work -->
 ## 制作与编辑
-根目录 /opt/skills/platform.docx/；先 copy_library_file 到 /workspace/inputs，原件只读，新版本写 /workspace/outputs。依赖应预装；缺失则报告，不联网安装。工作区用 office-read SOURCE NEW_OUTPUT_DIRECTORY 重读（输出目录须不存在）。bash(cmd=...) 执行，后台用 bash_wait；先 scripts/check.py，再 view_workspace_file 核对，最后 deliver_file。
+根目录 /opt/skills/platform.docx/；先 copy_library_file 到 /workspace/inputs，原件只读，新版本写 /workspace/outputs。依赖应预装；缺失则报告，不联网安装。工作区用 office-read SOURCE NEW_OUTPUT_DIRECTORY 重读（输出目录须不存在）。bash(command=...) 执行，后台用 bash_wait；先 scripts/check.py，再 view_workspace_file 核对，最后 deliver_file。
 兼容 JSON 规格入口：/opt/skills/platform.docx/scripts/build_docx.py。
 - agents/visual-judge.md
 - resources/SKILL.md

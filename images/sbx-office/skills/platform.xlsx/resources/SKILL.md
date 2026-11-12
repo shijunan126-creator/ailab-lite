@@ -22,7 +22,7 @@ source "/opt/skills/platform.xlsx/env_setup/env_check.sh"
 
 This auto-detects and exports `XLSX_SKILL_DIR` and `FONT_DIR`. No manual variable setup needed.
 
-**Only if the check fails**, read [`env_setup/setup.md`](env_setup/setup.md) for full platform-specific installation instructions (dependencies, fonts, China mirrors).
+**Only if the check fails**, report the missing dependency to the user and stop the route that needs it; everything is preinstalled, so do not install anything. [`env_setup/setup.md`](env_setup/setup.md) lists what is installed.
 
 Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.
 
@@ -210,7 +210,7 @@ for sub in [XLSX_SKILL_DIR, os.path.join(XLSX_SKILL_DIR, "templates")]:
 | **templates/base.py** | Design tokens, font resolution, style factories, utilities (single source of truth) |
 | **xlsx.py** | QA commands (see `quality/pipeline.md`) |
 
-Workbook metadata: `wb.properties.creator = "Z.ai"`
+Workbook metadata: `wb.properties.creator = "AILab"`
 
 > **All code MUST import from `templates/base.py`** for colors, fonts, and style helpers. Never hardcode hex values or font names.
 

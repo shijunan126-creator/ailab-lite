@@ -795,11 +795,8 @@ node "$PDF_SKILL_DIR/scripts/html2pdf-next.js" input.html --output output.pdf --
    letter-spacing: 12px;         /* Typical CJK vertical spacing */
    ```
    Without `text-orientation: upright`, Latin/fallback fonts render rotated 90°. Without `white-space: nowrap`, CJK characters may wrap into unexpected multi-column layouts (e.g., 3 chars on one line + 1 char alone on next).
-3. **Font Coverage**: For CJK content via Playwright, always load Google Fonts Noto Serif SC or Noto Sans SC via `<link>` tag in `<head>` (NOT `@import` in CSS - `@import` must be the very first rule in a stylesheet or it's silently ignored). Example:
-   ```html
-   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-   ```
-   System CJK fonts vary across macOS/Linux - Google Fonts guarantee glyph coverage without relying on system fonts. `design_engine.py` already handles this automatically via `<link>` tag.
+3. **Font Coverage**: CJK fonts are installed locally — name them in CSS (`'Noto Sans SC'`, `'Noto Serif SC'` map to Noto CJK SC); the sandbox has no network, so never link Google Fonts or other web fonts. `design_engine.py` already uses the local fonts.
+
 4. **Post-Generation Text Verification**: After Playwright renders the PDF, extract text from every page and scan for `?` or `\ufffd`. If found, the source HTML has encoding-corrupted characters that must be replaced in the Python source.
 5. ** HTML Pre-Render Validation (MANDATORY)**: After writing the HTML file and before running `html2pdf-next.js`, always run the HTML validator:
    ```bash

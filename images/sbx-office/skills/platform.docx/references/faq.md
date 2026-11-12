@@ -86,10 +86,10 @@ shading: { type: ShadingType.CLEAR, fill: "F1F5F9" }
 
 **Symptom**: Chinese text shows as empty boxes □□□ in generated PNG charts.
 
-**Fix**: Configure SimHei font before plotting:
+**Fix**: Configure a CJK font file before plotting:
 ```python
 from matplotlib.font_manager import FontProperties
-zh_font = FontProperties(fname="/path/to/SimHei.ttf")
+zh_font = FontProperties(fname="/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc")
 plt.title("中文标题", fontproperties=zh_font)
 plt.rcParams["axes.unicode_minus"] = False
 ```

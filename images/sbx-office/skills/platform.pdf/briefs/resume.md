@@ -64,8 +64,8 @@ pdfmetrics.registerFont(TTFont('FreeSerif-Italic', '/usr/share/fonts/truetype/fr
 pdfmetrics.registerFont(TTFont('FreeSerif-BoldItalic', '/usr/share/fonts/truetype/freefont/FreeSerifBoldItalic.ttf'))
 registerFontFamily('FreeSerif', normal='FreeSerif', bold='FreeSerif-Bold', italic='FreeSerif-Italic', boldItalic='FreeSerif-BoldItalic')
 # For Chinese resumes, also register Noto Sans SC:
-# pdfmetrics.registerFont(TTFont('Noto Sans SC', '/usr/share/fonts/truetype/chinese/NotoSansSC-Regular.ttf'))
-# pdfmetrics.registerFont(TTFont('Noto Sans SC Bold', '/usr/share/fonts/truetype/chinese/NotoSansSC-Bold.ttf'))
+# pdfmetrics.registerFont(TTFont('Noto Sans SC', '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc', subfontIndex=0))
+# pdfmetrics.registerFont(TTFont('Noto Sans SC Bold', '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc', subfontIndex=0))
 # registerFontFamily('Noto Sans SC', normal='Noto Sans SC', bold='Noto Sans SC Bold')
 
 # ── Styles ──
@@ -152,7 +152,7 @@ doc = SimpleDocTemplate(
     leftMargin=1.5*cm, rightMargin=1.5*cm,
     topMargin=1.5*cm, bottomMargin=1.5*cm,
     title='Resume - Your Name',
-    author='Z.ai', creator='Z.ai'
+    author='Your Name', creator='AILab'
 )
 
 story = []

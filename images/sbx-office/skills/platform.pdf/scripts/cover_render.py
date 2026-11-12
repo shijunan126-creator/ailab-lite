@@ -75,17 +75,20 @@ _FONT_CANDIDATES = {
                      "~/Library/Fonts/SimSun.ttf", "C:/Windows/Fonts/simsun.ttc"], 0),
         ("STSong", ["/System/Library/Fonts/Supplemental/Songti.ttc"], 4),
         ("ARPLUMing", ["/usr/share/fonts/truetype/arphic/uming.ttc"], 0),
+        ("ARPLSungtiGB", ["/usr/share/fonts/truetype/arphic-gbsn00lp/gbsn00lp.ttf"], None),
     ],
     "kai": [
         ("KaiTi", ["/usr/share/fonts/truetype/chinese/simkai.ttf",
                     "~/Library/Fonts/SimKai.ttf", "C:/Windows/Fonts/simkai.ttf"], None),
         ("KaitiSC", ["/System/Library/Fonts/Supplemental/Kaiti.ttc"], 2),
+        ("ARPLKaitiGB", ["/usr/share/fonts/truetype/arphic-gkai00mp/gkai00mp.ttf"], None),
     ],
     "latin": [
         ("TNR", ["/usr/share/fonts/truetype/english/Times-New-Roman.ttf",
                   "~/Library/Fonts/Times-New-Roman.ttf",
                   "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
                   "C:/Windows/Fonts/times.ttf"], None),
+        ("LiberationSerif", ["/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"], None),
     ],
 }
 

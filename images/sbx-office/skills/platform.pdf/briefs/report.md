@@ -208,14 +208,16 @@ Paragraph('When ∠ A = 90°, AB ⊥ AC and ΔABC ≅ ΔDEF', body_style)
 ### CRITICAL: Allowed Fonts Only
 **You MUST ONLY use the following registered fonts. Using ANY other font is STRICTLY FORBIDDEN.**
 
-| Font Name | Usage | Path |
+| Font Name | Usage | File in this sandbox |
 |-----------|-------|------|
-| `Microsoft YaHei` | Chinese headings | `/usr/share/fonts/truetype/chinese/msyh.ttf` |
-| `SimHei` | Chinese body text | `/usr/share/fonts/truetype/chinese/SimHei.ttf` |
-| `SarasaMonoSC` | Chinese code blocks | `/usr/share/fonts/truetype/chinese/SarasaMonoSC-Regular.ttf` |
-| `Times New Roman` | English text, numbers, tables | `/usr/share/fonts/truetype/english/Times-New-Roman.ttf` |
-| `Calibri` | English alternative | `/usr/share/fonts/truetype/english/calibri-regular.ttf` |
+| `Microsoft YaHei` | Chinese headings | `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc` (WenQuanYi Zen Hei) |
+| `SimHei` | Chinese body text | `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc` (WenQuanYi Zen Hei) |
+| `SarasaMonoSC` | Chinese code blocks | `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc` index 1 (WenQuanYi Zen Hei Mono) |
+| `Times New Roman` | English text, numbers, tables | `/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf` (Times metrics) |
+| `Calibri` | English alternative | `/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf` (Calibri metrics) |
 | `DejaVuSans` | Formulas, symbols, code | `/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf` |
+
+The names are kept so every style below works unchanged; the files are the open fonts this sandbox has. ReportLab cannot embed the Noto CJK fonts (CFF outlines) — use WenQuanYi for Chinese.
 
 **FORBIDDEN fonts (DO NOT USE):**
 - ❌ Arial, Arial-Bold, Arial-Italic
@@ -229,14 +231,14 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import registerFontFamily
 
-# Chinese fonts
-pdfmetrics.registerFont(TTFont('Microsoft YaHei', '/usr/share/fonts/truetype/chinese/msyh.ttf'))
-pdfmetrics.registerFont(TTFont('SimHei', '/usr/share/fonts/truetype/chinese/SimHei.ttf'))
-pdfmetrics.registerFont(TTFont("SarasaMonoSC", '/usr/share/fonts/truetype/chinese/SarasaMonoSC-Regular.ttf'))
+# Chinese fonts (WenQuanYi Zen Hei: the TrueType CJK font in this sandbox)
+pdfmetrics.registerFont(TTFont('Microsoft YaHei', '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc', subfontIndex=0))
+pdfmetrics.registerFont(TTFont('SimHei', '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc', subfontIndex=0))
+pdfmetrics.registerFont(TTFont("SarasaMonoSC", '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc', subfontIndex=1))
 
-# English fonts
-pdfmetrics.registerFont(TTFont('Times New Roman', '/usr/share/fonts/truetype/english/Times-New-Roman.ttf'))
-pdfmetrics.registerFont(TTFont('Calibri', '/usr/share/fonts/truetype/english/calibri-regular.ttf'))
+# English fonts (metric-compatible open fonts)
+pdfmetrics.registerFont(TTFont('Times New Roman', '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf'))
+pdfmetrics.registerFont(TTFont('Calibri', '/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf'))
 
 # Symbol/Formula font
 pdfmetrics.registerFont(TTFont("DejaVuSans", '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf'))
@@ -292,15 +294,15 @@ Paragraph('《巴黎协定》签署于2015年', en_style)               # ✅ CJ
 ### Chinese Plot PNG Method
 ```python
 import matplotlib.pyplot as plt
-plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Noto Sans CJK SC']
 plt.rcParams['axes.unicode_minus'] = False
 ```
 
 ### Available Font Paths
-Run `fc-list` to get more fonts. Font files are typically located under:
-- `/usr/share/fonts/truetype/chinese/`
-- `/usr/share/fonts/truetype/english/`
-- `/usr/share/fonts/`
+Run `fc-list` to get more fonts. In this sandbox:
+- `/usr/share/fonts/truetype/wqy/` (Chinese, embeddable by ReportLab)
+- `/usr/share/fonts/truetype/liberation/`, `/usr/share/fonts/truetype/crosextra/`, `/usr/share/fonts/truetype/dejavu/`, `/usr/share/fonts/truetype/freefont/`
+- `/usr/share/fonts/opentype/noto/` (Noto CJK; LibreOffice/Chromium/matplotlib only)
 
 ---
 
@@ -486,7 +488,7 @@ def insert_cover(cover_pdf, body_pdf, output_pdf):
     # Body pages follow
     for page in PdfReader(body_pdf).pages:
         writer.add_page(normalize_page_to_a4(page))
-    writer.add_metadata({'/Title': 'Report Title', '/Author': 'Z.ai', '/Creator': 'Z.ai'})
+    writer.add_metadata({'/Title': 'Report Title', '/Creator': 'AILab'})
     with open(output_pdf, 'wb') as f:
         writer.write(f)
 ```
@@ -1066,8 +1068,8 @@ doc = SimpleDocTemplate(
     pdf_filename,
     pagesize=letter,
     title=os.path.splitext(pdf_filename)[0],
-    author='Z.ai',
-    creator='Z.ai',
+    # author='<the user or organisation>',  # only when known; never a tool or vendor name
+    creator='AILab',
     subject='Document purpose description'
 )
 ```
@@ -1214,10 +1216,10 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import registerFontFamily
 
 # ── Font Registration ──
-pdfmetrics.registerFont(TTFont('TimesNewRoman', '/usr/share/fonts/truetype/english/Times-New-Roman.ttf'))
+pdfmetrics.registerFont(TTFont('TimesNewRoman', '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf'))
 registerFontFamily('TimesNewRoman', normal='TimesNewRoman', bold='TimesNewRoman')
 # For Chinese resumes, also register SimHei:
-# pdfmetrics.registerFont(TTFont('SimHei', '/usr/share/fonts/truetype/chinese/SimHei.ttf'))
+# pdfmetrics.registerFont(TTFont('SimHei', '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc', subfontIndex=0))
 # registerFontFamily('SimHei', normal='SimHei', bold='SimHei')
 
 # ── Styles ──
@@ -1304,7 +1306,7 @@ doc = SimpleDocTemplate(
     leftMargin=1.5*cm, rightMargin=1.5*cm,
     topMargin=1.5*cm, bottomMargin=1.5*cm,
     title='Resume - Your Name',
-    author='Z.ai', creator='Z.ai'
+    author='Your Name', creator='AILab'
 )
 
 story = []
@@ -1631,7 +1633,7 @@ Before submitting code, verify:
 - [ ] **Line breaks**: Using `<br/>` not `\n`
 - [ ] **Headings**: Bold with `<b>` tags
 - [ ] **Table headers**: White bold text on dark blue (#1F4E79)
-- [ ] **Metadata**: Title matches filename, Author/Creator = "Z.ai"
+- [ ] **Metadata**: Title matches filename; Author is the user/owner when known (never a tool or vendor name); Creator = "AILab"
 - [ ] **Sanitization**: Code sanitized before execution
 - [ ] **Post-build metadata**: `pdf.py meta.brand` called after build
 - [ ] **Post-build blank page cleanup**: `pdf.py pages.clean` called after build

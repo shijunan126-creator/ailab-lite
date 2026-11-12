@@ -191,7 +191,7 @@ def _find_npm() -> str | None:
         if candidate.exists(): return str(candidate)
     return None
 def _probe_playwright_npm() -> tuple[str, str]:
-    """Check if playwright Dependency must be preinstalled; report it if missing."""
+    """Check that the playwright npm package is installed."""
     node = _find_node()
     if node:
         for cwd in (None, str(Path(node).parent.parent)):
@@ -212,6 +212,8 @@ def _probe_playwright_npm() -> tuple[str, str]:
     return ('missing', '')
 def _probe_chromium() -> tuple[str, str]:
     """Check if Playwright Chromium browser is installed."""
+    configured = os.environ.get('PLAYWRIGHT_CHROMIUM_PATH')
+    if configured and Path(configured).is_file(): return ('ok', configured)
     import platform as _platform
     home = Path.home()
     if _platform.system() == 'Darwin':
@@ -239,7 +241,7 @@ def env_check(argv: list):
     s_tec = _probe_tectonic()
     s_pw_py = _probe_python_module('playwright')
     if use_json:
-        report = {'core': {'python3': s_py[0], 'python3_version': s_py[1], 'reportlab': s_rl[0], 'reportlab_version': s_rl[1], 'pypdf': s_pypdf[0], 'pypdf_version': s_pypdf[1], 'PyMuPDF': s_fitz[0], 'PyMuPDF_version': s_fitz[1], 'pikepdf': s_pike[0], 'pikepdf_version': s_pike[1], 'pdfplumber': s_plumb[0], 'pdfplumber_version': s_plumb[1]}, 'optional_html_route': {'node': s_node[0], 'node_version': s_node[1], 'playwright': s_pw[0], 'playwright_version': s_pw[1], 'chromium': s_cr[0], 'chromium_detail': s_cr[1], 'playwright_python': s_pw_py[0], 'playwright_python_version': s_pw_py[1]}, 'optional_other': {'libreoffice': s_lo[0], 'tectonic': s_tec[0]}}
+        report = {'core': {'python3': s_py[0], 'python3_version': s_py[1], 'reportlab': s_rl[0], 'reportlab_version': s_rl[1], 'pypdf': s_pypdf[0], 'pypdf_version': s_pypdf[1], 'PyMuPDF': s_fitz[0], 'PyMuPDF_version': s_fitz[1], 'pikepdf': s_pike[0], 'pikepdf_version': s_pike[1], 'pdfplumber': s_plumb[0], 'pdfplumber_version': s_plumb[1]}, 'optional_html_route': {'node': s_node[0], 'node_version': s_node[1], 'playwright': s_pw[0], 'playwright_version': s_pw[1], 'chromium': s_cr[0], 'chromium_detail': s_cr[1], 'playwright_python': s_pw_py[0], 'playwright_python_version': s_pw_py[1]}, 'optional_other': {'libreoffice': s_lo[0], 'xelatex': s_tec[0]}}
         sys.stdout.write(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
         rc = 0
         for v in [s_py, s_rl, s_pypdf, s_fitz, s_pike, s_plumb]:
@@ -255,13 +257,10 @@ def env_check(argv: list):
             detail = f' ({d})' if d else ''
             print(f'  ✓ {name}{detail}')
         elif on_demand_required:
-            print(f'  ○ {name} (not installed — MUST be installed, not substituted)')
-            print(f'      → FORBIDDEN: using Word/WPS/Keynote/Pages instead of installing it.')
-            print(f'        A large download is NOT a reason to skip it.')
-            print(f'        REQUIRED: explain the necessity to the user, tell them the package is')
-            print(f'        large, then INSTALL it. No install attempt = no substitute program.')
+            print(f'  ○ {name} (missing — preinstalled in this sandbox, so this is an environment fault)')
+            print(f'      → Report it and stop the route that needs it; do not install it or substitute another program.')
         elif optional:
-            print(f'  ○ {name} (optional, not installed — install on demand)')
+            print(f'  ○ {name} (optional, missing — report it; nothing is installed at runtime)')
         else:
             print(f'  ✗ {name} (missing)')
             rc = 2
@@ -286,7 +285,7 @@ def env_check(argv: list):
         print(f'    (playwright-python: {s_pw_py[1]})')
     print('\n--- On demand: other ---')
     show('libreoffice', s_lo, on_demand_required=True)
-    show('tectonic', s_tec, optional=True)
+    show('xelatex', s_tec, optional=True)
     print('Dependencies must be preinstalled; report each missing dependency. Do not install at runtime.')
     raise SystemExit(rc)
 @cmd('env.fix')
@@ -624,7 +623,7 @@ def meta_set(argv: list):
     Output.success({'output': out_path, 'updated_fields': list(data.keys())})
 @cmd('meta.brand')
 def meta_brand(argv: list):
-    """Add Z.ai branding metadata to PDF documents."""
+    """Set the Title metadata of PDF documents (no author or vendor name)."""
     output_path = _pop_flag(argv, '-o', '--output')
     custom_title = _pop_flag(argv, '-t', '--title')
     quiet = _pop_flag(argv, '-q', '--quiet', needs_value=False)
@@ -653,7 +652,7 @@ def meta_brand(argv: list):
                 title = original_meta.title
             else:
                 title = os.path.splitext(os.path.basename(input_path))[0]
-        writer.add_metadata({'/Title': title, '/Author': 'Z.ai', '/Creator': 'Z.ai', '/Producer': 'http://z.ai'})
+        writer.add_metadata({'/Title': title})
         out = output_path if len(argv) == 1 and output_path else input_path
         try:
             with open(out, 'wb') as f:
@@ -664,9 +663,6 @@ def meta_brand(argv: list):
         if not quiet:
             print(f'✓ Updated metadata for: {os.path.basename(input_path)}')
             print(f'  Title: {title}')
-            print('  Author: Z.ai')
-            print('  Creator: Z.ai')
-            print('  Producer: http://z.ai')
             if out != input_path:
                 print(f'  Output: {out}')
     raise SystemExit(0)
@@ -1231,12 +1227,12 @@ def convert_office(argv: list):
     Output.success({'input': str(src), 'output': str(final), 'format': ext})
 @cmd('convert.html')
 def convert_html(argv: list):
-    """Convert HTML to PDF via node html2pdf.js."""
+    """Convert HTML to PDF via node html2pdf-next.js."""
     if not argv:
         Output.error('MissingArg', 'input file required')
-    js_path = _SCRIPT_DIR / 'html2pdf.js'
+    js_path = _SCRIPT_DIR / 'html2pdf-next.js'
     if not js_path.exists():
-        Output.error('DependencyMissing', 'html2pdf.js not found in scripts directory')
+        Output.error('DependencyMissing', 'html2pdf-next.js not found in scripts directory')
     node_path = _find_node()
     if not node_path:
         Output.error('DependencyMissing', 'node not found in PATH')
@@ -1361,19 +1357,19 @@ def convert_blueprint(argv: list):
     except subprocess.CalledProcessError:
         Output.error('CompileError', 'design_engine.py failed to compile the blueprint.', code=4)
     print('📄 [2/2] Rendering HTML to High-Res PDF via Playwright...', flush=True)
-    js_script = _SCRIPT_DIR / 'html2pdf.js'
+    js_script = _SCRIPT_DIR / 'html2pdf-next.js'
     node_path = _find_node()
     if not node_path:
         Output.error('DependencyMissing', 'node not found in PATH')
     try:
         subprocess.run([node_path, str(js_script), str(html_path), '-o', out_pdf, '--width', '720px', '--height', '960px'], check=True)
     except subprocess.CalledProcessError:
-        Output.error('RenderError', 'html2pdf.js failed to render the PDF.', code=4)
+        Output.error('RenderError', 'html2pdf-next.js failed to render the PDF.', code=4)
     print(f'\n🎉 Success! Masterpiece generated at: {out_pdf}')
     raise SystemExit(0)
 @cmd('convert.latex')
 def convert_latex(argv: list):
-    """Compile LaTeX file via tectonic, filter logs, report PDF stats."""
+    """Compile LaTeX with offline XeLaTeX, filter logs, report PDF stats."""
     if not argv:
         Output.error('MissingArg', 'tex file required')
     tex_file = argv.pop(0)

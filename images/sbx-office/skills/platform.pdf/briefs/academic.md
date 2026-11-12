@@ -2,7 +2,7 @@
 AILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR="/opt/skills/platform.pdf" PDF_SKILL_DIR="/opt/skills/platform.pdf" AILAB_SKILL_ROOT="/opt/skills/platform.pdf"; outputs under /workspace/outputs.
 # Brief: Academic Production
 
-Scholarly documents via LaTeX/Tectonic: academic papers, theses, dissertations, mathematical manuscripts, IEEE/ACM submissions, academic CVs.
+Scholarly documents via LaTeX/XeLaTeX: academic papers, theses, dissertations, mathematical manuscripts, IEEE/ACM submissions, academic CVs.
 
 ```
 Academic request
@@ -48,7 +48,7 @@ Confirm with the user:
 
 **Title Page (Cover) Rules:**
 - **Academic route covers are generated with ReportLab** via `scripts/cover_render.py`, using templates **06–09** from `typesetting/cover.md`. Templates 06–08 replicate LaTeX title-page aesthetics (dark backgrounds, serif titles, symmetric layouts). **Template 09 (Institutional)** is for thesis proposals, dissertations, and formal institutional submissions (white bg + black border frame). Pure Python — **no HTML/Playwright/Chromium required.**
-- **Pipeline:** Generate body PDF via Tectonic (no title page in `.tex`) → Generate cover PDF via `cover_render.py` (template 06/07/08/09) → Merge cover as page 1 via pypdf.
+- **Pipeline:** Generate body PDF via XeLaTeX (no title page in `.tex`) → Generate cover PDF via `cover_render.py` (template 06/07/08/09) → Merge cover as page 1 via pypdf.
 - **Template selection:** thesis proposals (开题报告), dissertations (毕业论文), institutional submissions → **default to Template 09**. arXiv/preprint → **06**; IEEE/ACM/English thesis → **07**; CJK journal / thesis with keywords → **08**.
 - **NEVER use `\maketitle`** - it produces ugly default output with cramped spacing
 - **NEVER use `\begin{titlepage}...\end{titlepage}`** - the cover is generated separately via ReportLab
@@ -60,7 +60,7 @@ Confirm with the user:
 ```
 1. Write .tex WITHOUT any title page
 2. Run poster_validate.py check-tex on .tex file - fix table overflow / image width ERRORs
-3. Compile with tectonic → body.pdf   (see §Tectonic preflight — ask before installing)
+3. Compile with `pdf.py convert.latex` (offline XeLaTeX) → body.pdf
 4. Render cover PDF via cover_render.py (template 06/07/08/09) from typesetting/cover.md
 5. Merge: insert cover as page 1 of body PDF via pypdf
 ```
@@ -155,7 +155,7 @@ Write the preamble. Start from this foundation and customise per document:
 - `hyperref` must load after virtually every other package - option clashes are the #1 preamble bug
 - When using a Scenario template (A/B/C) or Resume template, use that template's own preamble instead
 - `babel` and `polyglossia` are incompatible - load only one
-- CJK: `\usepackage{ctex}` - Tectonic auto-downloads fonts, zero manual setup
+- CJK: `\usepackage{ctex}` - uses the installed TeX Live Chinese support and fonts; nothing is downloaded
 - System fonts via `\setmainfont{}`: probe first with `fc-list :lang=XX`
 - **🔴 Margin symmetry:** `\geometry{left=X, right=X}` - left and right MUST be equal. Asymmetric margins = off-center content = critical bug
 - **🔴 Minimum margins with fancyhdr:** When using `fancyhdr` for headers/footers, `geometry` margins must leave enough room. **Minimum: `top >= 2.0cm`, `bottom >= 1.8cm`**. Also set `\setlength{\headheight}{14pt}` in the preamble. Margins smaller than this cause headers/footers to be pushed outside the page boundary (negative y-coordinates), making them invisible in print.
@@ -481,7 +481,7 @@ python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.latex main.tex --runs 2
 
 Default: 2 passes (resolves cross-references). Use `--runs 3` when bibliography back-references are needed. Add `--keep-logs` for debugging.
 
-**NEVER invoke Tectonic directly** - always use the wrapper. It strips noise, surfaces errors, and reports PDF statistics.
+**NEVER invoke the TeX engine directly** - always use the wrapper. It strips noise, surfaces errors, and reports PDF statistics.
 
 ### Phase 5 - PREFLIGHT
 
@@ -522,7 +522,7 @@ When the document has **more than 3 non-trivial equations** (matrices, aligned s
 \documentclass[11pt,a4paper]{article}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage[margin=2.5cm]{geometry}
-\usepackage{ctex}          % CJK support via Tectonic
+\usepackage{ctex}          % CJK support (TeX Live, offline)
 \usepackage{booktabs}
 \usepackage{hyperref}
 
@@ -969,29 +969,13 @@ Two templates available as separate files. Load the one you need:
 
 | Script | Purpose |
 |--------|---------|
-| `pdf.py convert.latex` | Tectonic wrapper - log sanitisation, error highlighting, PDF metrics |
+| `pdf.py convert.latex` | Offline XeLaTeX wrapper - log sanitisation, error highlighting, PDF metrics |
 
 ### Operational Notes
 
-**CJK**: `\usepackage{ctex}` - Tectonic pulls font bundles on the fly, zero manual install.
+**Engine**: XeLaTeX from TeX Live, installed in the image with `ctex`, `xeCJK` and the common academic packages; the sandbox has no network, so no package is fetched at compile time. A missing package is an environment fault: report it and stop instead of rewriting the document around it.
 
-**Cold-start**: First compilation downloads packages (1-5 min). Cached builds: 10-30s.
-
-**Offline**: Cached packages in `~/.cache/Tectonic/` work offline. New packages require network.
-
-**Tectonic vs TeX Live:**
-
-| Dimension | Tectonic | Traditional pdflatex |
-|-----------|----------|---------------------|
-| Package acquisition | On-demand, transparent | Manual via `tlmgr` |
-| Multi-pass compilation | Handled by engine | Explicit re-invocations |
-| Disk footprint | Single binary | Full TeX Live ≈ 4 GB |
-
-**Bundled binary note:** The `scripts/tectonic` binary shipped with this skill is a **macOS arm64 (Apple Silicon)** executable. It will NOT work on other platforms. If `pdf.py convert.latex` reports "tectonic command not found", run `python3 pdf.py status` to see platform-specific installation instructions, or install manually:
-
-Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.
-
-After installing, verify: `tectonic --version`. The `_find_tectonic()` function searches: `scripts/tectonic` → `~/tectonic` → system PATH.
+**CJK**: `\usepackage{ctex}`.
 
 
 ---
@@ -1005,7 +989,7 @@ Render the cover with `cover_render.py`, merge as page 1, then run `pdf_qa.py` o
 ```bash
 # Step 1: Render cover (template 06/07/08/09) — pure ReportLab, no HTML
 python3 "$PDF_SKILL_DIR/scripts/cover_render.py" 07 --out cover.pdf --content cover_content.json
-# Step 2: Merge cover as page 1 of the Tectonic body (see the pypdf snippet near the top of this file)
+# Step 2: Merge cover as page 1 of the XeLaTeX body (see the pypdf snippet near the top of this file)
 # Step 3: PDF check on the merged file
 python3 "$PDF_SKILL_DIR/scripts/pdf_qa.py" final.pdf --skip-cover --formulas
 

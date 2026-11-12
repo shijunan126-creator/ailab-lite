@@ -104,10 +104,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
-fm.fontManager.addfont('/usr/share/fonts/truetype/chinese/NotoSansSC-Regular.ttf')
+fm.fontManager.addfont('/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc')
 fm.fontManager.addfont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
-# Noto Sans SC for Chinese, DejaVu Sans catches symbols Noto Sans SC lacks (²³♠ etc.)
-plt.rcParams['font.sans-serif'] = ['Noto Sans SC', 'DejaVu Sans']
+# WenQuanYi Zen Hei for Chinese, DejaVu Sans catches symbols it lacks (²³♠ etc.)
+plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 ```
 

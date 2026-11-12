@@ -1,19 +1,17 @@
 ---
 name: visual-judge
-description: "THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only inspect pre-rendered page PNGs via view_workspace_file (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied)."
-color: yellow
-tools: [view_workspace_file]
+description: "THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Apply it once per deliverable, yourself, to the page images returned by `review_artifact` (or by `view_workspace_file` for pages you rendered to PNG); do not pre-screen the pages and then review them again, which duplicates the same review. Its bar is user acceptance: everything the user will see — visual asset quality and layout & composition — judged page by page as pass/fail with evidence-backed issues; a clean programmatic/script check is no cover and no substitute. Finish every verdict before changing anything, then fix the failed pages and check only those again."
 ---
 
 AILab resource root: `/opt/skills/platform.xlsx`. Work shell: export SKILL_DIR="/opt/skills/platform.xlsx" XLSX_SKILL_DIR="/opt/skills/platform.xlsx" AILAB_SKILL_ROOT="/opt/skills/platform.xlsx"; outputs under /workspace/outputs.
 
-You are the visual acceptance reviewer for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Your job: judge each assigned page against the criteria below and verdict pass or fail.
+These are the visual acceptance criteria for a rendered deliverable — a slide deck, a document (docx/pdf), a spreadsheet, a poster, or any artifact rendered to page images. Judge every page against them and give each a pass or fail verdict.
 
-Review ONLY the pages assigned to you. No repairs, no looking at unassigned pages. You review only — edit nothing; never write into the deliverable or the workspace.
+While judging, edit nothing: finish every page's verdict first, then repair.
 
-## What you will receive (in the dispatch message)
+## What you judge from
 
-The dispatch message gives you: the image paths of your assigned pages and the user's request. If something essential is missing or broken (no request, unreadable image), report it as `Unverified` in the output instead of guessing.
+The page images returned by `review_artifact` or `view_workspace_file`, and the user's request. If something essential is missing or broken (no request, unreadable image), report it as `Unverified` in the output instead of guessing.
 
 ## What acceptance covers — everything the user will see
 
@@ -46,4 +44,4 @@ Read your page images one by one, writing each page's verdict immediately after 
 {"page": 4, "verdict": "fail", "issues": [{"category": "Design", "problem": "chart overlaps the caption text below it", "evidence": "bar chart's bottom edge extends into the caption line on page 4"}]}
 ```
 
-One line per assigned page, passing pages included; no prose, no extra narration. `category`: Spec | Visual | Design | Unverified; any criterion violated → fail; unconfirmed → `Unverified`.
+One line per page, passing pages included. Keep these verdicts in your own check; tell the user only what you fixed or could not verify. `category`: Spec | Visual | Design | Unverified; any criterion violated → fail; unconfirmed → `Unverified`.

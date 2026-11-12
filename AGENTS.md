@@ -121,6 +121,7 @@ AILAB_TEST_REDIS_URL=redis://127.0.0.1:16379/15 \
 AILAB_TEST_DATABASE_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_test \
 AILAB_TEST_POSTGRES_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_migrations .venv/bin/pytest tests -q
 AILAB_E2E=1 .venv/bin/pytest e2e -q
+AILAB_SCENARIOS=1 AILAB_SCENARIO_API=<api> AILAB_SCENARIO_TOKEN=<bearer> .venv/bin/pytest scenarios -p no:cacheprovider   # real model, metered
 cd portal && npm test && npm run build
 ```
 
@@ -129,6 +130,7 @@ Tests build their own isolated settings (`tests/conftest.py`). Never point a tes
 **Where the full suites run (2026-11-09).** CI is the full run; do not repeat it locally before pushing.
 
 - Locally: `ruff check`/`ruff format --check`, the tests of the modules you changed, and anything CI cannot run (real-model checks, a browser look at changed UI, migrations against a copy of real data).
+- Real-model checks use `platform/scenarios/` (representative Chat/Work tasks through the public API against any running stack; see its `conftest.py`). Run it for changes to prompts, tools, skills, request construction or the sandbox image, before and after a deploy; add a scenario when a new kind of task matters.
 - CI: the full Python suite on SQLite and PostgreSQL, E2E, Portal tests and build, plus the other jobs. Its result on the exact commit to merge is the acceptance record.
 - Run a full suite locally only to reproduce a CI failure, or when the change cannot be pushed yet.
 - CI time limits are part of acceptance. A change that slows a suite (for example an autouse fixture whose cost grows with the database) is a bug to fix, not a reason to raise the limit. A test that waits on a real clock (retry backoff, a server's poll interval, a sleep) costs that wait on every run; shorten the wait in the test, not the assertion.

@@ -152,7 +152,7 @@ Build the palette on the **BACKGROUND → PRIMARY → ACCENT** model, and reuse 
 
 **Code QA:** run a short `python-pptx` script over the finished deck to flag text overflow (estimated text height/width vs. the shape box, plus boxes outside the slide) and overlap (bounding-box intersection between two text-bearing shapes), then fix the real hits and re-run.
 
-**Visual QA** once only: render the deck to images and use the visual-judge subagent (if not present, check it yourself) when necessary. Do not call an external VLM to check slides for visual QA.
+**Visual QA** once only: render the deck to images and judge every page yourself against `agents/visual-judge.md`, from the pages `review_artifact` returns. Do not call an external VLM to check slides for visual QA.
 
 **Output QA (before handing the deck over):** the user's original input file is untouched at its original path (originals are read-only); deliver a new version under /workspace/outputs.
 
@@ -330,7 +330,7 @@ slide.addShape(pres.shapes.RECTANGLE, {
 ```javascript
 // Three sources
 slide.addImage({ path: "images/photo.jpg", x: 1, y: 1, w: 5, h: 3 });            // local
-slide.addImage({ path: "https://example.com/img.jpg", x: 1, y: 1, w: 5, h: 3 }); // URL
+slide.addImage({ path: "/workspace/assets/img.jpg", x: 1, y: 1, w: 5, h: 3 }); // local file (no network: download_url first)
 slide.addImage({ data: "image/png;base64,iVBORw0KGgo...", x: 1, y: 1, w: 5, h: 3 }); // base64 (faster)
 
 // Options
@@ -386,7 +386,7 @@ slide.addChart(p.charts.BAR, [{
 ```javascript
 slide.background = { color: "F1F1F1" };                        // solid
 slide.background = { color: "FF3399", transparency: 50 };      // with transparency
-slide.background = { path: "https://example.com/bg.jpg" };     // image URL
+slide.background = { path: "/workspace/assets/bg.jpg" };      // local image (no network: download_url first)
 slide.background = { data: "image/png;base64,iVBORw0KGgo..." };// image base64
 ```
 
@@ -653,51 +653,7 @@ Skip `word_wrap = False`: it makes text overflow the box invisibly in PowerPoint
 
 ## Dependencies
 
-Required dependencies (should already be installed):
-
-Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.
-
-### 🔴 HARD REQUIREMENT — LibreOffice is missing
-
-Every PPTX → PDF conversion and every rendered preview/thumbnail step depends on LibreOffice.
-
-Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.
-
-Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.
-
-**REQUIRED sequence — no steps skipped, in this order:**
-
-Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.
-
-   | Platform | Path | Main package |
-   |----------|------|--------------|
-   | Linux x86_64 (deb) | `deb/x86_64/` | `LibreOffice_26.8.0_Linux_x86-64_deb.tar.gz` |
-   | Linux ARM64 (deb) | `deb/aarch64/` | `LibreOffice_26.8.0_Linux_aarch64_deb.tar.gz` |
-   | Linux x86_64 (rpm) | `rpm/x86_64/` | `LibreOffice_26.8.0_Linux_x86-64_rpm.tar.gz` |
-   | macOS Apple Silicon | `mac/aarch64/` | `LibreOffice_26.8.0_MacOS_aarch64.dmg` |
-   | macOS Intel | `mac/x86_64/` | `LibreOffice_26.8.0_MacOS_x86-64.dmg` |
-   | Windows x64 | `win/x86_64/` | `LibreOffice_26.8.0_Win_x86-64.msi` |
-   | Windows ARM64 | `win/aarch64/` | `LibreOffice_26.8.0_Win_aarch64.msi` |
-
-   Linux (deb): `tar -xzf <pkg>.tar.gz && sudo dpkg -i LibreOffice_26.8.0*/DEBS/*.deb && sudo apt-get install -f -y`
-   macOS: `hdiutil attach <pkg>.dmg && cp -R /Volumes/LibreOffice/LibreOffice.app /Applications/ && hdiutil detach /Volumes/LibreOffice`
-   Windows: `msiexec /i <pkg>.msi /qn` (needs admin). Verify with `soffice --version`.
-
-   **If 26.8.0 is gone** (the mirror keeps only a few releases), list
-   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and use the newest version
-   directory, substituting that version number above.
-
-Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.
-
-   | Platform | Register it | Then verify |
-   |----------|-------------|-------------|
-   | Linux | `sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice` | `soffice --version` |
-   | macOS | `sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice` | `soffice --version` |
-   | Windows | `setx PATH "$([Environment]::GetEnvironmentVariable('PATH','User'));C:\Program Files\LibreOffice\program"` | `& "C:\Program Files\LibreOffice\program\soffice.exe" --version` |
-
-Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.
-
-Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.
+Everything this skill uses — python-pptx, pptxgenjs, Node.js, LibreOffice (`soffice`), Poppler (`pdftoppm`) and the fonts — is preinstalled in this sandbox; nothing is installed at runtime. Every PPTX → PDF conversion and rendered preview depends on LibreOffice: if `soffice --version` fails, report it to the user and stop that step; do not substitute another program.
 
 ---
 

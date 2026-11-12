@@ -199,10 +199,7 @@ letter-spacing: 12px;
 ```
 
 ### Font Coverage
-For CJK content, always load Google Fonts via `<link>` tag in `<head>` (NOT `@import`):
-```html
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=Noto+Serif+SC:wght@400;700;900&display=swap" rel="stylesheet">
-```
+For CJK content, name the locally installed fonts in CSS (`'Noto Sans SC'`, `'Noto Serif SC'` map to Noto CJK SC). The sandbox has no network: never link Google Fonts or other web fonts.
 
 ### Post-Generation Text Verification
 After Playwright renders the PDF, extract text and scan for `?` or `\ufffd`. If found, fix encoding-corrupted characters in the source HTML.

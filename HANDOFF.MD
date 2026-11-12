@@ -7,6 +7,18 @@
 - 不带 `with` 的 `TestClient(app)` 不跑启动钩子，存储目录不会被 `ensure_dirs()` 建出来；某个 worker 第一个跑 `/readyz` 的用例会因 `storage: False` 得到 503。新增测试改变 xdist 分配时才暴露，单独跑该用例即可复现。
 - `tests/test_document_view.py::capture_setup` 的 run 用的模型和会话默认模型不同；在分支里续轮不带同一模型会得到 `model_changed`，不是快照没复制。
 
+## 2026-11-11 办公技能补丁
+
+- 改 `vendor/office-suite/patches/*.json` 里任何一个文件，`vendor/office-suite/runtime/UPSTREAM.json` 的 `adapter_revision` 也会变（它哈希整个补丁目录）。只重建 skills 不重建 runtime 时，`test_runtime_rebase_is_reproducible_and_keeps_original_sources` 会失败：用 `vendor/office-suite/build.py --runtime-output vendor/office-suite/runtime` 一起重建。
+- 新增补丁不能改上游原文：它的 `before_sha256` 必须是前一个补丁的 `after_sha256`，`start/end` 是对该状态文本的偏移（同一文件多个 edit 按输入文本计算，构建时倒序应用）。改完 `before`/`after` 长度要先确认原文只匹配一次，再重算两侧哈希。
+- `images/sbx-office/skills/index.json` 一变，Agent 的 `skill_verification` 就和旧镜像对不上，`load_skill` 直接拒绝。部署 Agent 必须同时重建 sbx-office 镜像。
+- 旧包不随镜像保留：技能包一更新，会话历史里的技能正文就是旧包的。按上下文里实际可见的模块判断过期并追加说明，不能按 `loaded_skills` 拒读（2026-11-12 前的实现会让旧会话永远读不了该技能）。
+- 上游技能按它自家镜像写字体路径、探针和脚本名（`pdf.py convert.html` 曾调用从未发布的 `html2pdf.js`）。改技能后在构建出的镜像里断网实跑文档里的命令，并逐个核对代码块里的绝对路径；静态看 apt 清单不够。ReportLab 读不了 Noto CJK 的 CFF 轮廓，能嵌入的中文只有 `wqy-zenhei.ttc` 和 TeX Live 带入的 AR PL 字体。
+- fontconfig 别名要写 `binding="same"`，否则 Chromium（Skia）不认替代字体，`fc-match` 看着对、PDF 里仍是 DejaVu。matplotlib 不走 fontconfig，要 `addfont` 实际文件。`--no-install-recommends` 下 `gs`、DejaVu 都不会被带入。
+- colima 默认不挂 `/tmp`，`docker run -v /tmp/x:...` 得到空目录；脚本用 `-i` 从 stdin 传进容器。
+- 用户消息的文本只由 `prompts.user_text` 生成：技能标记按用户原文的码点位置插入（无位置放在原文末尾，与 Portal 一致），之后才套定时任务头、追加选中段落 `<document_references>`。实时、追加（steer）和两个历史接口必须都走它；steer 是用户此刻输入，不继承所在 run 的 `schedule`。分开拼会让历史重建与首次发送的字节不同，steer 认领的 `startswith` 校验也会失败。
+- 真模型场景在 `platform/scenarios/`，经公开 API 跑任意栈（本机部署 API 在 `127.0.0.1:28080`，token 从部署的 `runtime.env` 读进进程环境，不打印）。每个场景结束删除自己的会话和文件；报告写仓库外 JSONL，含每轮工具、bash 命令、失败调用和 `cached_tokens`。单个样本波动大（同一 PDF 任务 16–21 次调用），比较前后要看路线和失败原因，不只看次数。
+
 ## 2026-11-11 Outbox 唤醒
 
 - `Session` 的 `after_commit` 对 savepoint 提交也会触发，那时 outbox 行还没对外提交；用 `session.in_nested_transaction()` 跳过，让外层提交唤醒，否则优化在 `inbox` 等 `begin_nested` 路径上静默失效。
