@@ -4,6 +4,7 @@
 - 分叉副本不能改模型可见的字节：正文里的源 run ID 留原值，记 `run_aliases`，在摘要来源和 `recall_history` 处换成分支副本；否则模型照抄旧 ID，压缩时 `parse_summary` 校验失败、run 暂停。
 - v1 文档目录的截图是 10 分钟临时对象，分叉不复制；checkpoint 引用了它就退回重建，复制过去恢复图片会暂停。测试里要先把 run 设成 `document_tools_version=2` 才得到永久截图。
 - 测试里排空来源失效不能 `while drain_invalidations(db)`：某个阶段处理完返回 0 但后面还有阶段；它又按 file_id 取全库最早一条，xdist 同 worker 的其他测试留下的工作会排在前面。按本文件状态循环，并只排空本文件（`_drain_invalidation`，持用户锁）。
+- 不带 `with` 的 `TestClient(app)` 不跑启动钩子，存储目录不会被 `ensure_dirs()` 建出来；某个 worker 第一个跑 `/readyz` 的用例会因 `storage: False` 得到 503。新增测试改变 xdist 分配时才暴露，单独跑该用例即可复现。
 - `tests/test_document_view.py::capture_setup` 的 run 用的模型和会话默认模型不同；在分支里续轮不带同一模型会得到 `model_changed`，不是快照没复制。
 
 ## 2026-11-11 Outbox 唤醒

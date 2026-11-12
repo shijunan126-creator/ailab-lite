@@ -33,6 +33,12 @@
 
 单独探针：同一 4.4k 前缀换会话头后命中 0，同会话头 4352。短对话里系统提示占大头；对话越长、工具过程越多，重建丢掉的部分越多，差距越大。
 
+### CI
+
+- 首轮 `0f4f114` 双库各挂 2 项，均为测试问题：
+  - `test_invalidated_file_source_removes_the_branch_snapshot`：用例按 `drain_invalidations` 返回 0 判断排空，但某阶段返回 0 后仍有后续阶段，且它先处理全库最早的文件；改为只排空本文件并按状态等待。
+  - `test_review_regressions.py::test_api_stays_ready_but_degraded_without_redis`：既有的顺序依赖。无启动钩子的 `TestClient` 不建存储目录，worker 的第一个用例跑到它就 503（单独运行即可复现）；新增测试改变了分配才暴露。用例先调用 `settings.ensure_dirs()`，与启动一致。
+
 ## 没覆盖到 / 风险
 
 - 已有的分叉会话在部署后第一次调用会从自己的会话头切到根会话头，冷启动一次；跨模式分支也共用根会话头（本来就整段不命中，无额外损失）。
