@@ -55,10 +55,10 @@ from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
     load_skill,
     personal_header,
-    render_skill_mentions,
     skills,
     system_prompt_for,
     user_prompt,
+    user_text,
 )
 from .skill_modules import ModuleVisibility, read_module
 from .skill_modules import identity as module_identity
@@ -1261,10 +1261,8 @@ class AgentLoop:
         return await self._context(run_id).compact(run_id, *args, **kwargs)
 
     async def _user_content(self, run_id, run, model):
-        from ..contracts.document_view import text_block
-        from ..contracts.schedules import scheduled_prompt
-
-        prompt = scheduled_prompt(run["prompt"], (run.get("options") or {}).get("schedule")) + text_block(run.get("doc_refs"))
+        options = run.get("options") or {}
+        prompt = user_text(run["prompt"], skills=options.get("skills"), refs=run.get("doc_refs"), schedule=options.get("schedule"))
         prompt_options = (
             {"mode": (run.get("options") or {}).get("mode", "work"), "document_tools_version": 2}
             if catalog_version(run.get("options")) == 2
@@ -1293,12 +1291,12 @@ class AgentLoop:
                 for page in document_pages
             ]
         if not images and not document_pages:
-            return user_prompt(render_skill_mentions(prompt, (run.get("options") or {}).get("skills")), files, **prompt_options)
+            return user_prompt(prompt, files, **prompt_options)
         parts = [
             {
                 "type": "text",
                 "text": user_prompt(
-                    render_skill_mentions(prompt, (run.get("options") or {}).get("skills")),
+                    prompt,
                     files if prompt_options.get("document_tools_version") == 2 else [file for file in files if file not in images],
                     **prompt_options,
                 ),
@@ -1840,7 +1838,8 @@ class AgentLoop:
                     "prompt": row["prompt"],
                     "input_files": row.get("input_files") or [],
                     "doc_refs": row.get("doc_refs") or [],
-                    "options": {**(turn.run.get("options") or {}), "skills": selections},
+                    # A steer is what the user typed now: it keeps the run's mode, never the run's schedule header.
+                    "options": {**{k: v for k, v in (turn.run.get("options") or {}).items() if k != "schedule"}, "skills": selections},
                 }
                 content = await self._user_content(run_id, message_run, turn.run.get("model"))
                 turn.run.setdefault("_image_files", {}).update(message_run.get("_image_files") or {})

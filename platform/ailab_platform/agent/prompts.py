@@ -313,12 +313,33 @@ def render_skill_mentions(prompt: str, selections: list[dict] | None) -> str:
     return prompt
 
 
+def turn_skills(options: dict) -> list[dict]:
+    """The skills a turn picked, including the legacy single `skill` option."""
+    if options.get("skills"):
+        return options["skills"]
+    return [{"name": options["skill"], "title": options.get("skill_title")}] if options.get("skill") else []
+
+
+def user_text(prompt: str, *, skills: list[dict] | None = None, refs: list[dict] | None = None, schedule: dict | None = None) -> str:
+    """One user message as the model reads it, built the same way live, on steer and from history.
+
+    Skill offsets count code points of what the user typed (the Portal places an offsetless skill at its end), so the
+    tags go in before the platform wraps the text in a schedule header or appends the selected document passages.
+    """
+    from ..contracts.document_view import text_block
+    from ..contracts.schedules import scheduled_prompt
+
+    return scheduled_prompt(render_skill_mentions(prompt, skills), schedule) + text_block(refs)
+
+
 def history_messages(history: list[dict] | None) -> list[dict]:
-    """Earlier turns of the conversation as plain user/assistant messages (tool traffic is not replayed)."""
+    """Earlier turns of the conversation as plain user/assistant messages (tool traffic is not replayed).
+
+    `prompt` and `steers` arrive as `user_text`, exactly as the model first read them."""
     out: list[dict] = []
     turns = history or []
     for turn in turns:
-        prompt = render_skill_mentions(turn.get("prompt") or "", turn.get("skills"))
+        prompt = turn.get("prompt") or ""
         if turn.get("attachments"):
             import json
 

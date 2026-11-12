@@ -3057,3 +3057,33 @@ def test_same_mode_fork_extends_the_forked_turns_last_request(mode):
     if mode == "work":  # tool traffic survives the fork instead of being flattened into history text
         assert any(message.get("role") == "tool" for message in forked["messages"])
     assert not boundaries
+
+
+def test_scheduled_turn_and_its_steer_place_skills_and_document_references_the_same_way(monkeypatch):
+    from ailab_platform.agent.prompts import user_text
+
+    schedule = {"title": "周报", "rule": "每周一 09:00", "at": "2026-11-16 09:00"}
+    ref = {"filename": "报告.docx", "at": "第 2 段", "quote": "收入 120 万"}
+    skill = {"name": "pptx", "title": "PPT 设计", "at": None}
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            run = await super().get_run(run_id)
+            return {**run, "prompt": "整理本周数据", "options": {"schedule": schedule, "skills": [skill]}, "doc_refs": [ref]}
+
+        async def claim_steers(self, run_id):
+            return {"items": [{"id": "s1", "prompt": "再加一页", "skills": [{**skill, "at": 2}], "doc_refs": [ref]}]}
+
+    class Loop(AgentLoop):
+        async def _apply_steers(self, run_id, turn, *, pending=None):
+            await super()._apply_steers(run_id, turn, pending=self._states[run_id]["next_step"] == 1)
+
+    with scripted_server([_plan_call(0), {"content": "done"}]) as (url, requests):
+        asyncio.run(Loop(platform=Platform(), broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    users = [m["content"] for m in requests[-1]["messages"] if m["role"] == "user"]
+    refs = "\n\n<document_references>\n报告.docx (第 2 段)\n收入 120 万\n</document_references>"
+    # The offsetless skill sits at the end of what the user typed: after the schedule header, before the passages.
+    assert users[0].startswith("<scheduled_task>\n定时任务「周报」") and users[0].endswith("整理本周数据[技能：PPT 设计]" + refs)
+    assert users[0] == user_text("整理本周数据", skills=[skill], refs=[ref], schedule=schedule)
+    # A steer is the user typing now, never the platform's scheduled message.
+    assert "再加[技能：PPT 设计]一页" + refs in users and not any(u.startswith("<scheduled_task>") and "再加" in u for u in users)

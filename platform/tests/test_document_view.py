@@ -551,3 +551,27 @@ def test_opening_metadata_does_not_start_viewer_or_native_jobs_and_structure_rem
     assert requested.status_code == 200 and requested.json()["status"] == "pending"
     with SessionLocal() as db:
         assert db.scalar(select(OutboxMessage.id).where(OutboxMessage.payload["file_id"].as_string() == fid)) is not None
+
+
+def test_history_rebuilds_the_exact_text_the_model_first_read(api):  # noqa: F811
+    """Selected passages, an offsetless skill and a schedule header: both history endpoints repeat the live text."""
+    from tests.test_conversations import _finish
+
+    from ailab_platform.agent.prompts import history_messages, user_text
+
+    fid, version, _ = document(api)
+    cid = conv(api)
+    first = send(api, cid, [reference(fid, version)], skills=[{"name": "pptx"}]).json()
+    schedule = {"title": "周报", "rule": "每周一 09:00", "at": "2026-11-16 09:00"}
+    with SessionLocal() as db:
+        run = db.get(Run, first["id"])
+        run.options = {**run.options, "schedule": schedule}
+        db.commit()
+    live = api.get(f"/internal/runs/{first['id']}", headers=SERVICE).json()
+    expected = user_text(live["prompt"], skills=live["options"]["skills"], refs=live["doc_refs"], schedule=schedule)
+    assert expected.endswith("Explain this selection[技能：PPT 设计]\n\n<document_references>\nview.docx (p:1)\nquoted words\n</document_references>")
+    _finish(api, first["id"], "done")
+    later = send(api, cid, []).json()["id"]
+    for path in (f"/internal/runs/{later}", f"/internal/runs/{later}/model-context"):
+        history = api.get(path, headers=SERVICE).json()["history"]
+        assert history_messages(history)[0] == {"role": "user", "content": expected}, path

@@ -160,8 +160,7 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
 
     invalid = invalid_history(db, [turn.id for turn in earlier] + [run.id])
     history = []
-    from ..contracts.document_view import text_block
-    from ..contracts.schedules import scheduled_prompt
+    from ..agent.prompts import turn_skills, user_text
     from .document_view import output as document_refs
 
     for turn in earlier[-HISTORY_TURNS:]:
@@ -175,23 +174,20 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         from .inbox import steers_for_run
 
         applied = (turn.runtime_meta or {}).get("steer_ids", [])
-        from ..agent.prompts import render_skill_mentions
-
         steers = [
-            render_skill_mentions(row.prompt, row.options.get("skills")) + text_block(document_refs(db, "queued_message", row.id))
+            user_text(row.prompt, skills=row.options.get("skills"), refs=document_refs(db, "queued_message", row.id))
             for row in steers_for_run(db, turn)
             if row.id in applied
         ]
+        options = turn.options or {}
         history.append(
             {
                 **({"steers": steers} if steers else {}),
-                "prompt": scheduled_prompt(turn.prompt, (turn.options or {}).get("schedule"))
-                + text_block(document_refs(db, "run_prompt", turn.id)),
-                "skills": (turn.options or {}).get("skills")
-                or (
-                    [{"name": (turn.options or {}).get("skill"), "title": (turn.options or {}).get("skill_title")}]
-                    if (turn.options or {}).get("skill")
-                    else []
+                "prompt": user_text(
+                    turn.prompt,
+                    skills=turn_skills(options),
+                    refs=document_refs(db, "run_prompt", turn.id),
+                    schedule=options.get("schedule"),
                 ),
                 "reply": for_history(reply, keep_ui=True, limit=HISTORY_CHARS),
                 "status": turn.status,
