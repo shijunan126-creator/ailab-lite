@@ -193,7 +193,7 @@
 - ~~ADR 0030 的 ≥95% 缓存命中率测不了~~ **这条是错的（2026-11-12 更正）**：网关会返回缓存命中，整理后的 usage 里就有 `cached_tokens`（`model_transport.py:142` → `llm._cached_tokens` → `model_usage.cached_tokens`），不要去 `prompt_tokens_details` 里找。第五轮已按 ADR 0030 标准实测，见文末。
 - `model_context` 里的旧工具名只做了显示兜底，没有做调用别名：在跑的 run 调用 `read_file` 会得到 `unknown tool`（用户明确表示测试环境可不管）。
 - `edit` 的展示 diff 与 patch 没有接线（用户决定不进上下文、暂不渲染），`domain/text_edit.py` 只实现匹配与写回；32 行窗口 diff 未实现。
-- `read` 是整份读入（受 `max_sandbox_read_bytes=10MB` 约束）后切行窗口，不是 Pi 的流式只保留展示部分；`bash` 输出保留的是既有环形缓冲 + 头 1000/尾 8000，不是 Pi 的 2000 行/50KB 尾部截断加完整输出临时文件。这两处是刻意保留的既有边界，不是遗漏。
+- `read` 是整份读入（受 `max_sandbox_read_bytes=10MB` 约束）后切行窗口（第六轮已改为沙箱内按行定位，见文末），不是 Pi 的流式只保留展示部分；`bash` 输出保留的是既有环形缓冲 + 头 1000/尾 8000，不是 Pi 的 2000 行/50KB 尾部截断加完整输出临时文件。这两处是刻意保留的既有边界，不是遗漏。
 
 ## 下一步
 
@@ -234,3 +234,62 @@ A–F 通过；问题都出在上一轮新加的"只读并行"和"`read` 按字�
 未复用的尾部是供应商的 128 token 块量化（对照实验：5 次连发、每次只加 12 token 时，命中稳定在 3200，新增 token 要攒满一块才被缓存）。Work 的丢块比 Chat 多，因为工具轮次一次增长 150–600 token，更容易跨块。请求本身没有任何重写：`prefix_holds` 对每次调用都比对了 `messages` 与 `tools`。
 
 真模型崩溃恢复：子进程在一条 45 秒后台命令运行中被 SIGKILL，父进程用同一 checkpoint 恢复。恢复后的 `bash_wait` 接的是原来的 handle（`duration_ms 45039`、`exit_code 0`、`stdout: crashed-run-done`），整个过程中后台 `start` 只出现 **1 次**，命令没有被重跑。
+
+## 第六轮审查后的修正（2026-11-12）
+
+上一轮的 P0-1、P0-2、ADR 0030 真模型验收与崩溃恢复核对通过。新问题集中在范围读：
+
+| 项 | 问题 | 处理 | 用例 |
+|---|---|---|---|
+| 真实沙箱里 `read` 全部失败 | 基类 `get_file_range_to_path` 把切片写到 `/tmp` 再调 `get_file_to_path`，而 Docker/OpenSandbox 的下载第一步就 `normalize_path`，只收 `/workspace`；`read` 每次都带 `length`，所以每次都走这条路。mock 重写了这个方法，单测、E2E（mock 沙箱）和真模型（本机映射目录）都没执行过基类实现 | 改成抽象方法 `get_file_lines_to_path`，各 provider 自己搬运字节、共用守卫脚本 `lines_script`：Docker 一次 `docker exec` 直接写 stdout；OpenSandbox exec 写 `/tmp/.ailab-lines-*` 后用 SDK 直接流式读取这个内部路径、`finally` 删除；mock 本地实现 | `tests/test_sandbox_file_transfers.py`：两个**真实** provider 类，只换传输层，守卫脚本真的在 bash 里执行（窗口、越界为空、404、目录、父目录链接、文件链接、`/tmp` 路径、临时文件不残留） |
+| 范围按字节、窗口固定在开头 | 50 MB 文件里 `offset=20000` 读不到，只能让模型改用 `grep`/`sed` | 改成按行定位：Broker `get_file(line=N, length=L)`，沙箱执行 `tail -n +N \| head -c L`。`read_lines` 接受 `first_line`/`complete`：到末尾时照 Pi 报 `of N`，否则只给下一个 offset（`[More lines in file. Use offset=K to continue.]`）；从 offset 起为空时回到开头窗口按 Pi 原规则判断 | `test_an_offset_deep_in_a_big_file_is_read_where_it_is`、`test_the_tail_of_a_big_file_reports_its_exact_line_count`、`test_the_window_edge_continues_instead_of_reading_as_end_of_file`、`test_an_offset_past_the_end_says_so` |
+| 窗口请求多次往返 | 先 `file_size` 再切片再下载再 `rm`；OpenSandbox 4–5 次 | 窗口请求只调一次 provider（守卫脚本自己区分 404/非普通文件/链接）：Docker 1 次 exec，OpenSandbox exec + 流 + `rm`；`max_bytes` 整份读取只经 `_download` 判断一次（上一轮说"只 `file_size` 一次"，实际仍是两次） | `test_a_window_is_bounded_by_its_length_not_by_the_file`（Broker 路由：整份 413、窗口 200、任意行、越界为空、窗口超限 413、404、400）。上一轮记的"Broker 路由用例"在仓库里并不存在，这条是新加的 |
+| `edit` 行尾分支走不到 | "终点在行尾"按原文判断，而映射回原文的终点停在被去掉的空白之前，原文那里是空格：原文行尾多一个空格，三个引用空格就"找不到"；行尾多出的空白也被留下 | 按去尾后的文本判断是否在行尾 | `test_line_end_whitespace_matches_whatever_the_file_has_there`（4 种行尾）、`test_line_end_whitespace_is_consumed_not_left_behind`；换回旧判断三条失败 |
+| 每个 run 留一把锁 | `_checkpoint_locks` 在 run 结束时没有清 | `process()` 的 `finally` 一并清理 | `test_a_finished_run_leaves_no_checkpoint_lock_behind`（去掉清理即失败） |
+| fake 返回整份文件 | 两个 Broker fake 忽略 `line`/`length`，窗口逻辑在单测里永远"读完" | 共用 `tests/runtime_fakes.py:sandbox_window` | 上面的 read 用例 |
+
+**验证**（同一工作树，arm64 macOS，已构建 Office 读取器，coreutils gnubin 在 PATH）：
+
+- `ruff check` / `format --check` 干净（706 文件）。
+- 改动模块与 `tests/faults` 定向：**481 项 / 0 失败 / 35 跳过**。
+- 全量 `pytest tests -n auto`：3215 项 / 252 跳过；连续 11 次里 10 次 0 失败，第 2 次有 1 项失败。那次的报告没有保留，后面 10 次都没有复现，**未能定位是哪一项**；如果 CI 出现偶发失败，先看是不是同一项。
+- 真实 Docker 容器（colima，`python:3.12-slim-trixie`，uid 10001）直接调用 `DockerSandbox.get_file_lines_to_path`：52 MB、400 万行的文件，第 1 行 34 ms、第 350 万行 63 ms、2 MiB 窗口 66 ms，只传窗口；超出末尾为空；缺文件 404，目录、父目录链接、文件链接都拒绝；容器 `/tmp` 无残留。
+
+**未覆盖**：
+
+- ~~OpenSandbox 只在替换了 SDK 的单测里执行~~：已在下一节用真实 OpenSandbox 服务补测。
+- E2E 未在本机重跑（需要 Redis、Portal `node_modules` 与 Chromium），交给 CI；它走真实 Broker + mock provider，Broker 窗口路径已由路由用例覆盖。
+- 本轮没有重跑真模型：请求构造没有变，`read` 的结果格式变了（没到末尾时不再报窗口内的行数）。
+
+## 真实 OpenSandbox、真模型与调用链路优化（2026-11-12）
+
+环境：本机 OpenSandbox server/SDK 1.1.1（Docker 运行时，colima `sbxbuild`），镜像 `sbx-office:check`；四服务 + SQLite + 一次性 Redis；模型 `deepseek-flash`（OpenCode Go）。代码基线为本分支工作树（本节改动之后）。
+
+**真实服务上的第一轮结论**：第六轮的按行窗口在真实 OpenSandbox 上可用（execd 文件 API 能读 `/tmp`）。整条调用链很顺，但慢在 exec：OpenSandbox 上一次 exec 固定约 1 秒，文件 API 只要几毫秒，而写一次文件要 1 次 exec、读要 2 次、`edit` 3 次、每轮快照 4 次，续轮的第一个工具还要等约 10 秒建沙箱。
+
+**改动**（设计见[设计文档](../../architecture/design/2026-11-11-pi-aligned-workspace-tools.md)"OpenSandbox 上少用 exec"）：
+
+- OpenSandbox provider：读写前先用 `get_file_info`（lstat）逐级确认路径，能证明安全就直接用文件 API，否则仍走原守卫脚本；新增 `remove_file`（OpenSandbox 用 `delete_files`）；SDK 对"路径不存在"的 ERROR 日志只过滤这一条。
+- Broker：恢复工作区时解包、清 `.template`/`.brand`、预览指纹合成一次 exec；全新沙箱不再清理；快照后的删除走 `remove_file`。解包失败只丢连续性，清理失败让租约失败（与原来一致）。
+- Agent：继续上一轮工作区的 Work 轮在第一次模型调用期间取沙箱（原来只限 Office 查看）。
+
+**实测**（同一 3 轮 Work 对话，前后各跑一次）：
+
+| 操作 | 之前 | 之后 |
+|---|---|---|
+| provider `put_file` / `file_size` / 第 1 行起的读取窗口 | 约 1000 ms（各 1 次 exec） | 3–15 ms |
+| 工具 `write` / `read` / `edit` | 约 1.05 s / 2 s / 3.1 s | 0.04 s / 0.04 s / 0.1 s |
+| 续轮第一个工具等沙箱 | 9–13 s | 约 1 s（沙箱 3.9 s 内就绪，与模型调用并行） |
+| 每次快照 | 4.1 s | 1.1 s |
+| 第 N 行起的读取窗口、替换已有文件的上传 | 约 1 s | 不变（各 1 次 exec，前者要 `tail`，后者要原子 `mv`） |
+
+- 真模型：Work 3 轮、Chat 3 轮全部成功，工具结果全部 ok、每个事件带 `call_id`、过程步骤全部闭合、无错配输出、无上下文边界。缓存命中（去掉标题调用和冷启动的第一次调用）：Work 134400/136454 = **98.5%**（之前 95.4%），Chat 20608/20797 = **99.1%**。
+- 真实契约（Docker + OpenSandbox + mock）：`tests/contracts/test_sandbox_lifecycle.py` 与 `test_sandbox_transfer.py` **27 passed / 1 skipped**（新增的链接写入用例在 mock 上跳过：链接会指向宿主 `/tmp`）。新增契约覆盖链接父目录/链接文件的写入拒绝、原子替换、`remove_file`、第 1 行窗口。
+- 单测：`tests/test_sandbox_file_transfers.py`（原 `test_sandbox_line_windows.py`）用照实测语义实现的 SDK 文件对象替身执行真实 provider 代码，断言 exec 次数；Broker 恢复合并、Agent 提前取沙箱各有"不改就失败"的用例。相关模块 256 项全过，ruff 干净。
+
+**没覆盖到**：
+
+- 父目录缺失的写入仍是 1 次 exec（execd 可能以其他用户建目录，见 HANDOFF）；第 N 行起的窗口和替换已有文件的上传也各要 1 次 exec。
+- 续轮如果最后没用工具，提前取的沙箱白占约 4 秒沙箱时间（不做快照）；Office 查看轮原本就是这样。
+- 只在本机 Docker 运行时的 OpenSandbox 上测过，未在 Kubernetes 运行时或 gVisor 下测 exec 与文件 API 的耗时。
+

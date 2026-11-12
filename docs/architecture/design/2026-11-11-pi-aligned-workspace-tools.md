@@ -294,11 +294,25 @@ Broker 过去把 `get_file` 的所有 `SandboxError` 都映射成 400，Agent �
 
 `agent.tool_call` / `agent.tool_result` 现在都带 `call_id`。Portal 和 `process_view` 有 id 时按 id 找步骤，没有 id 的历史事件沿用"最后一个同名同 step 还在跑的步骤"。已经带 id 的行不会被另一个 id 的结果按名字顶替——那说明原步骤已经不在了，宁可不动。
 
-### 真正的字节范围读取
+### 按行定位的读取窗口
 
-provider 基类新增 `get_file_range_to_path`：一次 exec 把 `[offset, offset+length)` 写进沙箱里的临时文件（`head -c` + `tail -c +`，路径 `shlex.quote`），再用既有的受限下载取回，`finally` 删除临时文件。Broker 带范围时按 `length` 判断上限，不再按文件总大小：50 MB 的日志可以只读开头 2 MiB，Broker 与 Agent 的内存和磁盘都只付出窗口那么大。`max_bytes` 那条路径只 `file_size` 一次。
+`read` 不再整份取文件，也不按字节偏移：Broker 的 `get_file(path, line=N, length=L)` 让沙箱执行 `tail -n +N -- f | head -c L`，只有窗口离开沙箱。Agent 取 2 MiB + 1 字节，多出的 1 字节区分"读到了文件末尾"和"后面还有"。
 
-`read` 到达窗口末尾时 `next_offset` 是 None，看起来像"文件结束"，所以此时额外给一句"只读到 2MB 窗口末尾，文件后面还有内容；用 grep -n 或 sed -n 读指定行"。
+- 窗口到达文件末尾时总行数是确定的（`N - 1 + 窗口行数`），照 Pi 写 `of N`；没到末尾时不报总数，提示写 `[More lines in file. Use offset=K to continue.]`，K 是窗口里最后一个完整行的下一行。50 MB 文件任意 `offset` 都能直接读，模型可以一窗一窗走完。
+- 从 `offset` 起为空时（超出末尾，或 Pi 计入的"末尾换行后的空行"），回到文件开头的窗口按 Pi 的原规则判断并给出总行数；文件比窗口大时只说"超出末尾"并建议 `wc -l`。
+- 每个 provider 自己搬运字节，守卫脚本共用（`sandbox/base.py:lines_script`，与 `file_size` 相同的 realpath/符号链接检查，退出码 10/11/12 避开 `docker exec` 与 shell 自身的 1、125–127）：Docker 一次 `docker exec` 直接把 stdout 写进目标文件；OpenSandbox 的文件 API 没有范围、exec 输出是解码后的文本，所以 exec 把窗口写到 `/tmp/.ailab-lines-*`，再由文件 API 流式取回并在 `finally` 删除（不放进 `/workspace`，否则并行的 `ls` 和工作区快照会看到它）；mock 在本地文件上做同样的事。
+- 窗口请求是一次 provider 调用（守卫脚本自己区分 404/非普通文件/链接），不再先 `file_size`。Broker 的内存、磁盘、传输都等于窗口；整份读取（`edit`、交付）仍按文件大小 413，`max_bytes` 只经 `_download` 判断一次。
+
+### OpenSandbox 上少用 exec
+
+OpenSandbox 1.1.1 上一次 exec 固定约 1 秒，文件 API（`get_file_info`、流式读写、`delete_files`、`move_files`）只要几毫秒。所以凡是文件 API 能证明安全的，就不再起 exec；证明不了的（链接、缺失、API 失败）仍走原来的守卫脚本，报错文字不变。
+
+- `get_file_info` 是 lstat：对 `/workspace` 到目标的每一级各问一次（一次批量调用），全是真实目录、目标是普通文件才算"普通文件"。中间一级是链接时，问到它本身才看得出来，所以必须逐级问。
+- 读：`file_size`、`get_file_to_path` 和第 1 行起的 `read` 窗口不起 exec（窗口直接流式读前 L 字节）；从第 N 行起的窗口仍是一次 exec，临时文件改用 `delete_files` 删除。
+- 写：父目录全部已存在且都是真实目录、目标不存在或是普通文件时，直接 `write_file`；新文件的上传用 `move_files` 发布（它不肯覆盖，所以替换已有文件仍用一次 `mv -f` 保持原子）。父目录缺失时仍走守卫脚本的 `mkdir -p`，因为 execd 可能以其他用户运行，它建的目录 agent 的命令写不进去。
+- 和原来的守卫一样，检查先于传输；能赶在两者之间换成链接的 agent 由沙箱边界兜住，不由这里的检查兜住。
+- Broker 接续上一轮工作区时，解包、清掉 `.template`/`.brand`、生成预览指纹合成一次 exec（原来 4 次）；全新沙箱里没有这两个目录，不再清理。快照后的删除改用 `remove_file`（OpenSandbox 走 `delete_files`）。
+- Agent：继续上一轮工作区的 Work 轮在第一次模型调用期间就取沙箱（原来只有带 Office 查看的轮次这样做），不排队，失败时第一个工具照常去取；这一轮如果没用工具，沙箱不做快照直接释放。
 
 ### `edit` 匹配边界的两个字符
 

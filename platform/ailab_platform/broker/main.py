@@ -376,11 +376,11 @@ def get_file(
     lease_id: str,
     path: str = Query(..., min_length=1),
     max_bytes: int | None = Query(None, ge=1),
-    offset: int = Query(0, ge=0),
+    line: int | None = Query(None, ge=1),
     length: int | None = Query(None, ge=1),
 ) -> Response:
     try:
-        data = get_manager().get_file(lease_id, path, max_bytes=max_bytes, offset=offset, length=length)
+        data = get_manager().get_file(lease_id, path, max_bytes=max_bytes, line=line, length=length)
     except SandboxFileNotFound as exc:
         raise HTTPException(status_code=FILE_NOT_FOUND, detail=str(exc)) from exc
     except TransferLimitError as exc:

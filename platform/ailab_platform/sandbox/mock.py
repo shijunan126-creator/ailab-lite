@@ -138,17 +138,26 @@ class MockSandbox(SandboxProvider):
         pattern = "|".join(re.escape(prefix) for prefix in mapping)
         return re.sub(rf"({pattern})(?![\w.-])", lambda match: str(mapping[match[1]]), cmd)
 
-    def get_file_range_to_path(self, sandbox_id: str, path: str, target: Path, *, offset: int, length: int) -> None:
-        """Mock files are local files: slice them directly instead of shell-dancing through /tmp."""
+    def get_file_lines_to_path(self, sandbox_id: str, path: str, target: Path, *, line: int, max_bytes: int) -> None:
+        """What ``lines_script`` does, on the local file: skip to the line, copy at most max_bytes."""
         source = self._translate(sandbox_id, path)
         if not source.exists():
             raise SandboxFileNotFound(f"no such file in the sandbox: {path}")
         if not source.is_file():
             raise SandboxError(f"not a regular file in the sandbox: {path}")
-        with source.open("rb") as handle:
-            handle.seek(offset)
-            data = handle.read(length)
-        target.write_bytes(data)
+        with source.open("rb") as src, target.open("wb") as dst:
+            skip = line - 1
+            while skip:
+                chunk = src.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                index = -1
+                while skip and (index := chunk.find(b"\n", index + 1)) >= 0:
+                    skip -= 1
+                if not skip:
+                    src.seek(index + 1 - len(chunk), 1)  # back to just after the newline that ends line - 1
+            if not skip:
+                dst.write(src.read(max_bytes))
 
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
         translated = self._translate_command(sandbox_id, cmd)

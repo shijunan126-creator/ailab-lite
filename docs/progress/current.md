@@ -3,7 +3,7 @@
 - 用户要求：把 `read_file`/`write_file`/`list_files`/`exec` 换成 Pi 的 `read`/`write`/`edit`/`bash`（另补 `grep`/`find`，底层 `rg`/`fd`），逻辑与性能优化照 Pi 源码做；随后临时调整 bash 的等待与期限。分支 `feat/pi-aligned-workspace-tools`，base `origin/main@7d17db92`，工作树 `.worktrees/pi-aligned-workspace-tools`；未授权推送、合并、部署。
 - 已完成：九个工具落地（行窗口、容错 `edit`、FIFO 文件锁、沙箱内 `ls`/`grep`/`find`）；bash 把「等待窗口 / 平台期限 / HTTP 单次等待」分成三件事，一次工具调用内部多段有界等待、不忙轮询、不按 idle 杀进程，期限由沙箱 supervisor 到点强制，句柄确定化使重启后接管原执行而不是重跑；提示词、技能生成物、Portal 步骤名同步。
 - 真模型验收（DeepSeek V4.1 Flash / OpenCode Go，16 个任务 29 次调用）：改前模型完全不用 read/edit/write、一律 bash + python 改文件；补 4 行工具选择规则后 read 出现在 9/16 个任务里，edit/write/ls/find/grep 均按意图使用。据此修了三处：grep/find 无结果写明搜索范围并给计数、bash 非 0 退出补 `Command exited with code N`、交付只在要成品时。等待窗口语义实测通过（10 秒窗口连续三次 bash_wait 后拿到最终结果，未被当成超时）。
-- 验证：[记录](updates/2026-11-11-pi-aligned-workspace-tools.md)。ruff 通过；单元套件 3014 项、16 失败（与未改基线逐条相同，缺 OCR/渲染环境）、189 跳过；Portal 286 项 + `tsc` 干净。提示词 system 2591 → 2765 tokens，含 28 个工具 schema 时 7283。
+- 验证：[记录](updates/2026-11-11-pi-aligned-workspace-tools.md)。ruff 通过；单元套件 3014 项、16 失败（后查明是本地未构建 Office 读取器 `runner.mjs`，见第五轮更正）、189 跳过；Portal 286 项 + `tsc` 干净。提示词 system 2591 → 2765 tokens，含 28 个工具 schema 时 7283。
 - 容器内验证：按同一 base 与 Debian 快照装了 `ripgrep`/`fd-find`，在 uid 10001 下把 ls/grep/find/read/edit/write/bash/bath_wait/期限杀进程/kill 全跑通（`fd-find` 实际是 `fdfind`，探针回退必要）；由此修掉短命令丢失 `error`/`killed_by` 的真 bug。
 - 整栈补齐：完整 sbx-office 镜像在本机 arm64 构建成功（4.85 GB，SMOKE PASS，rg/fdfind 在、渲染 1 秒、断网），contracts 135 项 0 失败（52 项缺外部服务跳过），E2E 210 项 0 失败（15 跳过），Next 生产构建通过，真 AgentLoop 下 3 个子任务并发 edit 同一文件三节全落盘。
 - 未覆盖：amd64/双架构镜像与 k3s/gVisor 冒烟、E2E 的 docker/opensandbox 沙箱档、依赖外部服务的 contracts。
@@ -15,7 +15,9 @@
 - 验证：ruff 干净；全量 3192 项 / 16 失败（与未改基线一致）/ 276 跳过；改动模块 471 项全过；整栈 E2E 210 项 0 失败。
 - 第五轮审查（2026-11-12）的 4 条必须修已落地：并发 `_checkpoint` 按 run 加锁（只读工具不再写 started 记录、也不单独 checkpoint）、`agent.tool_call`/`tool_result` 带 `call_id` 且前后端按 id 配对、provider 层实现真正的字节范围读取（大文件不再整份 413，Broker 只传窗口）、`read` 到窗口末尾给续读提示、`edit` 起点/行中空白的两个边界修正。
 - 验收：全量 **3202 项 / 0 失败 / 252 跳过**（先按 CI 方式构建 `vendor/office-suite/runtime/runner.mjs`；此前记的"16 项既有失败"是缺这个构建产物，已在 dated update 更正）；Portal 290 项 + `tsc` 干净；整栈 E2E 211 项 0 失败。真模型 ADR 0030：Work 13 次调用 `cached/prompt` **95.9%**、Chat 5 次 **96.6%**，每次调用都是上一请求的逐字节前缀；真模型崩溃恢复里后台命令只启动一次，恢复用原 handle 等到了结果。
-- 下一步：等用户决定是否推送/开 PR；镜像重建在 PR 之后。
+- 第六轮审查（2026-11-12）：上一轮的范围读在真实沙箱里不可用（Docker/OpenSandbox 的下载只收 `/workspace`，切片却写在 `/tmp`；mock 重写了该方法，所有测试都没执行到）。已改为 provider 各自实现的按行窗口（`tail -n +N | head -c L`），`read` 任意 offset 都能读、到末尾才报总行数；另修 `edit` 行尾判断与 checkpoint 锁清理。真实 Docker 容器 52 MB 文件第 350 万行 63 ms。详见 dated update 第六轮。
+- 真实 OpenSandbox + 真模型（2026-11-12）：按行窗口在真实 OpenSandbox 上可用；调用链路优化后 `write`/`read`/`edit` 从 1–3 秒降到 0.04–0.1 秒，续轮第一个工具等沙箱从 9–13 秒降到约 1 秒，快照 4.1 → 1.1 秒；真模型 Work 缓存 98.5%、Chat 99.1%；真实契约 27 passed。详见 dated update 最后一节。
+- 下一步：PR 的 CI 全绿后由用户决定合并；镜像重建与部署需用户当次明确要求。
 
 ---
 

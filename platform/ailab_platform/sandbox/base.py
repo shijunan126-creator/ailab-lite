@@ -12,7 +12,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
 
 from ..contracts.sandbox import LeaseHandle as LeaseHandle
 from ..contracts.sandbox import SandboxResource as SandboxResource
@@ -34,6 +33,44 @@ class SandboxFileNotFound(SandboxError):
 # The provider-side expiry outlives the Broker lease by this much, so the Broker
 # reaper normally acts first and the provider is only the backstop.
 SANDBOX_EXPIRY_GRACE_SECONDS = 300
+
+
+# Exit codes of ``lines_script``. Kept clear of 1 and 125-127, which `docker exec` and shells use
+# for their own failures (a vanished container must not read as "outside the workspace").
+LINES_REFUSED, LINES_ABSENT, LINES_NOT_A_FILE = 10, 11, 12
+
+
+def lines_script(path: str, line: int, max_bytes: int) -> str:
+    """Shell printing at most ``max_bytes`` of ``path`` from 1-indexed ``line`` on.
+
+    Same guard as ``file_size``: the parent must resolve inside ``/workspace`` and the file itself
+    must not be a link, since ``[ -f ]`` and ``tail`` follow links out of the workspace.
+    ``tail -n +N`` streams to the line inside the sandbox; ``head -c`` stops it at the window.
+    """
+    if line < 1 or max_bytes < 1:
+        raise SandboxError(f"invalid window line={line} max_bytes={max_bytes}")
+    q = shlex.quote(path)
+    body = f"head -c {max_bytes} -- {q}" if line == 1 else f"tail -n +{line} -- {q} | head -c {max_bytes}"
+    return (
+        f"parent=$(dirname {q}); "
+        f'rp=$(realpath -m "$parent") || exit {LINES_REFUSED}; '
+        f'case "$rp" in /workspace|/workspace/*) ;; *) exit {LINES_REFUSED};; esac; '
+        f"[ ! -L {q} ] || exit {LINES_REFUSED}; "
+        f"[ -e {q} ] || exit {LINES_ABSENT}; "
+        f"[ -f {q} ] && [ -r {q} ] || exit {LINES_NOT_A_FILE}; "
+        f"{body}"
+    )
+
+
+def lines_error(code: int, path: str) -> SandboxError:
+    """The error a failed ``lines_script`` stands for."""
+    if code == LINES_ABSENT:
+        return SandboxFileNotFound(f"no such file in the sandbox: {path}")
+    if code == LINES_NOT_A_FILE:
+        return SandboxError(f"not a regular file in the sandbox: {path}")
+    if code == LINES_REFUSED:
+        return SandboxError(f"refusing to read through a link or outside /workspace: {path}")
+    return SandboxError(f"could not read {path} (exit {code})")
 
 
 @dataclass
@@ -105,34 +142,14 @@ class SandboxProvider(ABC):
     @abstractmethod
     def release(self, sandbox_id: str) -> None: ...
 
-    def get_file_range_to_path(self, sandbox_id: str, path: str, target: Path, *, offset: int, length: int) -> None:
-        """Write bytes ``[offset, offset + length)`` of a sandbox file to ``target``.
+    @abstractmethod
+    def get_file_lines_to_path(self, sandbox_id: str, path: str, target: Path, *, line: int, max_bytes: int) -> None:
+        """Write at most ``max_bytes`` of a sandbox file, from 1-indexed ``line`` on, to ``target``.
 
-        The provider API has no byte ranges, so one exec writes just that slice into a temporary
-        file inside the sandbox and the ordinary bounded download carries it out; the temporary
-        file is removed in ``finally``. A caller that only wants the first few kilobytes of a
-        50 MB log never moves the other 49.99 MB.
+        ``read`` shows a 50 KB window of a file that may be 50 MB: the sandbox seeks to the line
+        and only the window leaves it. Each provider moves the bytes its own way; the guarded
+        shell is shared (``lines_script``) so every backend refuses the same paths.
         """
-        if offset < 0 or length <= 0:
-            raise SandboxError(f"invalid range offset={offset} length={length}")
-        quoted, temp = shlex.quote(path), f"/tmp/.ailab-range-{uuid4().hex}"
-        # Exit codes mean what ``file_size`` means by them: 2 absent (404), 3 not a regular file,
-        # 4 a link (which could point outside the workspace).
-        script = (
-            f"[ ! -L {quoted} ] || exit 4; "
-            f"[ -e {quoted} ] || exit 2; "
-            f"[ -f {quoted} ] || exit 3; "
-            f"head -c {offset + length} -- {quoted} | tail -c +{offset + 1} > {shlex.quote(temp)}"
-        )
-        result = self.exec(sandbox_id, script, timeout=120)
-        if result.exit_code == 2:
-            raise SandboxFileNotFound(f"no such file in the sandbox: {path}")
-        if result.exit_code != 0:
-            raise SandboxError(f"could not read {path}: {result.stderr.strip() or result.exit_code}")
-        try:
-            self.get_file_to_path(sandbox_id, temp, target, max_bytes=length)
-        finally:
-            self.exec(sandbox_id, f"rm -f {shlex.quote(temp)}", timeout=15)
 
     def file_size(self, sandbox_id: str, path: str) -> int:
         """Size of a regular file, without transferring it.
@@ -158,6 +175,10 @@ class SandboxProvider(ABC):
         if res.exit_code != 0 or not res.stdout.strip().isdigit():
             raise SandboxError(f"not a regular file in the sandbox: {path}")
         return int(res.stdout.strip())
+
+    def remove_file(self, sandbox_id: str, path: str) -> None:
+        """Delete a file the platform wrote (never a model-chosen path); a missing one is not an error."""
+        self.exec(sandbox_id, f"rm -f -- {shlex.quote(path)}", timeout=30)
 
     def reap_expired(self) -> int:
         """Remove sandboxes past their provider-side expiry; returns how many."""

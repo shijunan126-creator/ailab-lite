@@ -26,6 +26,8 @@ from .base import (
     SandboxProvider,
     SandboxResource,
     SandboxSpec,
+    lines_error,
+    lines_script,
 )
 from .transfer import TRANSFER_SECONDS, TransferLimitError
 
@@ -269,6 +271,18 @@ class DockerSandbox(SandboxProvider):
                 raise SandboxFileNotFound(f"no such file in the sandbox: {path}") from exc
         if target.stat().st_size > max_bytes:
             raise TransferLimitError("file exceeds transfer limit")
+
+    def get_file_lines_to_path(self, sandbox_id: str, path: str, target: Path, *, line: int, max_bytes: int) -> None:
+        # One exec whose stdout is the window: no temporary file, no second round trip.
+        path = self._check_path(path)
+        args = ["docker", "exec", "-u", "10001", sandbox_id, "sh", "-c", lines_script(path, line, max_bytes)]
+        with target.open("wb") as stream:
+            try:
+                proc = subprocess.run(args, stdout=stream, stderr=subprocess.PIPE, timeout=TRANSFER_SECONDS)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise SandboxError("docker file transfer failed or timed out") from exc
+        if proc.returncode:
+            raise lines_error(proc.returncode, path)
 
     @staticmethod
     def _transfer(args: list[str], *, stdin=None, stdout=None, missing_exit: int | None = None) -> None:

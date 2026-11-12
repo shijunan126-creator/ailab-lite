@@ -1634,14 +1634,30 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 恢复时重建冻结目录要连 `messages[0]` 一起刷新，否则规则写着 `exec_wait`、工具里只有 `bash_wait`。重建在 `ContextManager.build` 里做，`messages[1:]` 不动。
 - 边界原因要区分：模型变 / 只有工具变 / 提示词变。只比较工具和提示词就把一切都记成 `model_changed`。
 - 只读工具（`read`/`ls`/`grep`/`find`）的连续前缀可以 `gather` 并发，结果必须按 ordinal 回填，`bash`/`write`/`edit` 仍串行。
-- `read` 用 Broker 的 `offset`/`length` 取窗口（2 MiB + 1 字节区分"正好读完"）；窗口外不要伪造 `total_lines`。
+- `read` 用 Broker 的 `line`/`length` 取窗口（沙箱里 `tail -n +N | head -c L`，2 MiB + 1 字节区分"读到末尾"）；没到末尾时不报总行数，只给下一个 offset。
 
 ## 工作区工具（2026-11-12 第五轮）
 
 - 并发写 checkpoint 必须串行：`expected_step` 的 CAS 只能有一个在途。`_checkpoint` 用按 run 的 `asyncio.Lock` 把"读 expected_step + 写"包住；heartbeat、预算暂停、并发工具都会走到这里。只读工具（read/ls/grep/find）不写 started 记录、也不单独 checkpoint，恢复时重跑。
 - 测试 fake 必须会让出执行权：`CheckpointFake.put_checkpoint` 在 CAS 前 `await asyncio.sleep(0)`。没有这一句，协程之间不会交错，并发缺陷在单测里完全看不见（上一轮的 409 stale_step 就是这样漏掉的）。
 - 事件配对要靠 id：`agent.tool_call`/`agent.tool_result` 带 `call_id`，Portal 与 `process_view` 按 id 找步骤；没有 id 的历史事件才按"最后一个同名同 step"回退，且已有行带 id 时不要回退（那说明原步骤已经不在了）。
-- 大文件读：provider 的 `get_file_range_to_path` 用一次 exec 把切片写进沙箱 `/tmp` 再传，`finally` 删除；带范围时上限按 `length` 判，不按文件大小。`read` 到窗口末尾 `next_offset` 是 None，必须显式告诉模型"后面还有内容"。
 - `edit` 的行尾空白映射：起点落在删除点上要算这处删除（`bisect_right`），终点不算（`bisect_left`）；行中空白是内容，不是行尾空白，`oldText` 的尾部空格必须逐字符相同，不同就不算匹配。
 - 本地全量基线是 **0 失败**：先 `cd vendor/office-suite/runtime && npm ci --ignore-scripts && npm run build`。缺 `runner.mjs` 时 `tests/conftest.py` 的 autouse 检查会直接失败并提示这条命令——不要用 skip 盖住，也不要把这批失败记成"既有失败"。
 - OpenCode Go 网关**会**报缓存命中：整理后的 usage 里是 `cached_tokens`（`model_transport.py` → `llm._cached_tokens` → `model_usage.cached_tokens`），不要在事件或 `prompt_tokens_details` 里找。会话头取 `conversation_id or run_id`：只给 run 就没有跨轮缓存（实测每轮都整份未命中）。
+
+## 工作区工具（2026-11-12 第六轮）
+
+- provider 方法的测试必须执行**真实 provider 类**的代码，只替换最底层传输（Docker 的 `subprocess.run`、OpenSandbox 的 SDK 文件对象与 `exec`），见 `tests/test_sandbox_file_transfers.py`。mock 重写同名方法不算覆盖：上一轮基类的范围读把切片写到 `/tmp` 再走 `get_file_to_path`，而 Docker/OpenSandbox 的下载只收 `/workspace` 路径，真实沙箱里每次 `read` 都失败，单测、E2E（mock 沙箱）和真模型（本机映射目录）全部没看到。
+- provider 自己生成的临时路径不要再交给"模型路径"的入口（`get_file_to_path`/`file_size` 都校验 `/workspace`）；要么一次 exec 直接把字节写到 stdout（Docker），要么直接用 SDK 读这个内部路径（OpenSandbox）。临时文件放 `/tmp`，不放 `/workspace`，否则并行 `ls` 和快照会看到它。
+- 守卫脚本的退出码避开 1 和 125–127：`docker exec` 在容器不存在时返回 1，会被误读成"路径越界"。
+- `edit` 判断"匹配终点在行尾"要看去掉行尾空白后的文本：映射回原文的终点停在被去掉的空白之前，原文那里是空格不是换行，按原文判断会让行尾分支永远走不到（原文行尾多一个空格就"找不到"）。
+- Broker 测试 fake 共用 `tests/runtime_fakes.py:sandbox_window` 回答 `line`/`length`；只返回整份文件的 fake 会让窗口逻辑在单测里看起来全对。
+- 跑 `tests/test_sandbox_file_transfers.py` 需要 GNU `realpath -m`（macOS 先按 §9 把 coreutils 的 gnubin 放进 PATH），缺时测试直接失败并提示。
+
+## OpenSandbox 文件 API（2026-11-12 实测，server/SDK 1.1.1）
+
+- 一次 exec 固定约 1 秒，文件 API 几毫秒：多一次 exec 就是工具多一秒。读写守卫先问文件 API，证明不了再走 shell 守卫（`sandbox/opensandbox.py` 的 `_plain_size`/`_direct_write`）。
+- `get_file_info` 是 lstat（`type` 为 `symlink`/`file`/`directory`），批量里任一路径缺失整批报 `FILE_NOT_FOUND`。路径穿过链接父目录时它报的是最后一级的类型，所以要逐级问。SDK 对每次失败都打 ERROR 加 traceback，新文件写入会触发这个"缺失"，provider 装了只吞这一条的日志过滤。
+- `write_file` 会自动建缺失的父目录（属主是 execd 的用户），`move_files` 目标已存在时拒绝（不能用来原子替换）；`read_bytes_stream` 的 offset/limit 不可靠（offset=0 返回 400），不要用。
+- 上面"OSB 注入前先 mkdir 父目录"的坑仍然成立：快速写入只在父目录都已存在时才走，缺目录照旧 exec `mkdir -p`。
+- 测 OpenSandbox 的 provider 代码时，SDK 文件对象的替身要照上面的语义实现（`tests/test_sandbox_file_transfers.py:Files`），真实服务契约是 `tests/contracts/test_sandbox_transfer.py` 与 `test_sandbox_lifecycle.py`（`AILAB_TEST_OSB_URL`）。

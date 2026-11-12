@@ -17,6 +17,7 @@ from ailab_platform.agent.tools import (
     tools_for_turn,
 )
 from ailab_platform.clients import ClientError
+from tests.runtime_fakes import sandbox_window
 
 WORK = "/workspace/work"
 
@@ -29,10 +30,10 @@ class FakeBroker:
         self.stdout, self.exit_code = stdout, exit_code
         self.commands: list[str] = []
 
-    async def get_file(self, lease_id: str, path: str, **kwargs) -> bytes:
+    async def get_file(self, lease_id: str, path: str, *, line: int | None = None, length: int | None = None, **kwargs) -> bytes:
         if path not in self.files:
             raise ClientError("GET", f"/internal/leases/{lease_id}/files", 404, '{"detail": "no such file in the sandbox"}')
-        return self.files[path]
+        return sandbox_window(self.files[path], line, length)
 
     async def put_file(self, lease_id: str, path: str, data: bytes) -> None:
         self.files[path] = data
@@ -282,7 +283,7 @@ def test_edit_refuses_a_file_over_its_own_memory_budget(monkeypatch):
         call("edit", {"path": f"{WORK}/a.md", "edits": [{"oldText": "a", "newText": "b"}]}, FakeBroker({f"{WORK}/a.md": b"a" * 32}))
 
 
-def test_a_large_file_is_read_through_a_byte_window():
+def test_a_large_file_is_read_through_a_window_from_the_requested_line():
     """The Agent holds a 2 MiB window, not the 10 MiB the Broker would let it transfer."""
     seen: list[dict] = []
 
@@ -292,9 +293,9 @@ def test_a_large_file_is_read_through_a_byte_window():
             return b"first line\n" + b"x" * READ_WINDOW_BYTES
 
     result = call("read", {"path": f"{WORK}/big.log"}, Windowed())
-    assert seen == [{"length": READ_WINDOW_BYTES + 1}]
-    assert result["ok"] and result["content"].startswith("first line")
-    assert result["partial"] is True and "total_lines" not in result
+    assert seen == [{"line": 1, "length": READ_WINDOW_BYTES + 1}]
+    assert result["ok"] and result["content"] == "first line\n\n[More lines in file. Use offset=2 to continue.]"
+    assert result["next_offset"] == 2 and "total_lines" not in result  # the count is unknown, so it is not guessed
 
 
 def test_a_complete_read_still_reports_the_line_count():
@@ -302,13 +303,42 @@ def test_a_complete_read_still_reports_the_line_count():
     assert result["total_lines"] == 3 and "partial" not in result  # a trailing newline counts an empty last line
 
 
-def test_an_offset_beyond_the_read_window_points_at_grep_instead_of_lying():
-    class Windowed(FakeBroker):
-        async def get_file(self, lease_id, path, **kwargs):
-            return b"a\nb\n" + b"x" * READ_WINDOW_BYTES  # a full window: the file goes on
+def big_log(lines: int = 300_000) -> bytes:
+    return b"".join(b"line %07d\n" % index for index in range(1, lines + 1))  # 13 bytes a line: ~3.7 MB
 
-    with pytest.raises(ToolError, match="offset=900 不在已读范围内"):
-        call("read", {"path": f"{WORK}/big.log", "offset": 900}, Windowed())
+
+def test_an_offset_deep_in_a_big_file_is_read_where_it_is():
+    """The sandbox seeks to the line, so the 2 MiB window no longer caps how far ``offset`` reaches."""
+    broker = FakeBroker({f"{WORK}/big.log": big_log()})
+    result = call("read", {"path": f"{WORK}/big.log", "offset": 100_000, "limit": 3}, broker)
+    assert result["content"] == "line 0100000\nline 0100001\nline 0100002\n\n[More lines in file. Use offset=100003 to continue.]"
+    assert result["next_offset"] == 100_003 and "total_lines" not in result
+
+
+def test_the_tail_of_a_big_file_reports_its_exact_line_count():
+    # From line 299 990 on, the window reaches the end of the file: the total is known again.
+    result = call("read", {"path": f"{WORK}/big.log", "offset": 299_990}, FakeBroker({f"{WORK}/big.log": big_log()}))
+    assert result["content"].startswith("line 0299990\n") and result["content"].endswith("line 0300000\n")
+    assert result["total_lines"] == 300_001 and "next_offset" not in result  # Pi counts the empty line after the last newline
+
+
+def test_the_window_edge_continues_instead_of_reading_as_end_of_file():
+    """Every window ends with the offset of the next line, so the model can walk the whole file."""
+    broker, offset = FakeBroker({f"{WORK}/big.log": big_log()}), 1
+    for _ in range(5):  # the tail test above covers the end; five steps prove the windows meet
+        result = call("read", {"path": f"{WORK}/big.log", "offset": offset}, broker)
+        assert result["content"].startswith(f"line {offset:07d}\n")  # no line skipped, none repeated
+        assert result["next_offset"] == offset + 2000 and "total_lines" not in result
+        offset = result["next_offset"]
+
+
+def test_an_offset_past_the_end_says_so():
+    with pytest.raises(ToolError, match=re.escape("Offset 9 is beyond end of file (3 lines total)")):
+        call("read", {"path": f"{WORK}/a.txt", "offset": 9}, FakeBroker({f"{WORK}/a.txt": b"a\nb\n"}))
+    # Pi counts the empty line after a final newline; the window from that line is empty, which is not "past the end".
+    assert call("read", {"path": f"{WORK}/a.txt", "offset": 3}, FakeBroker({f"{WORK}/a.txt": b"a\nb\n"}))["content"] == ""
+    with pytest.raises(ToolError, match=re.escape("Offset 400000 is beyond end of file. 用 bash 的 wc -l")):
+        call("read", {"path": f"{WORK}/big.log", "offset": 400_000}, FakeBroker({f"{WORK}/big.log": big_log()}))
 
 
 def test_a_twelve_megabyte_file_is_read_through_the_window_not_refused():
@@ -317,23 +347,8 @@ def test_a_twelve_megabyte_file_is_read_through_the_window_not_refused():
 
     class Ranged(FakeBroker):
         async def get_file(self, lease_id, path, **kwargs):
-            assert kwargs == {"length": READ_WINDOW_BYTES + 1}  # the Agent asks for a window, not the file
+            assert kwargs == {"line": 1, "length": READ_WINDOW_BYTES + 1}  # the Agent asks for a window, not the file
             return big[: READ_WINDOW_BYTES + 1]
 
     result = call("read", {"path": f"{WORK}/big.log"}, Ranged())
-    assert result["ok"] and result["partial"] is True and result["content"].startswith("header")
-
-
-def test_the_end_of_the_read_window_says_how_to_go_on():
-    """Reading the last lines of the window returns next_offset=None, which reads as end of file."""
-    body = b"".join(b"line %07d\n" % index for index in range(300000))
-    window = body[:READ_WINDOW_BYTES]
-    lines_in_window = window.count(b"\n")
-
-    class FullWindow(FakeBroker):
-        async def get_file(self, lease_id, path, **kwargs):
-            return body[: READ_WINDOW_BYTES + 1]
-
-    result = call("read", {"path": f"{WORK}/big.log", "offset": lines_in_window - 5, "limit": 100}, FullWindow())
-    assert result["partial"] is True and result.get("next_offset") is None
-    assert "窗口的末尾" in result["note"] and "sed -n" in result["note"]
+    assert result["ok"] and result["content"].startswith("header") and result["next_offset"] == 2

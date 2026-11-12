@@ -52,6 +52,9 @@ class _RecordingProvider(SandboxProvider):
     def get_file_to_path(self, *args, **kwargs):
         raise NotImplementedError
 
+    def get_file_lines_to_path(self, *args, **kwargs):
+        raise NotImplementedError
+
     def list_files(self, sandbox_id: str, path: str) -> list[dict]:
         raise NotImplementedError
 

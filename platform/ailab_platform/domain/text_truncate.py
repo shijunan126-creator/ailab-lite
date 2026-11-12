@@ -175,26 +175,33 @@ def is_low_surrogate(code: int) -> bool:
 @dataclass(frozen=True, slots=True)
 class LineWindow:
     text: str
-    total_lines: int
+    total_lines: int | None  # None: the text stops before the end of the file
     truncation: Truncation
     next_offset: int | None
 
 
-def read_lines(text: str, path: str, offset: int | None = None, limit: int | None = None) -> LineWindow:
-    """A 1-indexed line window of ``text`` with the continuation notice Pi writes.
+def read_lines(
+    text: str, path: str, offset: int | None = None, limit: int | None = None, *, first_line: int = 1, complete: bool = True
+) -> LineWindow:
+    """A 1-indexed line window of a file with the continuation notice Pi writes.
 
-    ``offset``/``limit`` count lines, not characters. Raises ``ValueError`` with Pi's
-    wording when the offset is past the end.
+    ``text`` is the file from line ``first_line`` on; ``complete`` says it runs to the end of the
+    file. When it does not, the line count is unknown, so the notices say where to continue and
+    never how many lines remain. ``offset``/``limit`` count lines, not characters. Raises
+    ``ValueError`` with Pi's wording when the offset is past the end.
     """
     lines = text.split("\n")  # a trailing newline leaves one empty last line, as Pi counts it
-    total_lines = len(lines)
-    start = 0 if offset is None else max(0, offset - 1)
-    if start >= total_lines:
+    total_lines = first_line - 1 + len(lines) if complete else None
+    start = 0 if offset is None else max(0, offset - first_line)
+    if start >= len(lines):
+        if total_lines is None:
+            raise ValueError(f"Offset {offset} is past the part of the file that was read")
         raise ValueError(f"Offset {offset} is beyond end of file ({total_lines} lines total)")
-    end = total_lines if limit is None else min(start + limit, total_lines)
+    end = len(lines) if limit is None else min(start + limit, len(lines))
     truncation = truncate_head("\n".join(lines[start:end]))
     first_line_bytes = byte_len(lines[start]) if truncation.first_line_exceeds_limit else 0
-    shown_start = start + 1
+    shown_start = first_line + start
+    of_total = f" of {total_lines}" if total_lines is not None else ""
 
     if truncation.first_line_exceeds_limit:
         size = format_size(first_line_bytes)
@@ -208,20 +215,20 @@ def read_lines(text: str, path: str, offset: int | None = None, limit: int | Non
         shown_end = shown_start + truncation.output_lines - 1
         next_offset = shown_end + 1
         if truncation.truncated_by == "lines":
-            notice = f"[Showing lines {shown_start}-{shown_end} of {total_lines}. Use offset={next_offset} to continue.]"
+            notice = f"[Showing lines {shown_start}-{shown_end}{of_total}. Use offset={next_offset} to continue.]"
         else:
             notice = (
-                f"[Showing lines {shown_start}-{shown_end} of {total_lines} "
+                f"[Showing lines {shown_start}-{shown_end}{of_total} "
                 f"({format_size(DEFAULT_MAX_BYTES)} limit). Use offset={next_offset} to continue.]"
             )
         return LineWindow(f"{truncation.content}\n\n{notice}", total_lines, truncation, next_offset)
 
-    if limit is not None:
-        user_limited = min(start + limit, total_lines) - start
-        if start + user_limited < total_lines:
-            remaining = total_lines - (start + user_limited)
-            next_offset = start + user_limited + 1
-            notice = f"[{remaining} more lines in file. Use offset={next_offset} to continue.]"
-            return LineWindow(f"{truncation.content}\n\n{notice}", total_lines, truncation, next_offset)
+    if end < len(lines) or not complete:
+        next_offset = first_line + end
+        if complete:
+            notice = f"[{len(lines) - end} more lines in file. Use offset={next_offset} to continue.]"
+        else:
+            notice = f"[More lines in file. Use offset={next_offset} to continue.]"
+        return LineWindow(f"{truncation.content}\n\n{notice}", total_lines, truncation, next_offset)
 
     return LineWindow(truncation.content, total_lines, truncation, None)

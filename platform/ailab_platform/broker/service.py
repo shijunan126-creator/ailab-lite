@@ -44,6 +44,7 @@ log = logging.getLogger("ailab.broker")
 # Platform-owned files inside the sandbox live here; they are left out of workspace snapshots.
 TOOL_DIR = "/workspace/.ailab"
 SNAPSHOT_PATH = f"{TOOL_DIR}/snapshot.tgz"
+RESET_FAILED = 90  # the restore exec's own code: tar exits 0-2, the shell 126/127
 PREVIEW_SCRIPT = f"{TOOL_DIR}/render_preview.py"
 PREVIEW_PATTERNS = ("*.pptx", "*.docx", "*.xlsx", "*.pdf")
 MAX_PREVIEWS_PER_CALL = 3
@@ -113,6 +114,20 @@ def _expired(lease: dict) -> bool:
     return min(
         datetime.fromisoformat(lease["expires_at"]), datetime.fromisoformat(lease.get("max_expires_at", lease["expires_at"]))
     ) <= datetime.now(UTC)
+
+
+def _fingerprint_command() -> str:
+    names = " -o ".join(f"-iname '{p}'" for p in PREVIEW_PATTERNS)
+    return f"find {OUTPUTS} -maxdepth 1 -type f \\( {names} \\) -printf '%p\\t%s:%T@\\n'"
+
+
+def _parse_fingerprints(stdout: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in stdout.splitlines():
+        path, _, fp = line.partition("\t")
+        if path.startswith(OUTPUTS + "/") and fp:
+            out[path] = fp
+    return out
 
 
 def _unique_name(name: str, used: set[str]) -> str:
@@ -886,16 +901,11 @@ class LeaseManager:
                 self.inject_file(lease, file_id, path, run_id=run_id)
                 injected.append({"file_id": file_id, "filename": name, "path": path})
             lease["inputs"] = injected
+            # A previous workspace must never override this run's frozen template or brand. A new sandbox
+            # has neither directory, so only a restore can bring one back, and the restore clears them.
             if run.get("workspace_restore_key"):
-                self._restore_workspace(lease, run["workspace_restore_key"])
-            # Restore first: a previous workspace must never override this run's frozen brand.
-            if "brand" in run:
-                result = self._provider_call("exec", lease["provider_ref"], "rm -rf /workspace/.brand", 10)
-                if result.exit_code:
-                    raise LeaseError("could not reset brand directory")
-            result = self._provider_call("exec", lease["provider_ref"], "rm -rf /workspace/.template", 10)
-            if result.exit_code:
-                raise LeaseError("could not reset template directory")
+                reset = ["/workspace/.template", *(["/workspace/.brand"] if "brand" in run else [])]
+                self._restore_workspace(lease, run["workspace_restore_key"], reset=reset)
             template = (run.get("options") or {}).get("template")
             if template and (run.get("options") or {}).get("mode", "work") == "work":
                 file_id = template["file_id"]
@@ -986,24 +996,46 @@ class LeaseManager:
         return self._provider_call("cancel_exec", lease["provider_ref"])
 
     # ---------------------------------------------------------------- workspace across turns
-    def _restore_workspace(self, lease: dict, key: str) -> None:
-        """Unpack the previous turn's workspace. A failure costs the continuity, not the turn."""
+    def _restore_workspace(self, lease: dict, key: str, *, reset: list[str] = ()) -> None:
+        """Unpack the previous turn's workspace, clear ``reset`` and fingerprint the previews, in one exec.
+
+        An exec costs about a second on OpenSandbox, and this one used to be four. A failed unpack
+        costs the continuity, not the turn; a failed reset fails the lease.
+        """
         sandbox_id = lease["sandbox_id"]
         try:
             with self.transfer_file() as local:
                 with self.storage.open_stream(key) as chunks, local.open("wb") as stream:
                     copy_chunks(chunks, stream, max_bytes=settings.max_workspace_bytes)
                 self._provider_call("put_file_from_path", sandbox_id, SNAPSHOT_PATH, local, max_bytes=settings.max_workspace_bytes)
-            res = self._provider_call("exec", sandbox_id, f"tar -xzf {SNAPSHOT_PATH} -C /workspace && rm -f {SNAPSHOT_PATH}", 120)
-            if res.exit_code != 0:
-                raise SandboxError(res.stderr[-300:] or f"tar exit {res.exit_code}")
-            lease["restored"] = True
-            # what is already there was previewed in an earlier turn: render only what changes from now on
-            lease["preview_fp"] = self._fingerprints(sandbox_id)
+        except Exception as exc:  # nothing was unpacked, so nothing needs clearing
+            self._restore_failed(lease, key, exc)
+            return
+        cleared = " ".join(shlex.quote(path) for path in [SNAPSHOT_PATH, *reset])
+        unpack = f'tar -xzf {SNAPSHOT_PATH} -C /workspace; t=$?; rm -rf -- {cleared} || exit {RESET_FAILED}; [ "$t" -eq 0 ] || exit "$t"'
+        try:
+            # ``exit 0``: a failing ``find`` is not a failed restore.
+            res = self._provider_call("exec", sandbox_id, f"{unpack}; {_fingerprint_command()}; exit 0", 120)
         except Exception as exc:
-            log.warning("workspace restore failed for %s from %s", lease["lease_id"], key, exc_info=True)
-            lease["restored"] = False
-            lease["restore_error"] = str(exc)[:300]
+            # The unpack may have run before the call failed: clear on its own, or fail the lease.
+            if reset and self._provider_call("exec", sandbox_id, "rm -rf -- " + " ".join(map(shlex.quote, reset)), 10).exit_code:
+                raise LeaseError("could not reset the workspace's template or brand") from exc
+            self._restore_failed(lease, key, exc)
+            return
+        if res.exit_code == RESET_FAILED:
+            raise LeaseError("could not reset the workspace's template or brand")
+        if res.exit_code != 0:
+            self._restore_failed(lease, key, SandboxError(res.stderr[-300:] or f"tar exit {res.exit_code}"))
+            return
+        lease["restored"] = True
+        # what is already there was previewed in an earlier turn: render only what changes from now on
+        lease["preview_fp"] = _parse_fingerprints(res.stdout)
+
+    @staticmethod
+    def _restore_failed(lease: dict, key: str, exc: Exception) -> None:
+        log.warning("workspace restore failed for %s from %s", lease["lease_id"], key, exc_info=exc)
+        lease["restored"] = False
+        lease["restore_error"] = str(exc)[:300]
 
     @_operation
     def snapshot(self, lease_id: str) -> dict:
@@ -1027,19 +1059,12 @@ class LeaseManager:
         except TransferLimitError as exc:
             raise ArtifactRejected(str(exc)) from exc
         finally:
-            self._provider_call("exec", sandbox_id, f"rm -f {SNAPSHOT_PATH}", 30)
+            self._provider_call("remove_file", sandbox_id, SNAPSHOT_PATH)
         return {"key": key, "size": size}
 
     # ---------------------------------------------------------------- live previews
     def _fingerprints(self, sandbox_id: str) -> dict[str, str]:
-        names = " -o ".join(f"-iname '{p}'" for p in PREVIEW_PATTERNS)
-        res = self._provider_call("exec", sandbox_id, f"find {OUTPUTS} -maxdepth 1 -type f \\( {names} \\) -printf '%p\\t%s:%T@\\n'", 30)
-        out: dict[str, str] = {}
-        for line in res.stdout.splitlines():
-            path, _, fp = line.partition("\t")
-            if path.startswith(OUTPUTS + "/") and fp:
-                out[path] = fp
-        return out
+        return _parse_fingerprints(self._provider_call("exec", sandbox_id, _fingerprint_command(), 30).stdout)
 
     @_operation
     def refresh_previews(self, lease_id: str) -> list[dict]:
@@ -1291,38 +1316,29 @@ class LeaseManager:
         self._provider_call("put_file_from_path", lease["sandbox_id"], path, local, max_bytes=settings.web_download_max_bytes)
 
     @_operation
-    def get_file(self, lease_id: str, path: str, *, max_bytes: int | None = None, offset: int = 0, length: int | None = None) -> bytes:
-        """The file, a byte range of it, or 413 before the transfer when the caller's limit is tighter.
+    def get_file(
+        self, lease_id: str, path: str, *, max_bytes: int | None = None, line: int | None = None, length: int | None = None
+    ) -> bytes:
+        """The whole file, or at most ``length`` bytes of it from 1-indexed ``line`` on.
 
-        ``edit`` says it can only hold 2 MiB; transferring 10 MiB first and refusing after would pay
-        for the copy the caller just said it cannot afford. ``read`` asks for a window: with a range
-        the limit applies to ``length``, not to the size of the file, so a 50 MB log can be opened at
-        its beginning while Broker memory and disk stay bounded by the window.
+        A whole file is refused with 413 before the transfer when it is over the limit, which
+        ``edit`` tightens with ``max_bytes``. A window is bounded by ``length`` instead of by the
+        file: the sandbox seeks to the line and only the window crosses the Broker, so ``read`` can
+        open a 50 MB log anywhere while Broker memory, disk and transfer stay the size of the window.
         """
         lease = self._load(lease_id)
         path = self._checked(path)
         limit = settings.max_sandbox_read_bytes if max_bytes is None else min(max_bytes, settings.max_sandbox_read_bytes)
-        if length is not None:
-            if length > limit:
-                raise TransferLimitError(f"requested {length} bytes; the limit is {limit}")
-            size = self._provider_call("file_size", lease["sandbox_id"], path)
-            wanted = min(length, max(0, size - offset))
-            if wanted == 0:
-                return b""
-            with self.transfer_file() as local:
-                self._provider_call("get_file_range_to_path", lease["sandbox_id"], path, local, offset=offset, length=wanted)
-                return local.read_bytes()
-        if max_bytes is not None:
-            size = self._provider_call("file_size", lease["sandbox_id"], path)
-            if size > limit:
-                raise TransferLimitError(f"file is {size} bytes; the limit is {limit}")
         with self.transfer_file() as local:
-            self._download(lease, path, local, limit)
-            if not offset:
-                return local.read_bytes()
-            with local.open("rb") as handle:
-                handle.seek(offset)
-                return handle.read()
+            if line is None and length is None:
+                self._download(lease, path, local, limit)
+            else:
+                length = limit if length is None else length
+                if length > limit:
+                    raise TransferLimitError(f"requested {length} bytes; the limit is {limit}")
+                # One provider call: the guarded script answers "missing", "not a file" and "a link" itself.
+                self._provider_call("get_file_lines_to_path", lease["sandbox_id"], path, local, line=line or 1, max_bytes=length)
+            return local.read_bytes()
 
     @_operation
     def list_files(self, lease_id: str, path: str) -> list[dict]:

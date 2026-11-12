@@ -74,6 +74,24 @@ def test_snapshot_restore_uses_only_streams(tmp_path, monkeypatch):
     assert provider.file_size(lease["sandbox_id"], "/workspace/outputs/result.bin") == 6
 
 
+@pytest.mark.parametrize(("code", "fails_lease"), [(2, False), (90, True)])
+def test_a_failed_unpack_costs_the_continuity_but_a_failed_reset_fails_the_lease(tmp_path, monkeypatch, code, fails_lease):
+    from ailab_platform.sandbox.base import ExecResult
+
+    manager, provider, _ = _manager_with(_ApiStub({}, []))
+    manager.storage = LocalStorage(tmp_path / "objects")
+    lease = manager.create("run-stream")
+    saved = manager.snapshot(lease["lease_id"])
+    execute = provider.exec
+    monkeypatch.setattr(provider, "exec", lambda sid, cmd, t: ExecResult(code, "", "", 0) if "tar -xzf" in cmd else execute(sid, cmd, t))
+    if fails_lease:  # the previous turn's template or brand could still be there
+        with pytest.raises(LeaseError, match="reset"):
+            manager._restore_workspace(lease, saved["key"], reset=["/workspace/.template"])
+    else:
+        manager._restore_workspace(lease, saved["key"], reset=["/workspace/.template"])
+        assert lease["restored"] is False and "tar exit 2" in lease["restore_error"]
+
+
 def test_failed_injection_releases_sandbox_and_spool(tmp_path, monkeypatch):
     api = _ApiStub({"f": {"status": "ready", "filename": "a.bin"}}, ["f"])
     manager, provider, _ = _manager_with(api)

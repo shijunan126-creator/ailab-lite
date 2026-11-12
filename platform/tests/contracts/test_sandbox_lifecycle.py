@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
@@ -224,5 +226,37 @@ def test_exec_deadline_and_cancellation_stop_real_work(provider):
             finally:
                 # A failed interrupt must not leave a minute-long command or executor behind.
                 provider.release(ref)
+    finally:
+        provider.release(ref)
+
+
+def test_a_read_window_comes_from_inside_the_sandbox(provider):
+    """``read``'s window through the real backend: seek to a line, send only the window, refuse what file_size refuses.
+
+    The unit tests run the providers' own shell against a local directory; this runs it where it
+    really runs, including OpenSandbox's file API reading the provider's temporary file in /tmp.
+    """
+    from ailab_platform.sandbox.base import SandboxError, SandboxFileNotFound
+
+    lease_id = f"contract-{uuid.uuid4().hex[:12]}"
+    spec = SandboxSpec(image=settings.sandbox_image, ttl=120)
+    labels = {"ailab.owner": settings.broker_owner, "ailab.lease_id": lease_id, "ailab.state": "active"}
+    ref = provider.acquire(lease_id, spec.image, ttl_seconds=spec.ttl, spec=spec, labels=labels)
+    try:
+        script = "python3 -c \"import sys; sys.stdout.write(''.join('line %07d\\n' % i for i in range(1, 400001)))\" > /workspace/big.log"
+        assert provider.exec(ref, script + " && mkdir -p /workspace/dir && ln -s /etc/hostname /workspace/link", 60).exit_code == 0
+        target = Path(tempfile.mkdtemp()) / "window"
+        provider.get_file_lines_to_path(ref, "/workspace/big.log", target, line=1, max_bytes=26)  # OpenSandbox: no exec
+        assert target.read_bytes() == b"line 0000001\nline 0000002\n"
+        provider.get_file_lines_to_path(ref, "/workspace/big.log", target, line=350_000, max_bytes=26)
+        assert target.read_bytes() == b"line 0350000\nline 0350001\n"
+        provider.get_file_lines_to_path(ref, "/workspace/big.log", target, line=400_002, max_bytes=26)
+        assert target.read_bytes() == b""
+        with pytest.raises(SandboxFileNotFound):
+            provider.get_file_lines_to_path(ref, "/workspace/none", target, line=1, max_bytes=8)
+        for path in ("/workspace/dir", "/workspace/link"):
+            with pytest.raises(SandboxError):
+                provider.get_file_lines_to_path(ref, path, target, line=1, max_bytes=8)
+        assert provider.exec(ref, "ls -A /tmp | grep -c ailab-lines || true", 10).stdout.strip() in {"", "0"}
     finally:
         provider.release(ref)

@@ -256,15 +256,21 @@ def test_one_off_file_validation_and_library_slides_filter(api, monkeypatch):
     assert api.post("/v1/runs", json={"prompt": "PPT", "template": selected}).status_code == 400
 
 
-def test_broker_template_injection_and_reset(monkeypatch):
+def test_broker_template_injection_and_reset(monkeypatch, tmp_path):
+    from ailab_platform.sandbox import SandboxFileNotFound
+    from ailab_platform.storage import LocalStorage
+
     class API(_ApiStub):
         selected = {"file_id": "template", "source": "template", "id": "tpl_a", "name": "Frozen"}
+        restore = None
 
         def get_run(self, run_id):
-            return {**super().get_run(run_id), "options": {"mode": "work", "template": self.selected}}
+            run = {**super().get_run(run_id), "options": {"mode": "work", "template": self.selected}}
+            return {**run, "workspace_restore_key": self.restore} if self.restore else run
 
     api = API({"template": {"status": "ready", "size": 4, "bytes": b"test", "meta": {"template": {"slides": 1}}}}, [])
     manager, provider, _ = _manager_with(api)
+    manager.storage = LocalStorage(tmp_path / "objects")
     commands = []
     original = manager._provider_call
 
@@ -277,14 +283,20 @@ def test_broker_template_injection_and_reset(monkeypatch):
     lease = manager.create("template-run")
     assert provider.get_file(lease["sandbox_id"], "/workspace/.template/template.pptx") == b"test"
     assert json.loads(provider.get_file(lease["sandbox_id"], "/workspace/.template/analysis.json")) == {"slides": 1}
-    assert "rm -rf /workspace/.template" in commands
+    assert not any(".template" in command for command in commands)  # a new sandbox has no old template: no exec to clear one
+    saved = manager.snapshot(lease["lease_id"])  # the workspace, .template included, carries into the next turn
     manager.release(lease["lease_id"])
+
+    # The next turn runs without a template: the restored workspace must not bring the frozen one back.
     commands.clear()
-    api.selected = None
+    api.selected, api.restore = None, saved["key"]
     lease = manager.create("plain-run")
-    assert "rm -rf /workspace/.template" in commands
+    assert lease["restored"] is True
+    with pytest.raises(SandboxFileNotFound):
+        provider.file_size(lease["sandbox_id"], "/workspace/.template/template.pptx")
+    assert len(commands) == 1 and "tar -xzf" in commands[0]  # unpack, reset and preview fingerprints: one exec
     manager.release(lease["lease_id"])
-    api.selected = {"file_id": "template"}
+    api.selected, api.restore = {"file_id": "template"}, None
     monkeypatch.setattr(settings, "max_template_bytes", 1)
     from ailab_platform.broker.service import LeaseError
 

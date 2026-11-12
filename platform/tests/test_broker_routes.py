@@ -154,3 +154,29 @@ def test_file_errors_carry_the_reason_the_agent_needs(broker, monkeypatch):
         ).content
         == b"x" * 2048
     )
+
+
+def test_a_window_is_bounded_by_its_length_not_by_the_file(broker, monkeypatch):
+    """A file over the read limit is refused whole but readable as a window, from any line."""
+    client, _manager, provider = broker
+    headers = {"X-Service-Token": settings.service_token}
+    lease_id = client.post("/internal/leases", headers=headers, json={"run_id": "window"}).json()["lease_id"]
+    provider.put_file(lease_id, "/workspace/work/big.log", b"".join(b"line %04d\n" % i for i in range(1, 301)))  # 3000 bytes
+    monkeypatch.setattr(settings, "max_sandbox_read_bytes", 1024)
+
+    def get(**params):
+        return client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work/big.log", **params})
+
+    assert get().status_code == FILE_TOO_LARGE
+    first = get(line=1, length=20)
+    assert first.status_code == 200 and first.content == b"line 0001\nline 0002\n"
+    assert get(line=250, length=10).content == b"line 0250\n"
+    assert get(line=400, length=10).content == b""  # past the end is empty, not an error
+    assert get(line=1, length=2048).status_code == FILE_TOO_LARGE  # the window itself is still bounded
+    window = {"line": 1, "length": 9}
+    assert client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/none", **window}).status_code == (
+        FILE_NOT_FOUND
+    )
+    assert client.get(f"/internal/leases/{lease_id}/files", headers=headers, params={"path": "/workspace/work", **window}).status_code == (
+        FILE_UNREADABLE
+    )

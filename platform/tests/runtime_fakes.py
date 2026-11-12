@@ -8,6 +8,16 @@ import json
 from ailab_platform.clients import ClientError
 
 
+def sandbox_window(data: bytes, line: int | None = None, length: int | None = None) -> bytes:
+    """What the Broker returns for ``get_file(line=, length=)``: ``tail -n +line | head -c length``.
+
+    Broker fakes share this so none of them answers a window request with the whole file.
+    """
+    if line is None and length is None:
+        return data
+    return b"\n".join(data.split(b"\n")[(line or 1) - 1 :])[:length]
+
+
 class CheckpointFake:
     checkpoint: dict | None = None  # class default; the first write makes it per-instance
     paused: dict | None = None

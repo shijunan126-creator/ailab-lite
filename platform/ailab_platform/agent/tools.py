@@ -966,10 +966,18 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         for label, value in (("offset", offset), ("limit", limit)):
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
                 raise ToolError(f"{label} 须是正整数")
-        # A byte window, not the whole file: the Agent is the 256 MiB pod, and 2000 lines of a
-        # 10 MB log are the first few hundred KB of it. One extra byte tells a complete read apart.
+        # The sandbox seeks to the line and sends a window, never the file: the Agent is a 256 MiB
+        # pod and 2000 lines of a 50 MB log are a few hundred KB of it. One extra byte says whether
+        # the window reached the end of the file.
+        start = offset or 1
         try:
-            data = await broker.get_file(lease_id, path, length=READ_WINDOW_BYTES + 1)
+            data = await broker.get_file(lease_id, path, line=start, length=READ_WINDOW_BYTES + 1)
+            if not data and start > 1:
+                # Nothing from that line on: past the end, or the empty line after a final newline,
+                # which Pi counts. The file's own first window decides, with its line count.
+                data, start = await broker.get_file(lease_id, path, line=1, length=READ_WINDOW_BYTES + 1), 1
+                if len(data) > READ_WINDOW_BYTES:
+                    raise ToolError(f"Offset {offset} is beyond end of file. 用 bash 的 wc -l 查看总行数。")
         except ClientError as exc:
             raise _file_error(path, "read", exc) from exc
         complete = len(data) <= READ_WINDOW_BYTES
@@ -984,27 +992,14 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             }
         text = data.decode("utf-8", "replace")
         if not complete and (cut := text.rfind("\n")) >= 0:
-            text = text[: cut + 1]  # never show half a line
+            text = text[:cut]  # whole lines only: the next window starts at the line after this newline
         try:
-            window = read_lines(text, path, offset, limit)
+            window = read_lines(text, path, offset, limit, first_line=start, complete=complete)
         except ValueError as exc:
-            if complete:
-                raise ToolError(str(exc)) from exc
-            raise ToolError(
-                f"文件超过 {READ_WINDOW_BYTES // (1024 * 1024)}MB，只读取了开头；offset={offset} 不在已读范围内。"
-                "用 grep 定位行号再读附近内容，或用 bash 的 sed -n 读指定行。"
-            ) from exc
+            raise ToolError(str(exc)) from exc
         result = {"ok": True, "path": path, "content": window.text}
-        if complete:
+        if window.total_lines is not None:
             result["total_lines"] = window.total_lines
-        else:
-            result["partial"] = True  # the line count and the notices only cover the window
-            if window.next_offset is None:
-                # Silently ending at the window edge reads as "end of file": say what is left and how to reach it.
-                result["note"] = (
-                    f"只读到 {READ_WINDOW_BYTES // (1024 * 1024)}MB 读取窗口的末尾，文件后面还有内容。"
-                    "用 grep -n 定位行号，或用 bash 的 sed -n 'N,Mp' 读取指定行。"
-                )
         if window.next_offset is not None:
             result["next_offset"] = window.next_offset
         if window.truncation.truncated:

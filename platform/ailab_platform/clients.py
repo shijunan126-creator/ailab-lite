@@ -758,15 +758,15 @@ class AsyncBrokerClient(_Service):
         await self._send(req)
 
     async def get_file(
-        self, lease_id: str, path: str, *, max_bytes: int | None = None, offset: int | None = None, length: int | None = None
+        self, lease_id: str, path: str, *, max_bytes: int | None = None, line: int | None = None, length: int | None = None
     ) -> bytes:
-        """A sandbox file, or a byte range of it, bounded by the Broker's own transfer limit.
+        """A sandbox file, or a window of it, bounded by the Broker's own transfer limit.
 
         ``max_bytes`` lets the caller ask for a tighter limit than the service one (``edit``);
-        ``offset``/``length`` let it fetch a window instead of holding the whole file.
+        ``line``/``length`` fetch at most ``length`` bytes from that 1-indexed line on (``read``).
         """
         params = {"path": path}
-        for key, value in (("max_bytes", max_bytes), ("offset", offset), ("length", length)):
+        for key, value in (("max_bytes", max_bytes), ("line", line), ("length", length)):
             if value is not None:
                 params[key] = value
         return (await self._send(self._req("GET", f"/internal/leases/{lease_id}/files", timeout=120, params=params))).content

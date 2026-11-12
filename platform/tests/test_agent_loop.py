@@ -8,7 +8,7 @@ import json
 from ailab_platform.agent.loop import AgentLoop, _Turn
 from ailab_platform.config import settings
 from ailab_platform.llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMResponse, ToolCall
-from tests.runtime_fakes import CheckpointFake, background_request
+from tests.runtime_fakes import CheckpointFake, background_request, sandbox_window
 
 
 class FakePlatform(CheckpointFake):
@@ -360,8 +360,8 @@ class _ReadBroker:
     def __init__(self, data: bytes) -> None:
         self.data = data
 
-    async def get_file(self, lease_id, path, **kwargs):
-        return self.data
+    async def get_file(self, lease_id, path, *, line=None, length=None, **kwargs):
+        return sandbox_window(self.data, line, length)
 
 
 def _read(data: bytes, **window) -> dict:
@@ -604,6 +604,43 @@ def test_concurrent_reads_do_not_collide_on_the_checkpoint_step() -> None:
     single = ScriptedLLM([LLMResponse(tool_calls=calls[:1]), LLMResponse(content="ok")])
     control, _ = _run(single, broker=broker)
     assert platform.checkpoints == control.checkpoints
+
+
+def test_a_finished_run_leaves_no_checkpoint_lock_behind() -> None:
+    """The Agent process outlives its runs: per-run state, the lock included, goes when the run does."""
+    loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker(), llm=ScriptedLLM([LLMResponse(content="done")]))
+    asyncio.run(loop.process("run_1", attempt_id="att_1"))
+    assert loop._checkpoint_locks == {} and loop._steps == {}
+
+
+@pytest.mark.parametrize(("mode", "continues", "early"), [("work", True, True), ("work", False, False), ("chat", True, False)])
+def test_a_continuing_work_turn_takes_its_sandbox_during_the_first_model_call(monkeypatch, mode, continues, early) -> None:
+    """Setting up a sandbox with the previous workspace took the first tool about 10 s on OpenSandbox."""
+    from ailab_platform.catalog import ModelSpec, get_catalog
+
+    monkeypatch.setitem(
+        get_catalog().models, "m", ModelSpec(id="m", name="m", provider="mock", capabilities=["tools"], context_tokens=200000)
+    )
+    broker = FakeBroker()
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            run = {**await super().get_run(run_id), "options": {"mode": mode}}
+            return {**run, "workspace_restore_key": "workspaces/previous.tgz"} if continues else run
+
+    class Model(ScriptedLLM):
+        leases_at_first_call: int | None = None
+
+        async def chat(self, messages, tools, model, user_id=None):
+            if self.leases_at_first_call is None:
+                await asyncio.sleep(0.05)  # the first model call takes seconds; the sandbox is set up meanwhile
+                self.leases_at_first_call = broker.leases
+            return await super().chat(messages, tools, model, user_id)
+
+    model = Model([LLMResponse(content="done")])
+    asyncio.run(AgentLoop(platform=Platform(), broker=broker, llm=model).process("run_1", attempt_id="att_1"))
+    assert model.leases_at_first_call == int(early)
+    assert broker.snapshots == 0  # an unused early sandbox holds the restored workspace unchanged: nothing to save
 
 
 def test_a_read_never_runs_beside_a_write() -> None:

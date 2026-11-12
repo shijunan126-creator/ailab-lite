@@ -632,13 +632,15 @@ class AgentLoop:
             item["name"] in _OFFICE_VIEW_SKILLS for item in self._states[run_id].get("loaded_skills", [])
         )
 
-    def _prepare_office_turn(self, turn: _Turn, run_id: str) -> None:
-        """Every turn gets a fresh sandbox, so a follow-up edit would view through a cold LibreOffice (11+ s).
+    def _prepare_workspace_turn(self, turn: _Turn, run_id: str) -> None:
+        """Every turn gets a fresh sandbox, and setting one up with the previous workspace takes seconds.
 
-        A turn that continues an Office workspace takes its sandbox and starts the listener during the first model call.
-        It never queues for a sandbox; on any failure the first tool takes the lease as usual.
+        A Work turn that continues a workspace almost always works in it, so it takes its sandbox during
+        the first model call instead of at the first tool: about 10 s off that tool on OpenSandbox, and an
+        Office turn also starts its LibreOffice listener (11+ s cold). It never queues for a sandbox; on
+        any failure the first tool takes the lease as usual. A turn that ends without a tool releases it unsaved.
         """
-        if turn.lease_id or not turn.run.get("workspace_restore_key") or not self._views_office_work(turn, run_id):
+        if turn.lease_id or not turn.run.get("workspace_restore_key") or "bash" not in (turn.allowed_tools or ()):
             return
         turn.lease_task = asyncio.create_task(self._prepare_lease(turn, run_id))
 
@@ -2246,6 +2248,7 @@ class AgentLoop:
             self._states.pop(run_id, None)
             self._turns.pop(run_id, None)
             self._steps.pop(run_id, None)
+            self._checkpoint_locks.pop(run_id, None)
             self._lease_errors.pop(run_id, None)
             self._steer_pending.discard(run_id)
             self._budgets.pop(run_id, None)
@@ -2337,7 +2340,7 @@ class AgentLoop:
             offered = [] if spec is not None and not spec.supports({"tools"}) else catalog
             turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
             turn.offered = offered
-            self._prepare_office_turn(turn, run_id)
+            self._prepare_workspace_turn(turn, run_id)
             error = None
             pause_reason = None
             step_limit = budget.data["start_step"] + settings.max_agent_steps
