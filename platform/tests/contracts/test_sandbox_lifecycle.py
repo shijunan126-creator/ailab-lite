@@ -252,6 +252,11 @@ def test_a_read_window_comes_from_inside_the_sandbox(provider):
         assert target.read_bytes() == b"line 0350000\nline 0350001\n"
         provider.get_file_lines_to_path(ref, "/workspace/big.log", target, line=400_002, max_bytes=26)
         assert target.read_bytes() == b""
+        # A file within the window: OpenSandbox skips its lines from the file API instead of running tail.
+        assert provider.exec(ref, "printf 'one\\ntwo\\nthree' > /workspace/small.txt", 10).exit_code == 0
+        for line, window in ((2, b"two\nthree"), (3, b"three"), (4, b"")):
+            provider.get_file_lines_to_path(ref, "/workspace/small.txt", target, line=line, max_bytes=1024)
+            assert target.read_bytes() == window, line
         with pytest.raises(SandboxFileNotFound):
             provider.get_file_lines_to_path(ref, "/workspace/none", target, line=1, max_bytes=8)
         for path in ("/workspace/dir", "/workspace/link"):

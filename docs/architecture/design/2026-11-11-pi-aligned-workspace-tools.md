@@ -308,7 +308,7 @@ Broker 过去把 `get_file` 的所有 `SandboxError` 都映射成 400，Agent �
 OpenSandbox 1.1.1 上一次 exec 固定约 1 秒，文件 API（`get_file_info`、流式读写、`delete_files`、`move_files`）只要几毫秒。所以凡是文件 API 能证明安全的，就不再起 exec；证明不了的（链接、缺失、API 失败）仍走原来的守卫脚本，报错文字不变。
 
 - `get_file_info` 是 lstat：对 `/workspace` 到目标的每一级各问一次（一次批量调用），全是真实目录、目标是普通文件才算"普通文件"。中间一级是链接时，问到它本身才看得出来，所以必须逐级问。
-- 读：`file_size`、`get_file_to_path` 和第 1 行起的 `read` 窗口不起 exec（窗口直接流式读前 L 字节）；从第 N 行起的窗口仍是一次 exec，临时文件改用 `delete_files` 删除。
+- 读：`file_size`、`get_file_to_path` 和第 1 行起的 `read` 窗口不起 exec（窗口直接流式读前 L 字节）；从第 N 行起的窗口：文件不大于窗口（2 MiB + 1）时由文件 API 整个流过来、在 Broker 里跳过前 N−1 行，也不起 exec；更大的文件才在沙箱里 `tail -n +N | head -c L` 一次 exec 切好再流，临时文件用 `delete_files` 删除。两条路搬运的字节都不超过窗口。
 - 写：父目录全部已存在且都是真实目录、目标不存在或是普通文件时，直接 `write_file`；新文件的上传用 `move_files` 发布（它不肯覆盖，所以替换已有文件仍用一次 `mv -f` 保持原子）。父目录缺失时仍走守卫脚本的 `mkdir -p`，因为 execd 可能以其他用户运行，它建的目录 agent 的命令写不进去。
 - 和原来的守卫一样，检查先于传输；能赶在两者之间换成链接的 agent 由沙箱边界兜住，不由这里的检查兜住。
 - Broker 接续上一轮工作区时，解包、清掉 `.template`/`.brand`、生成预览指纹合成一次 exec（原来 4 次）；全新沙箱里没有这两个目录，不再清理。快照后的删除改用 `remove_file`（OpenSandbox 走 `delete_files`）。

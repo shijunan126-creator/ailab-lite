@@ -1,3 +1,11 @@
+# 小文件按行窗口免 exec（2026-11-12）
+
+- 用户要求：OpenSandbox 上 `read` 从第 N 行起读时，小文件不再起 exec，改为文件 API 流过来在 Broker 里跳行（"本地切"）。分支 `perf/osb-offset-read`，base `main@d6651ce2`；未授权部署。
+- 已完成：文件不大于窗口（2 MiB + 1）时零 exec，真实 OpenSandbox 上 1024 ms → 5 ms，输出与 `tail` 逐字节一致；更大的文件仍一次 exec。详见[记录](updates/2026-11-11-pi-aligned-workspace-tools.md) 末节。
+- 下一步：等 PR 的 CI；合并、部署由用户决定（本机整栈用 Docker provider，部署不改变本机行为）。
+
+---
+
 # 工作区工具对齐 Pi（2026-11-11）
 
 - 用户要求：把 `read_file`/`write_file`/`list_files`/`exec` 换成 Pi 的 `read`/`write`/`edit`/`bash`（另补 `grep`/`find`，底层 `rg`/`fd`），逻辑与性能优化照 Pi 源码做；随后临时调整 bash 的等待与期限。分支 `feat/pi-aligned-workspace-tools`，base `origin/main@7d17db92`，工作树 `.worktrees/pi-aligned-workspace-tools`；未授权推送、合并、部署。
@@ -18,7 +26,7 @@
 - 第六轮审查（2026-11-12）：上一轮的范围读在真实沙箱里不可用（Docker/OpenSandbox 的下载只收 `/workspace`，切片却写在 `/tmp`；mock 重写了该方法，所有测试都没执行到）。已改为 provider 各自实现的按行窗口（`tail -n +N | head -c L`），`read` 任意 offset 都能读、到末尾才报总行数；另修 `edit` 行尾判断与 checkpoint 锁清理。真实 Docker 容器 52 MB 文件第 350 万行 63 ms。详见 dated update 第六轮。
 - 真实 OpenSandbox + 真模型（2026-11-12）：按行窗口在真实 OpenSandbox 上可用；调用链路优化后 `write`/`read`/`edit` 从 1–3 秒降到 0.04–0.1 秒，续轮第一个工具等沙箱从 9–13 秒降到约 1 秒，快照 4.1 → 1.1 秒；真模型 Work 缓存 98.5%、Chat 99.1%；真实契约 27 passed。详见 dated update 最后一节。
 - PR #188：CI 在 `41113c2c` 15 项全绿（SQLite 3006 / PostgreSQL 3140 / E2E 196 passed）；首轮失败均为测试问题，已修，见 dated update。
-- 下一步：合并由用户决定；合并后需重建 `sbx-office` 镜像（`rg`/`fd`），部署需用户当次明确要求。
+- 已合并：用户要求合并，PR #188 squash 为 `d6651ce2`；`sbx-office` 镜像需含 `rg`/`fd`，部署需用户当次明确要求。
 
 ---
 

@@ -61,6 +61,23 @@ def _head(chunks, size: int):
         size -= len(chunk)
 
 
+def _from_line(chunks, line: int):
+    """The bytes from the start of ``line`` (1-based), as ``tail -n +line`` gives them; nothing past the last line."""
+    skip = line - 1
+    for chunk in chunks:
+        if skip:
+            newlines = chunk.count(b"\n")
+            if newlines < skip:  # the whole chunk is before the line
+                skip -= newlines
+                continue
+            start = 0
+            for _ in range(skip):
+                start = chunk.index(b"\n", start) + 1
+            skip, chunk = 0, chunk[start:]
+        if chunk:
+            yield chunk
+
+
 def _join(messages) -> str:
     return "\n".join((m.text or "") for m in messages).strip("\n")
 
@@ -359,12 +376,13 @@ class OpenSandboxProvider(SandboxProvider):
             raise TransferLimitError("file exceeds transfer limit")
         self._stream(sandbox_id, path, target, max_bytes=max_bytes)
 
-    def _stream(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int, head: bool = False) -> None:
-        """Stream ``path`` to ``target``; ``head`` keeps its first ``max_bytes`` instead of refusing a larger file."""
+    def _stream(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int, head: bool = False, line: int = 1) -> None:
+        """Stream ``path`` to ``target``; ``head`` keeps the first ``max_bytes`` from ``line`` instead of refusing more."""
         try:
             chunks = self._sandbox(sandbox_id).files.read_bytes_stream(path, chunk_size=CHUNK_SIZE)
             with closing(chunks), target.open("wb") as stream:
-                copy_chunks(_head(chunks, max_bytes) if head else chunks, stream, max_bytes=max_bytes)
+                body = _from_line(chunks, line) if line > 1 else chunks
+                copy_chunks(_head(body, max_bytes) if head else body, stream, max_bytes=max_bytes)
         except SandboxError:
             raise
         except Exception as exc:
@@ -372,11 +390,15 @@ class OpenSandboxProvider(SandboxProvider):
 
     def get_file_lines_to_path(self, sandbox_id: str, path: str, target: Path, *, line: int, max_bytes: int) -> None:
         path = _checked(path)
-        if line == 1 and self._plain_size(sandbox_id, path) is not None:
-            self._stream(sandbox_id, path, target, max_bytes=max_bytes, head=True)  # the common read: no exec at all
+        size = self._plain_size(sandbox_id, path)
+        # No exec when the file API can serve the window: from the first line, or from any line of a file
+        # no larger than the window, whose lines are skipped here. Either moves at most the window's bytes.
+        if size is not None and (line == 1 or size <= max_bytes):
+            self._stream(sandbox_id, path, target, max_bytes=max_bytes, head=True, line=line)
             return
-        # The file API's offset/limit is unreliable (offset 0 is a 400) and exec output is decoded
-        # text, so one exec writes the window to a temporary file and the file API streams just that.
+        # A larger file is cut where it lies: the file API's offset/limit is unreliable (offset 0 is a 400)
+        # and exec output is decoded text, so one exec writes the window to a temporary file and the file
+        # API streams just that.
         # The file lives outside /workspace: a parallel ``ls`` or a workspace snapshot must never see
         # it. That path is ours, not the model's, so it is streamed without the /workspace guard.
         temp = f"/tmp/.ailab-lines-{uuid.uuid4().hex}"  # hex only: safe unquoted

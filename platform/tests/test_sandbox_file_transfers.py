@@ -179,9 +179,39 @@ def test_opensandbox_reads_a_plain_file_without_an_exec(sandbox, monkeypatch, tm
     assert provider.file_size("sbx", "/workspace/big.log") == 1_200_000
     provider.get_file_to_path("sbx", "/workspace/big.log", target, max_bytes=2_000_000)
     assert target.stat().st_size == 1_200_000 and provider.execs == []
+    provider.get_file_lines_to_path("sbx", "/workspace/big.log", target, line=90_000, max_bytes=2_000_000)
+    assert target.read_bytes().startswith(b"line 090000\nline 090001\n") and provider.execs == []  # within the window
     provider.get_file_lines_to_path("sbx", "/workspace/big.log", target, line=2, max_bytes=12)
-    assert target.read_bytes() == b"line 000002\n" and len(provider.execs) == 1  # a later line: one exec, no rm exec
+    assert target.read_bytes() == b"line 000002\n" and len(provider.execs) == 1  # larger than the window: one exec
     assert not list((sandbox.root / "tmp").iterdir())
+
+
+SMALL_FILES = [b"", b"a", b"a\n", b"a\nb", b"a\nb\n", b"\n\n\n", b"x\r\ny\r\n", "第一行\n第二行\n\n末行".encode()]
+
+
+@pytest.mark.parametrize("content", SMALL_FILES)
+def test_opensandbox_cuts_a_window_exactly_where_tail_does(sandbox, monkeypatch, tmp_path, content):
+    """A file within the window is cut by the provider instead of ``tail``: the bytes must be the same."""
+    sandbox.local("/workspace/small.txt").write_bytes(content)
+    shell, provider = docker(sandbox, monkeypatch), opensandbox(sandbox, monkeypatch)
+    expected, actual = tmp_path / "expected", tmp_path / "actual"
+    for line in range(1, 7):
+        for max_bytes in (1, 2, 5, 100):
+            execs = len(provider.execs)
+            shell.get_file_lines_to_path("sbx", "/workspace/small.txt", expected, line=line, max_bytes=max_bytes)
+            provider.get_file_lines_to_path("sbx", "/workspace/small.txt", actual, line=line, max_bytes=max_bytes)
+            assert actual.read_bytes() == expected.read_bytes(), (line, max_bytes)
+            assert (len(provider.execs) == execs) == (line == 1 or len(content) <= max_bytes), (line, max_bytes)
+
+
+@pytest.mark.parametrize("content", SMALL_FILES)
+def test_lines_are_skipped_across_chunk_boundaries(content):
+    from ailab_platform.sandbox.opensandbox import _from_line
+
+    for size in (1, 2, 3, 7):
+        for line in range(1, 7):
+            chunks = (content[i : i + size] for i in range(0, len(content), size))
+            assert b"".join(_from_line(chunks, line)) == b"\n".join(content.split(b"\n")[line - 1 :]), (size, line)
 
 
 def test_opensandbox_sizes_what_the_file_api_cannot_prove_through_the_shell(sandbox, monkeypatch):
