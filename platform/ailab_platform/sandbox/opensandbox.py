@@ -315,8 +315,6 @@ class OpenSandboxProvider(SandboxProvider):
             raise SandboxError(f"OpenSandbox read_bytes failed: {exc}") from exc
 
     def put_file_from_path(self, sandbox_id: str, path: str, source: Path, *, max_bytes: int) -> None:
-        from opensandbox.models.filesystem import MoveEntry
-
         path = _checked(path)
         if source.stat().st_size > max_bytes:
             raise TransferLimitError("file exceeds transfer limit")
@@ -331,6 +329,8 @@ class OpenSandboxProvider(SandboxProvider):
                 files.write_file(temporary, stream, mode=644)
             if verdict == "absent":  # the file API's move refuses to replace, so only a new file avoids the exec
                 try:
+                    from opensandbox.models.filesystem import MoveEntry
+
                     files.move_files([MoveEntry(src=temporary, dest=path)])
                     published = True
                 except Exception:

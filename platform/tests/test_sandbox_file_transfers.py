@@ -11,10 +11,12 @@ catch a provider routing its window through a path its own download refuses, whi
 from __future__ import annotations
 
 import os
+import re
 import stat
 import subprocess
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -44,7 +46,9 @@ class Sandbox:
         return Path(self.translate(path))
 
     def translate(self, text: str) -> str:
-        return text.replace("/workspace", f"{self.root}/workspace").replace("/tmp/", f"{self.root}/tmp/")
+        # One pass, and only where a path starts: on Linux the root itself is under /tmp, so a
+        # second replace (or a match inside a path) would rewrite the root it just inserted.
+        return re.sub(r"(?<![\w./-])(?:/workspace|/tmp/)", lambda match: f"{self.root}{match.group(0)}", text)
 
     def run(self, script: str, **kwargs) -> subprocess.CompletedProcess:
         return REAL_RUN(["bash", "-c", self.translate(script)], **kwargs)
@@ -96,6 +100,12 @@ class Files:
 
 
 def opensandbox(sandbox: Sandbox, monkeypatch) -> OpenSandboxProvider:
+    try:
+        import opensandbox.models.filesystem  # noqa: F401
+    except ImportError:  # the SDK is optional (CI runs without it); the provider only needs its MoveEntry
+        for name in ("opensandbox", "opensandbox.models", "opensandbox.models.filesystem"):
+            monkeypatch.setitem(sys.modules, name, ModuleType(name))
+        sys.modules["opensandbox.models.filesystem"].MoveEntry = lambda src, dest: SimpleNamespace(src=src, dest=dest)
     provider = OpenSandboxProvider.__new__(OpenSandboxProvider)
     provider.execs = []
 

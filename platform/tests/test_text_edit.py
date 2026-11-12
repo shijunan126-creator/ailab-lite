@@ -296,12 +296,22 @@ def test_a_repeated_two_megabyte_file_is_searched_in_linear_time():
 
 
 def test_a_csv_of_repeated_lines_edits_in_linear_time():
-    rows = "".join(f"id,{index},alpha,beta,gamma\n" for index in range(120000))
-    content = rows + "id,999999,价格（含税）为１００元\n"
-    started = time.perf_counter()
-    result = edit_text(content, [("id,999999,价格(含税)为100元\n", "id,999999,已改。\n")], "/workspace/work/a.csv")
-    assert time.perf_counter() - started < 0.5
-    assert result.endswith("id,999999,已改。\n") and result.count("已改") == 1
+    """Doubling the rows may at most double the work (a quadratic step would quadruple it).
+
+    Measured as this thread's CPU time: a wall-clock bound measured the runner instead (0.21 s here,
+    0.73 s on a CI runner shared with the other xdist workers, for the same linear work).
+    """
+
+    def cost(rows: int) -> float:
+        content = "".join(f"id,{index},alpha,beta,gamma\n" for index in range(rows)) + "id,999999,价格（含税）为１００元\n"
+        started = time.thread_time()
+        result = edit_text(content, [("id,999999,价格(含税)为100元\n", "id,999999,已改。\n")], "/workspace/work/a.csv")
+        elapsed = time.thread_time() - started
+        assert result.endswith("id,999999,已改。\n") and result.count("已改") == 1
+        return elapsed
+
+    small, large = cost(60_000), cost(120_000)
+    assert large < 3 * small, (small, large)
 
 
 def test_the_worst_case_does_not_hold_the_gil():

@@ -293,3 +293,9 @@ A–F 通过；问题都出在上一轮新加的"只读并行"和"`read` 按字�
 - 续轮如果最后没用工具，提前取的沙箱白占约 4 秒沙箱时间（不做快照）；Office 查看轮原本就是这样。
 - 只在本机 Docker 运行时的 OpenSandbox 上测过，未在 Kubernetes 运行时或 gVisor 下测 exec 与文件 API 的耗时。
 
+**PR #188 首次 CI（`68f479cc`）**：E2E 三片与其他检查全绿；两个 Python 套件各 3 失败 + 8 错误，与数据库无关，均为测试或可选依赖问题，已修：
+
+- `test_sandbox_file_transfers.py` 8 项错误：把沙箱路径映射到本地目录时逐个 `replace`，Linux 上临时目录本身在 `/tmp` 下，根目录被改了两遍；改为一次、只匹配路径起点的替换（本地用 `--basetemp=/tmp/...` 复现并验证）。
+- `test_osb_transfer.py` 2 项：`put_file_from_path` 在方法开头 import SDK 的 `MoveEntry`，CI 不装 SDK；import 移到 `move_files` 的 try 里，失败退回 `mv`。
+- `test_a_csv_of_repeated_lines_edits_in_linear_time`：0.5 s 墙钟上限在 CI 上是 0.73/0.84 s（本机 0.21 s，覆盖率不影响）。这个上限从没对应过真实回归（被替换的旧实现在这个输入上也只要 0.17 s），改成断言"行数翻倍、线程 CPU 时间 < 3 倍"。
+
