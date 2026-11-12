@@ -3,8 +3,10 @@
 - 用户要求：#188 改工具名后复查办公技能（提示词冲突、缺依赖、调用逻辑、前缀缓存），全部修复；Agent 默认不派子任务；再用真模型验证、检查 Chat/Work 选中交付件段落是否有问题或影响缓存、固化代表性场景用例，然后提 PR、合并、部署。分支 `fix/office-skill-residue`，base `main@99602a5a`。
 - 已完成：技能包更新后旧会话可读；默认不派子任务；`html2pdf.js` 缺失、字体路径、封面字体、Google Fonts、`/mnt/skills`、Tectonic、安装提示、上游品牌全部按镜像实情改正，镜像补 `gs`/`qpdf` 与开源字体；用户消息（技能标记、定时任务头、选中段落）在实时、追加与历史重建中统一由 `prompts.user_text` 拼，修掉三处不一致；新增 `platform/scenarios/` 真模型场景套件。详见[复核记录](updates/2026-11-12-office-skill-recheck.md)。
 - 验证：ruff 通过；改动模块测试通过；真模型 9 个场景全过，续轮缓存 95–99%，跨镜像续轮 Chat 无边界、Work 一次预期重建。
+- CI：[PR #191](https://github.com/shijunan126-creator/ailab-lite/pull/191) 在 `c96b3775` 15 项全绿；首轮 SQLite 1 项失败是测试仍期望历史项带 `skills` 键（见记录）。
+- 已合并：用户要求合并，PR #191 squash 为 `09519b52`，提交树与 `c96b3775` 一致；分支已删除。部署须同时更新 Agent/API 与 sbx-office 镜像。
 - 未做：amd64 镜像；工作区路径形式的选中段落无真模型场景。
-- 下一步：PR 合并后按场景套件复核；改提示词/工具/技能/请求构造/沙箱镜像时先跑 `platform/scenarios`。
+- 下一步：无待实现项；改提示词/工具/技能/请求构造/沙箱镜像时先跑 `platform/scenarios`。
 
 ---
 

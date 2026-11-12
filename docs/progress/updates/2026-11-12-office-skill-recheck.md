@@ -89,3 +89,9 @@
 
 - 工作区文件（`run_id` + `path`）形式的选中段落没有场景覆盖，只有单元测试。
 - 真模型只测了 deepseek-flash；PPT 任务成本高（会用 web_search/search_images），属任务性质，未改。
+
+## CI 与合并
+
+- [PR #191](https://github.com/shijunan126-creator/ailab-lite/pull/191) 首轮 SQLite 挂 1 项：`test_conversations` 仍期望内部历史项带 `skills` 键；本轮有意去掉（技能标记已由 `user_text` 写进 prompt 文本），改了期望。
+- `c96b3775` 15 项全绿：SQLite 3053 passed / 225 skipped，PostgreSQL 3187 passed / 91 skipped，E2E 三片 196 passed / 15 skipped。
+- squash 合并为 `09519b52`，提交树与 `c96b3775` 一致。
