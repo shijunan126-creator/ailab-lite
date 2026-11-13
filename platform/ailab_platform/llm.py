@@ -18,6 +18,7 @@ from typing import Any
 
 from .catalog import get_catalog
 from .config import settings
+from .thinking import ThinkSplitter, reasoning_of
 
 log = logging.getLogger("ailab.llm")
 
@@ -155,9 +156,11 @@ def _usage(usage: dict) -> dict[str, int]:
 class _StreamState:
     """Accumulates an OpenAI-style chat completion stream into one LLMResponse."""
 
-    def __init__(self) -> None:
+    def __init__(self, think: ThinkSplitter | None = None) -> None:
         self.content: list[str] = []
         self.reasoning: list[str] = []
+        # Splits <think> blocks out of the answer text, for models whose upstream does not separate them.
+        self.think = think
         self.calls: dict[int, dict] = {}
         self.usage: dict = {}
         self.finish = "stop"
@@ -178,26 +181,33 @@ class _StreamState:
         text = thinking = ""
         for choice in chunk.get("choices") or []:
             delta = choice.get("delta") or {}
-            reasoning = next(
-                (delta[k] for k in ("reasoning_content", "reasoning", "thinking") if isinstance(delta.get(k), str) and delta[k]), ""
-            )
-            if not reasoning:
-                reasoning = "".join(
-                    str(item.get("text") or item.get("summary") or "")
-                    for item in delta.get("reasoning_details") or []
-                    if isinstance(item, dict)
-                )
+            reasoning = reasoning_of(delta)
+            content = delta.get("content")
             if call is not None:
                 call.output_bytes += len((delta.get("content", "") or "").encode())
                 call.output_bytes += len(reasoning.encode())
                 for tool in delta.get("tool_calls") or []:
                     call.output_bytes += sum(len(str(v).encode()) for v in (tool.get("function") or {}).values())
             if reasoning:
+                if self.think is not None:
+                    # the upstream separates thinking after all: what the splitter held back is answer text
+                    if held := self.think.bypass():
+                        self.content.append(held)
+                        text += held
+                    self.think = None
                 self.reasoning.append(reasoning)
                 thinking += reasoning
-            if delta.get("content"):
-                self.content.append(delta["content"])
-                text += delta["content"]
+            if content and isinstance(content, str):
+                if self.think is not None:
+                    answer, thought = self.think.feed(content)
+                    if thought:
+                        self.reasoning.append(thought)
+                        thinking += thought
+                else:
+                    answer = content
+                if answer:
+                    self.content.append(answer)
+                    text += answer
             for tc in delta.get("tool_calls") or []:
                 acc = self.calls.setdefault(int(tc.get("index", 0)), {"id": "", "function": {"name": "", "arguments": ""}})
                 acc["id"] = tc.get("id") or acc["id"]
@@ -209,7 +219,24 @@ class _StreamState:
                 self.completed = True
         return text, thinking
 
+    def flush(self) -> tuple[str, str]:
+        """The (answer text, thinking) still held back when the stream ends; pass it on before `response()`."""
+        if self.think is None:
+            return "", ""
+        answer, thinking = self.think.finish()
+        if thinking:
+            self.reasoning.append(thinking)
+        if answer:
+            self.content.append(answer)
+        return answer, thinking
+
     def response(self) -> LLMResponse:
+        self.flush()
+        if self.think is not None and self.think.never_closed_prefill:
+            # the template opened a thinking block the model never used: all of it was the answer
+            self.content[:0] = self.reasoning
+            self.reasoning = []
+            self.think = None
         if self.finish == "length":
             raise LLMError("model output was truncated (finish_reason=length); raise max tokens or shorten the task")
         return LLMResponse(
@@ -504,6 +531,8 @@ def llm_for(model_id: str) -> LLMClient:
         disable_reasoning_for_quiet=spec.disable_reasoning_for_quiet,
         session_header=spec.session_header,
         reasoning=get_catalog().reasoning_for(spec),
+        think_tag=spec.think_tag,
+        think_prefilled=spec.think_prefilled,
     )
 
 
