@@ -178,7 +178,7 @@ def test_project_library_bootstrap():
         assert project_library_prompt([]) == ""
         for mode in ["chat", "work"]:
             prompt = system_prompt_for(mode)
-            assert "ailab-file://<file_id>?page=N" in prompt and "不得引用未读" in prompt
+            assert "ailab-file://<file_id>?page=N" in prompt and "不引用未读文件" in prompt
 
 
 def test_worker_pdf_pptx_page_markers_and_existing_limits(tmp_path):

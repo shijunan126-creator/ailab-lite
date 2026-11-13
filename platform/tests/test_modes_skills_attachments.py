@@ -143,23 +143,10 @@ def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
     llm = _Recording([LLMResponse(content="只用文字回答")])
     broker = _run(llm, _Platform(options={"mode": "chat"}))
     assert [[t["function"]["name"] for t in offered] for offered in llm.offered] == [
-        [
-            "search_capabilities",
-            "memory",
-            "recall_history",
-            "schedule",
-            "current_time",
-            "resolve_attachment",
-            "search_library",
-            "load_skill",
-            "save_skill",
-            "read_document",
-            "search_document",
-            "view_document",
-        ]
+        ["search_capabilities", "current_time", "load_skill", "read_document", "search_document", "view_document", "call_tool"]
     ] and broker.leases == 0
     system = llm.seen_messages[0][0]["content"]
-    assert "代码、SQL、命令和文档草稿可以直接在回复中提供" in system
+    assert "代码、SQL、命令和文档草稿直接写在回复里" in system
     assert "不主动介绍模式" in system
     assert "本轮是「对话」模式" not in system
     assert "# 沙箱约定" not in system
@@ -228,7 +215,7 @@ def test_chat_prompt_offers_enabled_personal_skills_without_workspace_instructio
     assert "- weekly：整理周报" not in prompt
     assert "- pptx：" not in prompt and "- off：" not in prompt
     assert "# 沙箱约定" not in prompt
-    assert "写出代码与实际执行代码" in prompt
+    assert "不声称运行、创建或交付了没做的事" in prompt
 
 
 def test_chat_can_search_read_sources_and_return_a_script_without_sandbox(monkeypatch):

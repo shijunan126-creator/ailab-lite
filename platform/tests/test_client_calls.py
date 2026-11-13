@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from ailab_platform.agent.loop import _tools_for_run
+from ailab_platform.agent.loop import _available_names
 from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import ClientCall, Run, RunEvent
@@ -77,15 +77,12 @@ def test_expiry_limits_and_cancel(api):  # noqa: F811
         assert db.get(ClientCall, (rid, "cancel")).status == "canceled"
 
 
-def test_run_js_is_core_only_for_portal(monkeypatch):
+def test_run_js_is_available_only_for_portal(monkeypatch):
     for mode in ("chat", "work"):
-        portal = _tools_for_run({"options": {"client": "portal", "mode": mode}})
-        assert "run_js" in [x["function"]["name"] for x in portal]
-        non_portal = _tools_for_run({"options": {"mode": mode}})
-        assert "run_js" not in [x["function"]["name"] for x in non_portal]
+        assert "run_js" in _available_names({"options": {"client": "portal", "mode": mode}})
+        assert "run_js" not in _available_names({"options": {"mode": mode}})
     monkeypatch.setattr(settings, "client_js_enabled", False)
-    disabled = _tools_for_run({"options": {"client": "portal", "mode": "chat"}})
-    assert "run_js" not in [x["function"]["name"] for x in disabled]
+    assert "run_js" not in _available_names({"options": {"client": "portal", "mode": "chat"}})
 
 
 def test_agent_waits_inline_and_reuses_result(api, monkeypatch):  # noqa: F811

@@ -38,7 +38,7 @@ from ..runtime_context import attempt_id_var, delivery_id_var
 from ..skill_registry import BASE_SKILLS, resolve_name
 from ..telemetry import span
 from ..title_text import normalize_title
-from . import discovery, net_tools, subtasks, watchdog
+from . import deferred, discovery, net_tools, subtasks, watchdog
 from .background_exec import background_exec, command_handle, command_text
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, ContextPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
@@ -89,7 +89,7 @@ WRAP_UP_NOTE = "（平台提示：本轮只剩 {n} 次工具调用。请尽快�
 OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调用工具，直接用文字告诉用户已经完成了什么、还有什么没完成、下一轮可以怎么继续。）"
 # Read-only workspace lookups: the same turn may run several at once, each saving a sandbox round trip.
 # They never touch /workspace or the tool log's ordering, so results can be gathered and appended in ordinal order.
-READ_ONLY_TOOLS = frozenset({"read", "ls", "grep", "find"})
+READ_ONLY_TOOLS = frozenset({"read", "ls", "grep", "find", deferred.CALL})
 FILE_TOOLS = frozenset(
     {"copy_library_file", "write", "edit", "bash", "deliver_file", "run_subtasks", *net_tools.NAMES}
 )  # tools that change /workspace or its outputs
@@ -105,8 +105,24 @@ SKILL_PACKAGE_UPDATED = "技能包已更新：上文更早读到的本技能导�
 
 
 def _tools_for_run(run):
+    """The tools this run's requests declare, frozen with the run: frequent ones plus `call_tool` for the rest."""
     if "_fixed_catalog" in run:
         return run["_fixed_catalog"]
+    return deferred.split(_full_catalog(run), (run.get("options") or {}).get("mode", "work"))
+
+
+def _deferred_tools(run) -> dict[str, dict]:
+    """Definitions of the on-demand tools the frozen request lists. Only the names are frozen: a definition reaches the
+    model as an appended tool result, so the current one is the right one even after a deploy."""
+    wanted = deferred.names(_tools_for_run(run))
+    return {t["function"]["name"]: t for t in _full_catalog(run) if t["function"]["name"] in wanted} if wanted else {}
+
+
+def _available_names(run) -> set[str]:
+    return {t["function"]["name"] for t in _tools_for_run(run)} | set(deferred.names(_tools_for_run(run)))
+
+
+def _full_catalog(run):
     catalog = [
         discovery.SEARCH,
         *(tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn()),
@@ -1165,7 +1181,12 @@ class AgentLoop:
                 break
             child_images = []
             for ordinal, c in enumerate(response.tool_calls):
-                available = c.name in subtasks.allowed() and c.name in {t["function"]["name"] for t in offered}
+                if c.name == deferred.CALL:
+                    c = deferred.resolve(c, deferred.names(offered), messages) or c
+                if c.name == deferred.CALL:
+                    messages.append(tool_result_message(c.id, c.name, deferred.describe(c.arguments, _deferred_tools(run), messages)))
+                    continue
+                available = c.name in subtasks.allowed() and c.name in {t["function"]["name"] for t in offered} | deferred.names(offered)
                 if available:
                     # The parent call is part of the invocation: the same command in the same slot of a
                     # second run_subtasks is a different execution, not a retry of the first one.
@@ -1389,8 +1410,7 @@ class AgentLoop:
         tool_started = time.perf_counter()
         wanted = None
         try:
-            current_catalog = _tools_for_run(turn.run)
-            if call.name not in {t["function"]["name"] for t in current_catalog} | {"search_capabilities", "finish"}:
+            if call.name not in _available_names(turn.run) | {"search_capabilities", "finish"}:
                 raise ToolError("tool is not available (disabled or unavailable)")
             if call.name == "ui_components":
                 spec = get_catalog().get(turn.run.get("model"))
@@ -1531,6 +1551,8 @@ class AgentLoop:
                         raise ToolError("文件文字准备超过截止时间，请告知用户处理失败")
                     raise FileDependencyPending(call.arguments["file_id"], "native-text", None, deadline)
                 result = {"ok": not bool(result.get("error")), **result}
+            elif call.name == deferred.CALL:
+                result = deferred.describe(call.arguments, _deferred_tools(turn.run), turn.messages)
             elif call.name == "ui_components":
                 result = ui_components(call.arguments, self._states[run_id], html_enabled=settings.genui_html_enabled)
             elif call.name == "search_capabilities":
@@ -1539,7 +1561,8 @@ class AgentLoop:
                     for name, entry in {**skills(), **turn.personal}.items()
                     if name not in turn.disabled_skills
                 ]
-                hits = discovery.search(call.arguments.get("query", ""), call.arguments.get("limit", 3), user_skills)
+                tools = [{"name": name, "description": deferred.SUMMARY.get(name, "")} for name in _deferred_tools(turn.run)]
+                hits = discovery.search(call.arguments.get("query", ""), call.arguments.get("limit", 3), user_skills, tools)
                 result = {"ok": True, "capabilities": hits}
             elif wanted and wanted in skills():
                 mode = (turn.run.get("options") or {}).get("mode", "work")
@@ -1916,7 +1939,7 @@ class AgentLoop:
                 )
                 raise RunPaused()
         elif call.name == "run_js":
-            if call.name not in {t["function"]["name"] for t in _tools_for_run(turn.run)}:
+            if call.name not in _available_names(turn.run):
                 return {"ok": False, "error": {"type": "unavailable", "message": "当前运行没有可用的浏览器执行环境"}}
             args = call.arguments
             code, timeout = args.get("code"), args.get("timeout_ms", 2000)
@@ -2182,7 +2205,7 @@ class AgentLoop:
             for internal_name, version in state["internal_skill_versions"].items():
                 internal_skills.load(internal_name, version)
             offered = [] if spec is not None and not spec.supports({"tools"}) else catalog
-            turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
+            turn.allowed_tools = {t["function"]["name"] for t in offered} | deferred.names(offered) | {"finish"}
             turn.offered = offered
             self._prepare_workspace_turn(turn, run_id)
             error = None
@@ -2249,7 +2272,7 @@ class AgentLoop:
                             messages.append({"role": "user", "content": STUCK_NOTE})
                             await self._event(run_id, "agent.budget", {"kind": "nudge", "reason": reason})
                             await self._checkpoint(run_id, turn)
-                    turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
+                    turn.allowed_tools = {t["function"]["name"] for t in offered} | deferred.names(offered) | {"finish"}
                     if mode == "work" and settings.watchdog_mode != "off" and offered and state["tool_log"]:
                         await self._watchdog(llm, run_id, turn, model, offered, budget)
                     turn.offered = offered
@@ -2281,6 +2304,9 @@ class AgentLoop:
                     messages.append(assistant)
                     if response.content:
                         state["final_summary"] = response.content
+                    # The history keeps `call_tool` as the model wrote it; execution, events and the tool log see the real tool.
+                    available = deferred.names(offered)
+                    calls = [(deferred.resolve(c, available, messages) if c.name == deferred.CALL else None) or c for c in calls]
                     state["pending"] = [{"id": c.id, "name": c.name, "arguments": c.arguments, "ordinal": i} for i, c in enumerate(calls)]
                     state["finished"] = not calls  # an answer that is already complete counts even if it crossed the budget
                     await self._checkpoint(run_id, turn)

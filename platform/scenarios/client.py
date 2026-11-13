@@ -126,6 +126,10 @@ class Client:
         item = found[-1]
         return item, self.http.get(item["download_url"].removeprefix("/api")).content
 
+    def memory_entries(self) -> list[dict]:
+        """The account's active memory lines."""
+        return [e for e in self._ok(self.http.get("/v1/memory"))["entries"] if (e.get("status") or "active") == "active"]
+
     def blocks(self, file_id: str, *, deadline: float = 120) -> dict:
         """The viewer structure of a library file: what a reader can select a passage from."""
         end = time.monotonic() + deadline

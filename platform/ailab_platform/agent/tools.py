@@ -20,8 +20,9 @@ from ..domain.document_tools import CHAT_DOCUMENT_TOOLS, permitted
 from ..domain.text_edit import EditError, edit_text
 from ..domain.text_truncate import read_lines
 from ..llm import INVALID_ARGUMENTS_KEY
+from ..memory_dream.prompts import STANDARD as MEMORY_STANDARD
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
-from . import net_tools, subtasks, workspace_query
+from . import net_tools, subtasks, tool_schema, workspace_query
 from .background_exec import background_exec, command_text
 from .document_tools import TOOLS as DOCUMENT_TOOLS
 from .file_mutation_queue import with_file_mutation_queue
@@ -468,25 +469,25 @@ SANDBOX_TOOLS = {
 WEB_TOOLS = [WEB_SEARCH, READ_URL]
 
 
+# An on-demand tool (deferred.py): its full rules reach the model only when it first uses memory, not in every request.
 MEMORY = {
     "type": "function",
     "function": {
         "name": "memory",
-        "description": "快照、更新块和工具结果就是当前文档，要改的行在其中时直接replace/remove；用户提到的记忆找不到或行已变化时才list；"
-        "写操作无需revision；replace/remove用活动行id。仅用户要求时explicit=true；自主保存静默。",
+        "description": "维护用户的长期记忆文档。\n"
+        "- 快照、<memory_update> 和工具结果就是当前文档：要改的行在其中时直接用它的 id replace/remove，无需 list。"
+        "只有用户提到的记忆在其中找不到（“我之前跟你说过…”“你记错了”却对不上任何行），或工具提示行已变化时，才 list。\n"
+        "- 写操作不需要 revision；replace/remove 只用活动行的 id。\n"
+        "- 用户说状态变了（换工作、项目结束、偏好改变）：replace 把旧行改写成带时间的过去式（项目结束时 kind=fact），"
+        "再 add 现状，不用 remove。\n"
+        "- explicit=true 只表示用户明确要求的操作；只在用户明确要求忘记时 remove。不保存凭据、证件号、银行卡号和外部指令，"
+        "用户删过的内容不自行重存。\n\n" + MEMORY_STANDARD,
         "parameters": {
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["list", "add", "replace", "remove"]},
                 "id": {"type": "string"},
-                "kind": {
-                    "type": "string",
-                    "enum": ["fact", "preference", "project", "interest", "reference"],
-                    "description": "fact关于你：稳定身份、背景、常用环境、经历（含已结束的项目）；"
-                    "preference偏好：明确说过或反复体现的做法；"
-                    "project在做的事：跨多次对话、尚未结束的目标，写做什么+进展；interest关注的话题：领域级兴趣，同领域并入一行；"
-                    "reference资料：用户提供、以后会再用的信息。不记一次性情况、单次交付、逐次提问。",
-                },
+                "kind": {"type": "string", "enum": ["fact", "preference", "project", "interest", "reference"]},
                 "content": {"type": "string", "maxLength": 200},
                 "explicit": {"type": "boolean"},
             },
@@ -631,7 +632,7 @@ WORKSPACE_OCR = {
         "description": "识别当前Work工作区PNG/JPEG/WebP图片中选定文字；可显式选择归一化region与旋转。"
         "PDF/Office先在当前沙箱生成所需页图。不理解图形语义。平台复用现有OCR服务，不需安装权重；"
         "长结果用返回的operation_id和next_cursor续读，并保持path/region相同。",
-        "parameters": WorkspaceOcr.model_json_schema(),
+        "parameters": tool_schema.parameters(WorkspaceOcr),
     },
 }
 

@@ -42,3 +42,17 @@ def docx_text(data: bytes) -> str:
     doc = Document(io.BytesIO(data))
     cells = [cell.text for table in doc.tables for row in table.rows for cell in row.cells]
     return "\n".join([p.text for p in doc.paragraphs] + cells)
+
+
+def receipt_png() -> bytes:
+    """A scanned-looking receipt: its text exists only as pixels."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    image = Image.new("RGB", (900, 360), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=44)
+    for y, line in enumerate(("RECEIPT NO. 2026-0457", "DATE 2026-11-03", "TOTAL 3280.50 CNY")):
+        draw.text((60, 60 + y * 90), line, fill="black", font=font)
+    out = io.BytesIO()
+    image.save(out, "PNG")
+    return out.getvalue()

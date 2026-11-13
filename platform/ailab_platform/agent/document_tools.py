@@ -5,12 +5,13 @@ import re
 from pydantic import ValidationError
 
 from ..contracts.document_input import ReadDocument, SearchDocument, ViewDocument
+from . import tool_schema
 
 CONTRACTS = {"read_document": ReadDocument, "search_document": SearchDocument, "view_document": ViewDocument}
 
 
 def tool(name, description, contract):
-    return {"type": "function", "function": {"name": name, "description": description, "parameters": contract.model_json_schema()}}
+    return {"type": "function", "function": {"name": name, "description": description, "parameters": tool_schema.parameters(contract)}}
 
 
 # Descriptions carry the operating contract once; format guides only add format facts.
