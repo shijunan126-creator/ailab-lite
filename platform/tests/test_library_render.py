@@ -212,6 +212,76 @@ def test_render_batches_remaining_pages_into_one_transfer(tmp_path, caplog):
     assert manager.active_leases() == []
 
 
+@pytest.mark.skipif(not all(shutil.which(tool) for tool in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
+@pytest.mark.parametrize("failure", [None, "write", "publish"])
+def test_remaining_pages_batch_capacity_before_publication_and_release_temporary_files(tmp_path, monkeypatch, caplog, failure):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    for _ in range(10):
+        writer.add_blank_page(width=72, height=72)
+    content = io.BytesIO()
+    writer.write(content)
+    manager, renderer, storage = setup_renderer(tmp_path, content.getvalue(), "pages.pdf")
+    batches = []
+    reserve = manager.platform.reserve_derived_batch
+    temporary = []
+    transfer = manager.transfer_file
+
+    def reserve_batch(items):
+        batches.append(len(items))
+        return reserve(items)
+
+    def checked_publish(file_id, job_id, name, count, asset):
+        assert manager.platform.assets[asset["key"]]["state"] == "staged"
+        assert storage.get_bytes(asset["key"]).startswith(b"\x89PNG\r\n\x1a\n")
+        if failure == "publish" and int(name[2:-4]) == 3:
+            raise OSError("publication failed")
+        manager.platform.assets[asset["key"]]["state"] = "ready"
+
+    put_file = storage.put_file
+
+    def checked_write(key, path, content_type):
+        if failure == "write" and int(Path(key).name[2:-4]) == 3:
+            raise OSError("write failed")
+        return put_file(key, path, content_type)
+
+    def abandon_writer(job_id):
+        return {"deletable": [grant for grant in manager.platform.assets.values() if grant["state"] != "ready"]}
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def recorded_transfer():
+        with transfer() as local:
+            temporary.append(local)
+            yield local
+
+    monkeypatch.setattr(manager.platform, "reserve_derived_batch", reserve_batch)
+    monkeypatch.setattr(manager.platform, "publish_preview_page", checked_publish)
+    monkeypatch.setattr(manager.platform, "abandon_derived_writer", abandon_writer, raising=False)
+    monkeypatch.setattr(manager, "transfer_file", recorded_transfer)
+    monkeypatch.setattr(storage, "put_file", checked_write)
+    with caplog.at_level("INFO", logger="ailab.broker.render"):
+        if failure:
+            with pytest.raises(OSError, match=f"{'publication' if failure == 'publish' else 'write'} failed"):
+                renderer.render("file", "job")
+        else:
+            result = renderer.render("file", "job")
+    assert all(not path.exists() for path in temporary)
+    if failure:
+        assert batches == [8]
+        assert manager.active_leases() == []
+        assert all(grant["state"] == "ready" and storage.exists(key) for key, grant in manager.platform.assets.items())
+        assert len(storage.list_prefix("derived/").items) == (2 if failure == "publish" else 1)
+        return
+    assert batches == [8, 1]
+    assert len(result["assets"]) == 10
+    assert "remaining_raster_seconds" in caplog.text and "remaining_write_seconds" in caplog.text
+    published(manager, result)
+    manager.release(result["render_lease_id"])
+
+
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
 def test_render_rejects_unexpected_archive_members(tmp_path):
     manager, renderer, _ = setup_renderer(tmp_path, b"a,b\n1,2\n", "sheet.csv")

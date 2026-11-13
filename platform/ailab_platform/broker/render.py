@@ -9,6 +9,7 @@ import re
 import shlex
 import tarfile
 import time
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 
@@ -38,7 +39,7 @@ class LibraryRenderer:
             self.manager.default_spec(ttl_seconds=ttl), profile="render", memory=settings.sandbox_render_memory_bytes, max_lifetime=ttl
         )
 
-    def _bundle(self, handle, directory: str, names: list[str], deadline: float, *, pdf_name: str | None = None):
+    def _bundle(self, handle, directory: str, names: list[str], deadline: float, *, pdf_name: str | None = None, retained=None):
         """Pack ``names`` once in the sandbox, download one archive and yield each validated member as (name, path, sha256).
 
         One transfer avoids a provider round trip per page. The archive is untrusted, so members are never extracted
@@ -72,7 +73,8 @@ class LibraryRenderer:
                     source = bundle.extractfile(members[name])
                     if source is None:
                         raise LeaseError("invalid_render_output")
-                    with source, self.manager.transfer_file() as asset:
+                    with source, ExitStack() as scoped:
+                        asset = (retained if retained is not None else scoped).enter_context(self.manager.transfer_file())
                         digest = hashlib.sha256()
                         with asset.open("wb") as out:
                             for chunk in iter(lambda: source.read(1024 * 1024), b""):
@@ -185,12 +187,13 @@ class LibraryRenderer:
         returned = False
         first_asset = None
 
-        def publish_page(name, page_count, local, digest=None, sheet_pages=None):
+        def publish_page(name, page_count, local, digest=None, sheet_pages=None, *, stored=False):
             if digest is None:
                 with local.open("rb") as stream:
                     digest = hashlib.file_digest(stream, "sha256").hexdigest()
             key = f"derived/{file_id}/preview/{job_id}/{name}"
-            self.storage.put_file(key, local, "image/png")
+            if not stored:
+                self.storage.put_file(key, local, "image/png")
             asset = {"key": key, "content_type": "image/png", "sha256": digest}
             try:
                 self.manager.platform.publish_preview_page(
@@ -305,9 +308,35 @@ class LibraryRenderer:
                             raise ValueError("invalid pages")
                     except (ValueError, TypeError, KeyError, AttributeError) as exc:
                         raise LeaseError("invalid_render_output") from exc
-                    for name, local, digest in self._bundle(handle, "/workspace/.ailab/rest", rest_names, deadline):
-                        assets[name] = publish_page(name, count, local, digest)
-                        names_by_page[int(name[2:-4])] = name
+                    for key in ("convert_seconds", "raster_seconds"):
+                        value = (rest.get("phases") or {}).get(key)
+                        if type(value) in (int, float) and 0 <= value <= 120:
+                            phases["remaining_" + key] = value
+
+                    def publish_batch(batch):
+                        write_started = time.monotonic()
+                        self.storage.put_cache_files(
+                            [(f"derived/{file_id}/preview/{job_id}/{name}", local, "image/png") for name, local, _ in batch]
+                        )
+                        phases["remaining_write_seconds"] = phases.get("remaining_write_seconds", 0) + time.monotonic() - write_started
+                        publish_started = time.monotonic()
+                        for name, local, digest in batch:
+                            assets[name] = publish_page(name, count, local, digest, stored=True)
+                            names_by_page[int(name[2:-4])] = name
+                        phases["remaining_publish_seconds"] = (
+                            phases.get("remaining_publish_seconds", 0) + time.monotonic() - publish_started
+                        )
+
+                    with ExitStack() as retained:
+                        batch = []
+                        for item in self._bundle(handle, "/workspace/.ailab/rest", rest_names, deadline, retained=retained):
+                            batch.append(item)
+                            if len(batch) == 8:
+                                publish_batch(batch)
+                                retained.close()
+                                batch = []
+                        if batch:
+                            publish_batch(batch)
                     phases["remaining_pages_seconds"] = time.monotonic() - rest_started
                 names = [names_by_page[page] for page in page_numbers]
                 if template:

@@ -1,8 +1,9 @@
-# 原生查看扫描恢复与错误分流（2026-11-13）
+# 原生查看恢复与分页发布提速（2026-11-13）
 
 - 用户要求：修复旧 PPT 原生入口返回安全错误后错误进入渲染沙箱的问题，随后授权提交并提 PR；未授权本轮合并或部署。
 - 已实施：原生入口复用持久扫描队列并发去重；真实扫描和摘要/大小校验成功后继续浏览器查看，不排分页作业或预热。前端接口错误明确展示，pending 最长等候 5 分钟；格式/准入/renderer 兼容性回退保留。
-- 本地验证：Python 111 项、Portal 原生查看 62 项通过，Ruff/格式检查通过，Portal webpack 生产构建通过；未进行浏览器、PostgreSQL 或 CI 验收。详见[本轮记录](updates/2026-11-13-native-view-scan-recovery.md)。
+- 用户随后要求优化分页耗时：同一缓存 PDF 在相同 runsc/1 核限制下，余下 8 页纯栅格化三次为 0.716–0.787 秒；既有 7.390 秒是生成/归档传输/写入/发布总和。余页改为每 8 页复用已有容量批量预留/完成接口，24 次 API 往返减为 10 次，并补写入/发布阶段计时；首屏与画质不变。优化尚未部署，不能认定实际总耗时已经下降。
+- 本地验证：原生恢复 Python 111 项、Portal 原生查看 62 项通过，Portal webpack 生产构建通过；新增性能改动相关 Python 98 passed / 15 skipped（PostgreSQL 未配置），Ruff/格式检查通过。旧 head `434e9177` 11 项 CI 全绿，新增优化最终 head CI 待确认；未做浏览器或部署前后端到端性能验收。详见[本轮记录](updates/2026-11-13-native-view-scan-recovery.md)。
 - [PR #193](https://github.com/shijunan126-creator/ailab-lite/pull/193)，分支 `fix/native-view-scan-recovery`，基线 `main@910f1525`；主工作区的并发 UI 修改保持不变。既有渲染耗时调查已追加到本轮记录。下一步：以 PR 最终 head CI 为准；浏览器实测仍待完成。
 
 ---

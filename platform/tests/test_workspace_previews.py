@@ -34,6 +34,13 @@ class _Api:
         assert self.assets[key]["token"] == token
         self.assets[key]["state"] = "staged"
 
+    def reserve_derived_batch(self, items):
+        return {"items": [self.reserve_derived(**item) for item in items]}
+
+    def finish_derived_batch(self, items):
+        for item in items:
+            self.finish_derived(item["key"], item["token"])
+
     def publish_run_derived(self, items):
         for item in items:
             assert self.assets[item["key"]]["token"] == item["token"]
