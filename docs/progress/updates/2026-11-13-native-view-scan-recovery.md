@@ -42,3 +42,32 @@
 - 验证覆盖：10 页真实 Poppler 输出验证 `[8, 1]` 分组、staging 后发布、PNG 内容、临时文件释放；分别注入中途写入和发布失败，验证未发布对象回收、已发布页保留和沙箱释放；账本回归覆盖中途写入/完成响应丢失及批量容量原子性。初次故障测试未触发是 Poppler 十页输出使用补零页码，已改为解析数字页码，产品逻辑无需改变。
 - 本轮代码基线为 `434e9177` 加本节产品/测试改动；`PYTHONPATH=. pytest tests/test_library_render.py tests/test_accounted_derived_writes.py tests/test_workspace_previews.py tests/test_derived_assets.py tests/test_file_previews.py -o addopts='' -q -p no:cacheprovider --tb=short`：98 passed / 15 skipped，34.64 秒；跳过项为未配置的 PostgreSQL，Ruff/格式检查及差异检查通过。测试前构建 vendored Office runtime，并按 HANDOFF 使用 GNU coreutils/findutils；初次缺构建产物和 BSD 工具造成的环境失败不计为产品失败。
 - 边界：新增优化未做部署前后真实端到端对比、PostgreSQL 或浏览器验收；旧 head `434e9177` 的 11 项 CI 全绿仅证明此前原生恢复改动，不能当新增优化的最终 CI。
+
+## 真实渲染对照与 Chat/Work 调用链
+
+用户要求实测并确认 Chat、Work 是否复用。产品基线为 `2ea4bcb9`，与优化前 `434e9177` 的 `LibraryRenderer` 对照；两者使用相同其余代码。该产品提交 11 项 CI 全绿；本节只更新证据，没有改产品或部署。
+
+### 条件与结果
+
+- 同一 77879 字节、9 页 PPTX；只读复制既有原件。临时 API/Broker 各 0.5 CPU / 384 MiB，独立 SQLite、Redis、存储卷和 Docker 网络；真实服务身份、任务 claim、容量账本、HTTP 请求、runsc、LibreOffice、PNG、最终 Worker 完成接口均执行，沙箱沿用同镜像、1 CPU / 768 MiB。API 关闭后台调度，输入提前置为已扫描/已授权 fixture；没有模型、扫描、Agent/Worker 队列或浏览器绘制验收，不是完整用户端到端测试。
+- 优化前后各 4 次，顺序 old/new/old/new/new/old/old/new，每次新文件记录避免命中 PDF 缓存；旧实现 2 cold + 2 warm，新实现 3 cold + 1 warm。所有 8 次均产出 9 张 PNG，逐页 SHA256 完全相同，总计 375126 字节；最终预览发布成功。
+
+| 指标 | 优化前 | 优化后 |
+| --- | --- | --- |
+| 余下 8 页总时间，4 次 | 1.791 / 1.789 / 1.922 / 2.013 秒 | 1.603 / 1.611 / 2.462 / 1.783 秒 |
+| 余页总时间中位数 | 1.8565 秒 | 1.6970 秒 |
+| 全作业 Broker→API 请求总时间 | 0.114–0.171 秒 | 0.080–0.143 秒 |
+| 余页容量/页面发布 API 次数 | 24 | 10 |
+
+- 新实现余页纯栅格化 0.704–0.800 秒、批量写入 0.138–0.253 秒、页面发布 0.025–0.035 秒；剩余时间包含归档/传输/解包和调度。API 时间已经计入对应阶段，不重复相加。
+- 中位数仅少 0.1595 秒，冷/热样本数不同且有波动，不能宣称稳定的端到端百分比收益。原来的 7.390 秒本次没有复现，现有证据不足以把原作业主要延迟归为 API 串行往返；此前只是发现可减少的固定开销，本次实测修正该归因。
+- 冷租约从开始到首张 API 发布完成为 6.25–7.77 秒，完整 renderer 为 8.36–10.22 秒；热租约分别 1.26–1.38 秒、3.42–3.99 秒。首张 API 发布不等于浏览器绘制。3 次复用后的健康检查观察到沙箱进程 RSS 合计 592–594 MB，超过原有 563714457 字节阈值，沙箱按设计销毁，导致后续又是 cold；没有放宽阈值。冷启动/复用稳定性比此次小额往返优化更值得继续分析。
+- Work 在独立真实 Work 沙箱、同镜像/1 CPU 下调用 `workspace_view.view`：沙箱获取另计 2.784 秒，首次未预热查看第 1–4 页 14.178 秒；同文件同页再次查看 2.785 秒，第 5–8 页 2.325 秒，每次 4 张有效图片。这里故意不执行 Agent 的 Office 预热，冷耗时不能代表预热成功后的正常首调用；未调用模型。
+- 临时容器、其所有者名下沙箱、Redis、存储卷、网络、原件副本及原始输出在实测结束清理；保留本节必要结果。
+
+### 复用边界
+
+- **Chat 原生文字/结构读取**走 `broker/documents.py` 的 Office runtime，不是本次 `LibraryRenderer` 页图发布；读文字无需先把所有页转图片。
+- **Chat `view_document`**：`api/document_visual.py` 对 PDF/PPTX 页图优先尝试 Portal 浏览器；Word/Excel，或浏览器不可用/超时，再由 `server_inputs → request_page_render → Worker process_preview → Broker LibraryRenderer` 补缺失页。因此本次批量容量优化自动覆盖服务器回退的多页生成；单页请求及直接浏览器路径不受益，缓存页直接复用。
+- **Work 给用户看的预览**：`broker/service.py:_refresh_previews` 只发现变化并通知原生查看，不主动转换；显式兼容性回退经 `viewer.workspace → render_workspace_preview → _render_preview --pdf` 导出一个 PDF（表格为 sheets），按文件版本/渲染版本缓存，通常没有九张页图的逐页账本开销。
+- **Work 模型 `view_workspace_file` / `review_artifact`**：`broker/workspace_view.py` 在本 Run 沙箱中使用同一个 `sandbox_tools/render_preview.py` 栅格化核心，最多选 4 页，一次 JSON/base64 回传，不经过 `LibraryRenderer` 或逐页账本发布。因此不能直接套用本次批量接口优化。已有租约内 LO listener 预热/复用，但 `view_workspace_file.py` 每次建临时目录并重新将 Office 转 PDF，调用完成清掉 PDF；重复查看同一未改文件仍转换，这与资料库已有 PDF 缓存不同。后续若优化，应在本 Run 内按内容版本复用有界 PDF 缓存并验证编辑后失效，而不是放宽资源/健康阈值。
