@@ -3,8 +3,9 @@
 - 用户要求：压缩提示词和工具说明；低频工具按需加载，常用工具和常用 GenUI 组件常驻；用真实模型量化首请求和整个任务的消耗，并对比质量。设计见[提示词瘦身设计](../architecture/design/2026-11-13-prompt-diet.md)、[ADR 0043](../architecture/adr/0043-on-demand-tools.md)，实测见[本轮记录](updates/2026-11-13-prompt-diet.md)。
 - 已完成：`call_tool` 按需工具（Work 15 声明 / 14 按需，Chat 7 / 7）；参数 schema 精简；两模式提示词去重压缩，记忆与技能保存的细则移入按需工具说明；GenUI 常驻组件按使用频率收缩；场景套件新增 6 个场景，报告记录 run_id。
 - 实测（DeepSeek V4.1 Flash，Work 每组 4 个样本、Chat 每组 2 个）：首请求 −33%，Work 整个任务 prompt −23%、计费额 −20%，Chat 计费额 −18%；62/62 次 run 成功，回答质量逐条对比无退化。
-- 验证：ruff、改动模块测试、本机 Python 全量一次、Portal 302 项；独立审查的 3 个 P2 已修复。未覆盖的路径见记录。
-- 分支 `perf/prompt-diet`，base `main@e7737c2f`。下一步：推送、开 PR、看 CI；合并与部署按用户当次授权。
+- 验证：ruff、改动模块测试、本机 Python 全量一次、Portal 302 项；独立审查的 3 个 P2 已修复；PR #197 最终 head `fe927cfb` CI 全绿（E2E 首次失败是脚本模型直接调用按需工具，已改）。未覆盖的路径见记录。
+- 已合并到 main（`6930d3d1`，PR #197）。新增 `platform/scenarios/token_report.py`，按场景对比两个版本的 token 与计费额。
+- 下一步：无进行中的工作。可选跟进：Compare/Highlights 是否改为按需，需真实模型对比后再定；子任务经 `call_tool` 和压缩后重读说明尚无真实模型覆盖。
 
 ---
 
