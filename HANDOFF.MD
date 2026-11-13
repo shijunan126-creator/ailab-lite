@@ -1,3 +1,9 @@
+## 2026-11-13 思考来源兼容
+
+- 思考字段因来源而异（`reasoning_content`、新版 vLLM 的 `reasoning`、Ollama 的 `thinking`、OpenRouter 的 `reasoning_details`），流式和非流式调用都要通过 `thinking.reasoning_of` 读取。非流式调用以前只读 `reasoning_content`。
+- `<think>` 标签拆分只能按模型配置开启，不能自动猜，因为正文里可能本来就有 `<think>` 这串字。开始标签只在输出开头识别；收到思考字段就停止拆分。prefilled 模型如果到结尾都没出现 `</think>`，说明它没有思考，要改判为正文；关闭思考的请求（`thinking_disabled`）不按 prefilled 处理。
+- Higress 的 `reasoningContentMode=concat` 会把思考包回 `<think>` 放进正文，应该用透传或 `passthrough`。
+
 ## 2026-11-13 思考块按标记收起
 
 - 最后一步之后的文字在流式时分不清是正式回答还是调工具前的旁白；Chat 也带工具。按「回答已开始」折叠过程框，每步先说一句再调工具时会反复开合。要用能准确判断的信号：思考之后来了任何非思考事件，思考就 `done`。详见[本轮记录](docs/progress/updates/2026-11-13-thought-fold.md)。

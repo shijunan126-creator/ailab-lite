@@ -1,5 +1,9 @@
 2026-11-13 原生查看入口补充旧文件扫描恢复和错误分流；分页余页复用容量批量接口减少串行往返，补阶段计时。已本地回归并进入 PR 流程，最终 head CI 和端到端性能待确认，未部署，边界见[记录](../progress/updates/2026-11-13-native-view-scan-recovery.md)。
 
+2026-11-13 思考来源兼容（`feat/thinking-compat`）：思考字段统一按 `reasoning_content`/`reasoning`/`thinking`/`reasoning_details` 读取，非流式调用也一样；没开 reasoning parser 的上游可以按模型配置 `think_tag`/`think_prefilled`，由流式拆分器把 `<think>` 块拆到思考通道。PR CI 验收中，未在真实的 vLLM/Higress 上验证。见[记录](../progress/updates/2026-11-13-thinking-compat.md)。
+
+2026-11-13 思考块按标记收起（Portal）：正在写的思考展开，写完立刻收起，过程框变矮时平滑过渡，[PR #194](https://github.com/shijunan126-creator/ailab-lite/pull/194) 在 11 项 CI 全绿后合并为 `ccbc014e`，未部署。见[记录](../progress/updates/2026-11-13-thought-fold.md)。
+
 2026-11-13 历史交付件缺失扫描记录的预览恢复随 [PR #192](https://github.com/shijunan126-creator/ailab-lite/pull/192) 合并为 `871fa114`，最终 head `ba70461e` 全部 11 项 CI 通过且合并树一致；验证边界见[记录](../progress/updates/2026-11-13-legacy-artifact-preview.md)，当前状态见[current](../progress/current.md)；本机部署不作为能力验收。
 
 2026-11-12 同模式分叉沿用被分叉轮次的 checkpoint 与血缘根会话头（`feat/fork-reuse-checkpoint`，base `main@cf758dd1`）：分支第一次调用真模型命中 Work 98.4%、Chat 97.9%（改前 0）；跨模式仍重建。[PR #190](https://github.com/shijunan126-creator/ailab-lite/pull/190) CI 全绿并合并为 `main@adb0ecf8`，见 [ADR 0041](adr/0041-fork-reuses-checkpoint.md) 与[记录](../progress/updates/2026-11-12-fork-checkpoint.md)。
