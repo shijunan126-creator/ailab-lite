@@ -86,7 +86,8 @@ with SessionLocal() as db:
     page.wait_for_function("() => !document.querySelector('.pr-thought-body')")
     collapse_ms = (time.perf_counter() - start) * 1000
     assert collapse_ms < 1000
-    assert page.locator(".md-chunks .viewport-block").count() == 0
+    page.wait_for_function("() => document.querySelectorAll('.work-timeline .md-chunks .viewport-block').length === 0")
+    assert page.locator(".work-timeline .md-chunks .viewport-block").count() == 0
     (stack.log_dir / f"thought-{mode}-{mobile}.json").write_text(
         json.dumps({"mounted_chunks": mounted, "process_nodes": nodes, "collapse_ms": collapse_ms})
     )

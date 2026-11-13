@@ -1,3 +1,11 @@
+## 2026-11-13 思考块按标记收起
+
+- 最后一步之后的文字在流式时分不清是正式回答还是调工具前的旁白；Chat 也带工具。按「回答已开始」折叠过程框，每步先说一句再调工具时会反复开合。要用能准确判断的信号：思考之后来了任何非思考事件，思考就 `done`。详见[本轮记录](docs/progress/updates/2026-11-13-thought-fold.md)。
+- 有最大高度的滚动框里，给子元素做 `grid-template-rows` 折叠动画，外框只在最后几十毫秒才收缩，看起来仍是跳变。要平滑的是框本身的可见高度（`useSmoothShrink`），并且在缩小内容的那次 commit 里就启动；只靠 ResizeObserver 的话，在 rAF 里读布局的代码会先读到最终高度。
+- `getComputedStyle(...).getPropertyValue("--t-slow")` 不一定原样返回 `280ms`（实测拿到了 `.28s`），时长要按单位解析（`components/motion/duration.ts`）。
+- 逐帧验收用相对阈值（单帧变化不超过总变化的 30%，且有多个中间高度），不要用写死的 px/ms：缓动曲线的峰值速率会随距离变化。
+- 本机 E2E 依赖 `.venv/bin/playwright install chromium`，以及在 `vendor/office-suite/runtime` 里执行过 `npm ci --ignore-scripts && npm run build`；缓存被清掉后会报 BrowserType.launch / office runtime missing，这不是代码问题。
+
 ## 2026-11-13 历史交付件扫描记录与预览
 
 - 共享健康脚本的 Linux 内存探针必须在隔离健康检查时才导入；mock 的 baseline/清理以及 `runpy.run_path` 路径探针无需该依赖，runpy 也不会自动把脚本目录加入模块搜索路径。改注入依赖时同时回归 `test_sandbox_paths.py`，并断言 exec 的退出码和 stderr，避免空 stdout 掩盖真实加载错误。

@@ -113,3 +113,7 @@
 将 Linux 内存探针导入移到 `listener_memory()` 内：baseline 和 mock 清理不依赖 Linux 探针，真正隔离健康检查仍强制加载，缺失依赖依然失败。保留原路径断言，补 exec 退出码/stderr 和真实 mock CLI 清理校验，没有跳过或放宽测试。
 
 `pytest tests/test_sandbox_paths.py tests/test_sandbox_memory.py tests/test_render_sandbox_health.py tests/test_work_view_listener.py -q -o addopts=''`：**22 passed**，0.89 秒；相关 Ruff/格式检查通过。此修正未改变真实隔离内存计量与渲染路径，不重跑此前真实渲染对照；最终全套以新 head CI 为准，未合并或部署。
+
+### 同步 main
+
+PR #194 合入后，本分支合入 `main@ccbc014e`。唯一冲突在 `docs/progress/current.md` 顶部，保留两边交接并更新已合入状态；产品代码自动合并，无手工代码修改。检查冲突标记、差异和父提交范围；纯文档冲突不重跑本地产品测试，合并后完整组合以新 head CI 为准。本次是 main 合入 PR 分支，未将 PR #193 合入 main，也未部署。
