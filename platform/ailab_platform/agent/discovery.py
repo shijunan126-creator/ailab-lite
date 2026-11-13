@@ -6,7 +6,7 @@ SEARCH = {
     "type": "function",
     "function": {
         "name": "search_capabilities",
-        "description": "按关键词发现可用技能。",
+        "description": "按关键词查找可用的技能和按需工具。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -38,10 +38,11 @@ ALIASES = {
 }
 
 
-def search(query, limit, user_skills=()):
+def search(query, limit, user_skills=(), tools=()):
+    """Skills, and on-demand tools (`call_tool`) by their one-line summaries."""
     query = str(query)[:200]
     terms = [*re.findall(r"[\w.]+", query.lower()), *[v for k, v in ALIASES.items() if k.lower() in query.lower()]]
-    entries = [{"kind": "skill", **m} for m in user_skills]
+    entries = [{"kind": "skill", **m} for m in user_skills] + [{"kind": "tool", **t, "use": "call_tool"} for t in tools]
 
     def score(entry):
         text = (entry["name"] + " " + entry["description"]).lower()

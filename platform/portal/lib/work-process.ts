@@ -90,6 +90,8 @@ function describeTool(name: string, args: any): { label: string; detail?: string
       return { label: "回忆历史对话", detail: args?.query };
     case "update_plan":
       return { label: "更新计划" };
+    case "call_tool":
+      return { label: "查看工具用法" };
     default:
       return { label: name };
   }

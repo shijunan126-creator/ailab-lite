@@ -1,3 +1,5 @@
+2026-11-13 提示词瘦身与按需工具（`perf/prompt-diet`）：低频工具经 `call_tool` 按需加载（[ADR 0043](adr/0043-on-demand-tools.md)），参数 schema 精简，提示词去重压缩，GenUI 常驻组件收缩。真实模型对比：首请求 −33%，Work 计费额 −20%，Chat 计费额 −18%，成功率与回答质量持平。PR CI 验收中，未部署。见[记录](../progress/updates/2026-11-13-prompt-diet.md)。
+
 2026-11-13 原生查看入口补充旧文件扫描恢复和错误分流；分页余页复用容量批量接口减少串行往返，补阶段计时。已本地回归并进入 PR 流程，最终 head CI 和端到端性能待确认，未部署，边界见[记录](../progress/updates/2026-11-13-native-view-scan-recovery.md)。
 
 2026-11-13 思考来源兼容（`feat/thinking-compat`）：思考字段统一按 `reasoning_content`/`reasoning`/`thinking`/`reasoning_details` 读取，非流式调用也一样；没开 reasoning parser 的上游可以按模型配置 `think_tag`/`think_prefilled`，由流式拆分器把 `<think>` 块拆到思考通道。PR CI 验收中，未在真实的 vLLM/Higress 上验证。见[记录](../progress/updates/2026-11-13-thinking-compat.md)。

@@ -16,6 +16,7 @@ Environment:
     AILAB_SCENARIO_MODEL       model id; default is the stack's default model
     AILAB_SCENARIO_MIN_CACHE   minimum cached/prompt tokens on later turns (default 0.85)
     AILAB_SCENARIO_REPORT      JSONL file for per-turn numbers (default: pytest's tmp dir); never the repository
+    AILAB_SCENARIO_REPLIES     1 adds each reply to the report, to compare answer quality between versions
 
 Every conversation and uploaded file a scenario creates is deleted when it finishes.
 """
@@ -64,10 +65,12 @@ def api(request, report_path):
                 row = {
                     "scenario": request.node.name,
                     "turn": index + 1,
+                    "run_id": turn.id,  # per-call usage (first request, completion) is in the ledger by run_id
                     "status": turn.run["status"],
                     "tools": turn.tools(),
                     "prompt_tokens": usage.get("prompt_tokens"),
                     "cached_tokens": usage.get("cached_tokens"),
+                    "completion_tokens": usage.get("completion_tokens"),
                     "calls": usage.get("calls"),
                     "boundaries": [b.get("reason") for b in turn.boundaries()],
                     # enough to see where a task struggled without keeping the conversation
@@ -82,6 +85,8 @@ def api(request, report_path):
                         for f in turn.failed_tools()
                     ],
                 }
+                if os.environ.get("AILAB_SCENARIO_REPLIES") == "1":
+                    row["reply"] = turn.reply  # for comparing answer quality between prompt versions; stays outside the repo
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
         client.close()
 

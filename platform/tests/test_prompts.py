@@ -67,7 +67,7 @@ def test_work_office_reader_is_discoverable_without_loading_a_library_skill():
     assert "office-read SOURCE NEW_OUTPUT_DIRECTORY" in text
     assert "不存在的新输出目录" in text
     assert "LibreOffice/Poppler" in text
-    assert "工作区读取结果不能作为平台file_id引用" in text
+    assert "工作区读取结果不能当平台 file_id 引用" in text
     assert "office-read" not in prompts.CHAT_MODE_NOTE
 
 
@@ -76,7 +76,7 @@ def test_both_modes_learn_the_one_line_time_tool(mode):
     """The tool's schema is visible, but the rules must say what to do when a date is implied."""
     text = prompts.system_prompt_for(mode)
     assert text.count("current_time") == 1
-    assert "不要按训练数据猜" in text
+    assert "不按训练数据猜" in text
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])

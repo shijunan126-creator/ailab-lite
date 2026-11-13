@@ -1,7 +1,7 @@
 {
   "format": "openui",
   "version": 2,
-  "index_sha256": "58cb5a1e3f7a9d63c48e67e8983b96790b2464718690d02ae1d55e3f7a2db65c",
+  "index_sha256": "ea100be7576d1c9cfa1a750eb1b9b82465e1e4cca3a0eae4527389d57697bea7",
   "guide_sha256": "ae6bef7e273be5153dad641fc58d47e7f4ea78716f334b2da41b67ed434b516a",
   "core": [
     "Stack",
@@ -10,8 +10,6 @@
     "Callout",
     "Table",
     "Compare",
-    "Segments",
-    "Steps",
     "Metric",
     "Highlights",
     "LineChart",

@@ -1276,7 +1276,7 @@ def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatc
     assert platform.statuses[-1][0] == "succeeded"
     assert len(requests) == 3  # no model round trip between resources
     navigation = json.loads(next(m["content"] for m in requests[1]["messages"] if m.get("tool_call_id") == "navigation"))
-    assert "同一次回复里并列调用 load_skill" in system_prompt_for("work")
+    assert "同一次回复里并列调用" in system_prompt_for("work")
     assert "同一次回复" not in navigation["skill"]
     assert "deps" in navigation["skill"]
     for before, after in pairwise(requests):
@@ -2823,10 +2823,13 @@ def test_user_and_dream_deletion_preserve_snapshot_and_push_handle_only(user_del
 
 def test_latest_list_overrides_snapshot_and_earlier_updates_in_static_rules():
     from ailab_platform.agent.prompts import MEMORY_RULES, memory_prompt
+    from ailab_platform.agent.tools import MEMORY
 
-    rules = ("我之前跟你说过", "你记错了", "才 memory.list", "直接用它的 handle", "覆盖快照和此前更新块")
-    assert all(text in MEMORY_RULES for text in rules)
-    assert "最新 list" not in memory_prompt(memory_prefix_fixture())
+    assert "最新的 list 结果为准" in MEMORY_RULES and "不是用户本轮的要求" in MEMORY_RULES
+    # how to edit lines rides with the on-demand tool, read the first time memory is used
+    rules = ("我之前跟你说过", "你记错了", "才 list", "直接用它的 id replace/remove")
+    assert all(text in MEMORY["function"]["description"] for text in rules)
+    assert "最新" not in memory_prompt(memory_prefix_fixture())
 
 
 def test_idle_refresh_still_enters_parent_compaction(monkeypatch):
@@ -2929,12 +2932,12 @@ def test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary(
 
 
 def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
-    """The one-catalog deploy rewrites Chat's rules once (V2 wording baked in); the bytes are pinned here."""
+    """The prompt-diet deploy rewrites Chat's rules once (shorter rules, on-demand tools); the bytes are pinned here."""
     import hashlib
 
     chat = system_prompt_for("chat")
-    assert len(chat) == 3463
-    assert hashlib.sha256(chat.encode()).hexdigest() == "efadb28400497b9d046c4cc52aa885082b7019b893ede50b44e0d8ed4b65474f"
+    assert len(chat) == 1503
+    assert hashlib.sha256(chat.encode()).hexdigest() == "3d08e11e73224890fcb40db0715876dec675e6d82c51fbbe440029eb995119c2"
     assert prompt_version("chat") != prompt_version("work")
 
     from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION

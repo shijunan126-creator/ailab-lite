@@ -389,8 +389,8 @@ def test_ui_components_progressive_docs(html_enabled):
     added = ui_components({"names": ["Tabs"]}, carried, html_enabled=html_enabled)
     assert added["components"] == docs_for(["Tabs"], html_enabled)[0]
     assert "already_available" not in added and "guide" not in added
-    only_core = ui_components({"names": ["LineChart", "Segments"]}, {"messages": []}, html_enabled=html_enabled)
-    assert only_core["components"] == "" and set(only_core["already_available"]) == {"LineChart", "Series", "Segments"}
+    only_core = ui_components({"names": ["LineChart", "Compare"]}, {"messages": []}, html_enabled=html_enabled)
+    assert only_core["components"] == "" and set(only_core["already_available"]) == {"LineChart", "Series", "Compare"}
     restored["messages"] = [{"role": "system", "content": "历史摘要：已读过AreaChart"}]
     restored["genui_guide_sent"] = True  # an older checkpoint marker must not survive missing docs
     assert "guide" in ui_components({"names": ["AreaChart"]}, restored, html_enabled=html_enabled)

@@ -47,8 +47,8 @@ def test_full_document_has_every_section_handles_dates_and_escapes():
 
 def test_static_rules_and_silent_save_live_in_first_system_message():
     assert MEMORY_RULES in system_prompt_for("chat")
-    assert "自主保存必须静默" in MEMORY_RULES
-    assert "用户明确要求记住且工具成功时简短确认" in MEMORY_RULES
+    assert "自主保存保持静默" in MEMORY_RULES
+    assert "仅当用户明确要求且写入成功时简短确认" in MEMORY_RULES
     assert MEMORY_RULES not in memory_prompt({"entries": []})
 
 
