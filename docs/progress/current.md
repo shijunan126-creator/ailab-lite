@@ -9,7 +9,6 @@
 ## 等用户决定
 
 - Compare/Highlights 工具是否改成按需加载：要先拿真实模型做对比。
-- 用量预留默认 1 小时过期（`AILAB_USAGE_RESERVATION_TTL_SECONDS`），比 Run 默认期限（`AILAB_JOB_DEADLINE_SECONDS`，24 小时）短。长任务的预留会提前转成未对账，晚到的结算会补正，不会丢账。是否调整默认值待定。
 
 ## 已知问题（未排期）
 
