@@ -69,6 +69,7 @@ def test_chat_mode_offers_only_read_only_web_tools(monkeypatch) -> None:
         "memory",
         "recall_history",
         "schedule",
+        "current_time",
         "search_library",
         "read_library_file",
         "extract_text",

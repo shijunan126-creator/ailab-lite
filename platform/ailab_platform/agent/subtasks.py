@@ -49,6 +49,7 @@ ALLOWED = frozenset(
         "read_url",
         "search_images",
         "recall_history",
+        "current_time",
     }
 )
 

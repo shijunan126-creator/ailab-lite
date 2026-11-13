@@ -229,6 +229,22 @@ def test_the_tool_works_on_this_conversation_only(client):
     assert {t["id"] for t in c.get("/v1/schedules", headers=auth).json()} == {elsewhere["id"], single["created"]["id"]}
 
 
+def test_the_tool_uses_the_zone_the_turn_was_sent_from(client):
+    """A browser east or west of the account default gets its own day and its own wall clock."""
+    c, auth = client
+    started = c.post(
+        "/v1/conversations/start",
+        headers=auth,
+        json={"prompt": "每天早上九点提醒我", "mode": "chat", "timezone": "America/New_York", "client_send_id": uuid.uuid4().hex},
+    )
+    run_id = started.json()["run"]["id"]
+    _status(c, run_id, "running")
+    assert tool(c, run_id, {"action": "list"})["timezone"] == "America/New_York"
+    created = tool(c, run_id, {"action": "create", "title": "早报", "prompt": "汇总", "schedule": {"kind": "daily", "time": "09:00"}})
+    assert created["timezone"] == "America/New_York" and " 09:00 " in created["created"]["next"]
+    assert c.get("/v1/schedules", headers=auth).json()[0]["timezone"] == "America/New_York"
+
+
 def test_a_scheduled_turn_cannot_create_more_tasks(client):
     c, auth = client
     task = c.post("/v1/schedules", headers=auth, json=body()).json()

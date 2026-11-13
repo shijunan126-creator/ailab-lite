@@ -1,3 +1,10 @@
+## 2026-11-13 当前日期工具
+
+- 新增工具会改变 `tool_catalog_v1` 和 `messages[0]`：每个已有会话的下一个新 Run 会有一次预期的重建，之后才恢复前缀。不要为了“每轮告诉模型今天几号”去改 system 消息；那会每轮破坏前缀。
+- `test_a_chat_conversation_keeps_its_prefix_across_this_deploy` 钉住 Chat 提示词的长度和 SHA256。改 Chat 提示词要连同这两个数字一起更新，确认变化就是自己那一行，而不是把闸门删掉。
+- `user_timezone` 只是回退口径（最近一次定时任务的时区 → 记忆整理时区 → Asia-Shanghai），不是“用户此刻的时区”。跨时区用户必须在发送时带上浏览器时区；会话内 `schedule` 的 `now` 和新建任务时区也要用这个 Run 时区，否则“今天/明天 9 点”会按错误的一天算。
+- 工具目录按 Run 冻结：暂停中的旧 Run 恢复后不会出现新工具；新工具只对部署后启动的 Run 生效。
+
 ## 2026-11-13 思考来源兼容
 
 - 思考字段因来源而异（`reasoning_content`、新版 vLLM 的 `reasoning`、Ollama 的 `thinking`、OpenRouter 的 `reasoning_details`），流式和非流式调用都要通过 `thinking.reasoning_of` 读取。非流式调用以前只读 `reasoning_content`。

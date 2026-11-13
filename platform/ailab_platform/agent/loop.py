@@ -1203,6 +1203,7 @@ class AgentLoop:
             turn.net_budget,
             mode=(turn.run.get("options") or {}).get("mode", "work"),
             document_tools_version=catalog_version(turn.run.get("options")),
+            timezone=(turn.run.get("options") or {}).get("timezone") or "",
         )
         ctx.run_aliases = self._states[run_id].get("run_aliases") or {}
         budget = self._budgets[run_id]
@@ -1647,6 +1648,7 @@ class AgentLoop:
                     turn.net_budget,
                     mode=(turn.run.get("options") or {}).get("mode", "work"),
                     document_tools_version=catalog_version(turn.run.get("options")),
+                    timezone=(turn.run.get("options") or {}).get("timezone") or "",
                 )
                 ctx.run_aliases = self._states[run_id].get("run_aliases") or {}
                 budget = self._budgets[run_id]

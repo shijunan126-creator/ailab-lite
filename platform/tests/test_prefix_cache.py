@@ -2946,12 +2946,12 @@ def test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary(
 
 
 def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
-    """The workspace-tool deployment changes Work's rules only; Chat's text and prefix must not move."""
+    """This deployment adds one rule line (the date tool) to both modes; Chat's text must move by that line only."""
     import hashlib
 
     chat = system_prompt_for("chat")
-    assert len(chat) == 3412
-    assert hashlib.sha256(chat.encode()).hexdigest() == "a774b0e597243f2e327526396da380215f7a66837ea9ebcd668ae5f0425c7d22"
+    assert len(chat) == 3471
+    assert hashlib.sha256(chat.encode()).hexdigest() == "05802d83a89ca303e2e9aa7baaa44fed756cb5a5d016739c0cbde2f8e02085d7"
     assert prompt_version("chat") != prompt_version("work")
 
     from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
@@ -2989,7 +2989,7 @@ def test_the_reduced_catalog_still_fits_the_smallest_model_budget():
     budget = min(ModelPolicy.input_budget(small), max(800, int(ModelPolicy.input_budget(small) * 0.15)))
     reduced = catalog_for_budget([SEARCH, *tools_for_turn()], budget)
     names = {tool["function"]["name"] for tool in reduced}
-    assert {"read", "write", "edit", "bash"} <= names
+    assert {"read", "write", "edit", "bash", "current_time"} <= names
     assert token_estimator.raw(reduced) <= budget
 
 

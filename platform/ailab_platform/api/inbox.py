@@ -94,6 +94,7 @@ def dispatch_next(db, conv, *, raise_admission=False):
                 frozen_document_input=row.options.get("document_input_plan"),
                 preparation_send_id=row.client_send_id,
                 reasoning=row.options.get("reasoning"),
+                timezone=row.options.get("timezone"),
             )
             db.flush()  # admission stages refs/positions with autoflush disabled
             row.state, row.run_id, row.updated_at = "started", run.id, utcnow()

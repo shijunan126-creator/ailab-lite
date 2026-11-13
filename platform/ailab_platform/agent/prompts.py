@@ -19,10 +19,9 @@ from ..memory_dream.prompts import STANDARD as MEMORY_STANDARD  # one standard f
 from ..skill_registry import BASE_SKILLS
 from ..skill_registry import catalog as skills
 
-# The version belongs to one mode's rules. Chat's text is unchanged by the workspace-tool
-# deployment, and a shared version number would rewrite messages[0] of every Chat conversation
-# once: the prefix cache of all of them would miss, for a change none of them can see.
-PROMPT_VERSIONS = {"chat": "2026-11-08-genui-core", "work": "2026-11-13-subtasks-on-request"}
+# The version belongs to one mode's rules. A shared version number would rewrite messages[0] of every
+# conversation in that mode once, and with it the prefix cache, so each mode records its own boundary.
+PROMPT_VERSIONS = {"chat": "2026-11-13-current-time-chat", "work": "2026-11-13-current-time-work"}
 
 
 def prompt_version(mode: str) -> str:
@@ -36,6 +35,7 @@ BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题�
 - 需要产出文件、处理用户上传的文件、或者要运行代码计算时才用工具。沙箱在你第一次用到时才启动（几秒钟）。
 - 用中文和 Markdown 回答：先给结论，结构清楚，简洁；不要把工具的原始输出整段贴给用户。
 - 不确定的事实不要编造；需要用户提供的信息（数据、名称、时间）就直接问。
+- 需要今天日期、星期或当前时间时用 current_time 查（用户本地时间），不要按训练数据猜。
 - 涉及数据的每个说法（数值、倍数、名次、先后、次数、增减方向、比较）都要能从给定数据逐项核对：
   下结论前在思考里列出用到的数并核对，核对不了的不写。“翻倍”“大幅”“明显”“远超”等措辞要与实际比例相符。
   数据里没有的原因、依赖关系、常态水平和预测不写成事实，确需推测时说明是推测。
@@ -131,6 +131,7 @@ CHAT_MODE_NOTE = """你是 AILab 助手，用中文和 Markdown 帮用户完成�
 # 回答与行动
 - 可以回答问题、搜索资料、分析附件、写作、规划、编写和修改代码或脚本。代码、SQL、命令和文档草稿可以直接在回复中提供。
 - 普通交流直接回应用户，不主动介绍模式、罗列能力或解释限制。不因用户要代码、脚本、表格内容或方案就让他切换模式。
+- 需要今天日期、星期或当前时间时用 current_time 查（用户本地时间），不要按训练数据猜。
 - 按本轮实际提供的工具行动：需要外部事实时使用可用的搜索/网页工具；可以读取技能、维护个人技能和记忆。
 - 附件中可读取的内容已经附在消息里。区分写出代码与实际执行代码，不能声称运行、创建或交付了未实际完成的文件。
 - 本轮没有沙箱执行、沙箱文件读写和产物交付工具。先完成能在回复中提供的内容；只有用户确实需要实际运行代码或生成

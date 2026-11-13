@@ -102,6 +102,7 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
         excluded.add("expected_branch_revision")
     if body.reasoning is None:
         excluded.add("reasoning")  # replays of sends made before the field existed keep their digest
+    excluded.add("timezone")  # a retry after travelling is the same message, not a different one
     digest = hashlib.sha256(body.model_dump_json(exclude=excluded).encode()).hexdigest()
 
     def replay():
@@ -151,6 +152,7 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             document_tools_version=(leaf.options or {}).get("document_tools_version", 1) if body.steer else None,
             preparation_send_id=body.client_send_id,
             reasoning=(leaf.options or {}).get("reasoning") if body.steer else body.reasoning,
+            timezone=(leaf.options or {}).get("timezone") if body.steer else body.timezone,
         )
         if options.get("template"):
             from .asset_refs import register_asset
@@ -222,6 +224,7 @@ def patch_queue(conversation_id: str, qid: str, body: QueuePatch, user: User = D
             document_tools_version=row.options.get("document_tools_version", 1),
             preparation_send_id=row.client_send_id,
             reasoning=row.options.get("reasoning"),
+            timezone=row.options.get("timezone"),
         )
         row.options = {**{k: v for k, v in row.options.items() if k not in {"skill", "skill_title", "skills"}}, **options}
         row.prompt = prompt

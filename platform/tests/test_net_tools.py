@@ -292,6 +292,7 @@ def test_tools_offered_per_mode(monkeypatch) -> None:
         "memory",
         "recall_history",
         "schedule",
+        "current_time",
         "search_library",
         "read_library_file",
         "extract_text",

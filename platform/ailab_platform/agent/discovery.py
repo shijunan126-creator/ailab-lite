@@ -26,6 +26,7 @@ REDUCED_V1 = frozenset(
         "load_skill",
         "memory",
         "recall_history",
+        "current_time",
         "ask_user",
         "update_plan",
         # The file tools are in the reduced catalog too: the platform rules tell a small-context model

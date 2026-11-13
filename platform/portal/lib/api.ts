@@ -47,6 +47,7 @@ export type Run = {
     skill_title?: string;
     skills?: SentSkill[];
     reasoning?: string;
+    timezone?: string; // the browser's IANA zone when this turn was sent; current_time answers in it
     // a turn the platform started at a scheduled time; `at` is that time in the task's timezone ("2026-11-12 09:00 周四")
     schedule?: { title: string; rule: string; at: string };
     schedule_id?: string;

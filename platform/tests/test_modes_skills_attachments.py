@@ -25,7 +25,14 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
     with TestClient(app) as c:
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         chat = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "hi", "mode": "chat"}).json()
-        assert chat["options"] == {"mode": "chat", "capability_discovery": 1, "skills": [], "client": "portal", "document_tools_version": 2}
+        assert chat["options"] == {
+            "mode": "chat",
+            "capability_discovery": 1,
+            "skills": [],
+            "client": "portal",
+            "document_tools_version": 2,
+            "timezone": "Asia/Shanghai",
+        }
         c.post(f"/v1/runs/{chat['id']}/cancel", headers=AUTH)
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         deck = c.post(
@@ -43,7 +50,27 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
             "skills": [],
             "client": "portal",
             "document_tools_version": 2,
+            "timezone": "Asia/Shanghai",
         }
+
+
+def test_the_browser_timezone_is_frozen_on_the_run() -> None:
+    """current_time and a schedule the model creates answer in the sender's zone, not the server's."""
+    with TestClient(app) as c:
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
+        run = c.post(
+            f"/v1/conversations/{conv['id']}/messages",
+            headers=AUTH,
+            json={"prompt": "今天几号", "mode": "chat", "timezone": "America/New_York"},
+        ).json()
+        assert run["options"]["timezone"] == "America/New_York"
+        c.post(f"/v1/runs/{run['id']}/cancel", headers=AUTH)
+        bad = c.post(
+            f"/v1/conversations/{conv['id']}/messages",
+            headers=AUTH,
+            json={"prompt": "x", "timezone": "Mars/Olympus"},
+        )
+        assert bad.status_code == 422
 
 
 def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:
@@ -123,6 +150,7 @@ def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
             "memory",
             "recall_history",
             "schedule",
+            "current_time",
             "extract_text",
             "resolve_attachment",
             "search_library",

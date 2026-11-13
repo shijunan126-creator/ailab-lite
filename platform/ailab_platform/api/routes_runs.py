@@ -51,6 +51,7 @@ from ..storage import get_storage
 from .conversation_mode import resolve_conversation_mode
 from .routes_skills import personal_skills, usable_personal
 from .serializers import run_dict
+from .timezones import user_timezone
 from .ui_state import UIState
 
 router = APIRouter(prefix="/v1", tags=["runs"])
@@ -121,6 +122,7 @@ def validate_run_input(
     preparation_send_id=None,
     frozen_document_input=None,
     reasoning=None,
+    timezone=None,
 ):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
@@ -201,6 +203,8 @@ def validate_run_input(
     options["mode"] = mode
     if document_tools_version is None or document_tools_version == 2:
         options["document_tools_version"] = 2
+    # The browser's zone wins; a turn the platform starts itself (a schedule, a retry) keeps the account's.
+    options["timezone"] = timezone or user_timezone(db, user)
 
     catalog = get_catalog()
     model_id = model or catalog.default_id()
@@ -295,6 +299,7 @@ def start_run(
     frozen_document_input=None,
     preparation_send_id=None,
     reasoning=None,
+    timezone=None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
@@ -352,6 +357,7 @@ def start_run(
             preparation_send_id=client_send_id or preparation_send_id,
             frozen_document_input=frozen_document_input,
             reasoning=reasoning,
+            timezone=timezone,
         )
         from .document_view import validate_refs
 
@@ -464,6 +470,7 @@ def create_run(body: RunCreate, user: User = Depends(current_user), db: Session 
         client_send_id=body.client_send_id,
         client="portal",
         reasoning=body.reasoning,
+        timezone=body.timezone,
     )
     return run_dict(db, run, detail=True)
 
@@ -747,6 +754,7 @@ def _new_version(db, user, run_id, body, editing=False):
             frozen_doc_refs=None if editing and body.doc_refs is not None else document_refs(db, "run_prompt", old.id, visible=False),
             client="portal",
             reasoning=reasoning,
+            timezone=options.get("timezone"),
         )
         # Validation decided skills and the thinking level afresh; a model without levels must not inherit one.
         new.options = {**{k: v for k, v in options.items() if k not in {"skill", "skill_title", "skills", "reasoning"}}, **new.options}

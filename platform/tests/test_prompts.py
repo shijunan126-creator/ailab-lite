@@ -70,6 +70,14 @@ def test_work_office_reader_is_discoverable_without_loading_a_library_skill():
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
+def test_both_modes_learn_the_one_line_time_tool(mode):
+    """The tool's schema is visible, but the rules must say what to do when a date is implied."""
+    text = prompts.system_prompt_for(mode)
+    assert text.count("current_time") == 1
+    assert "不要按训练数据猜" in text
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
 def test_skill_loading_guidance_is_global(mode):
     text = prompts.system_prompt_for(mode)
     assert text.count(prompts.SKILL_LOADING_NOTE) == 1

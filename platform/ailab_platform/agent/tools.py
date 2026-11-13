@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .. import images, web
 from ..clients import AsyncBrokerClient, ClientError
@@ -518,6 +520,16 @@ SCHEDULE = {
 }
 
 
+CURRENT_TIME = {
+    "type": "function",
+    "function": {
+        "name": "current_time",
+        "description": "查询用户本地当前的日期、星期和时间。",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 RECALL = {
     "type": "function",
     "function": {
@@ -686,6 +698,7 @@ def tools_for_turn(document_tools_version=1) -> list[dict]:
         MEMORY,
         RECALL,
         SCHEDULE,
+        CURRENT_TIME,
         *LIBRARY_TOOLS,
         VIEW_ATTACHMENT,
         COPY_LIBRARY,
@@ -730,6 +743,7 @@ def tools_for_chat(document_tools_version=1) -> list[dict]:
         MEMORY,
         RECALL,
         SCHEDULE,
+        CURRENT_TIME,
         *LIBRARY_TOOLS,
         VIEW_ATTACHMENT,
         LOAD_SKILL,
@@ -758,15 +772,34 @@ class ToolContext:
         mode="work",
         document_tools_version=1,
         command_handle="",
+        timezone="",
     ):
         self.mode, self.document_tools_version = mode, document_tools_version
         # Stable per tool call, so a resumed run waits on the command it already started.
         self.command_handle = command_handle
+        self.timezone = timezone  # the browser's zone, frozen on the run; "" when the run never had one
         self.run_id, self.platform = run_id, platform
         self.messages = messages if messages is not None else []
         self.budget = budget or net_tools.Budget()
         self.exec_lifetime_seconds = settings.run_max_seconds
         self.run_aliases: dict[str, str] = {}  # source run handle -> this fork's copy
+
+
+def local_time(timezone: str | None, now: datetime | None = None) -> dict:
+    """The user's wall clock. The browser's zone is frozen on the run; a run that never had one answers in UTC."""
+    zone_name = timezone or "UTC"
+    try:
+        zone = ZoneInfo(zone_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        zone_name, zone = "UTC", UTC
+    moment = (now or datetime.now(UTC)).astimezone(zone)
+    return {
+        "ok": True,
+        "date": moment.date().isoformat(),
+        "weekday": "周" + "一二三四五六日"[moment.weekday()],
+        "time": moment.strftime("%H:%M"),
+        "timezone": zone_name,
+    }
 
 
 async def _register_web_images(ctx: ToolContext, images: list[dict]) -> list[dict]:
@@ -909,6 +942,8 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             return {"ok": False, "error": "path须在/workspace/inputs/下；省略path时使用原文件名，需要改写时再复制到work"}
     if name == "memory":
         return {"ok": True, **await ctx.platform.memory(ctx.run_id, args)}
+    if name == "current_time":
+        return local_time(ctx.timezone)
     if name == "schedule":
         return await ctx.platform.schedules(ctx.run_id, args)
     if name == "recall_history":
