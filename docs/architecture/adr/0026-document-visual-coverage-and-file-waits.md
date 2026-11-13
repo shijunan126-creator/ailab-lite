@@ -1,6 +1,5 @@
 # ADR 0026：办公内容覆盖与持久文件等待
-
-状态：本地实施，验证结果见[本轮记录](../../progress/updates/2026-10-29-document-reading-reliability.md)。
+状态：已采纳（2026-10-29），文件安全就绪部分被 [ADR 0034](0034-safety-ready-and-lazy-native-input.md) 修改。
 
 ## 决定
 

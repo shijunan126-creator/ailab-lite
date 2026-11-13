@@ -1,7 +1,7 @@
 # ADR 0043：低频工具经 call_tool 按需加载
+状态：已采纳（2026-11-13）。
 
-- 状态：已实施（2026-11-13，PR #197，`main@6930d3d1`）
-- 相关：[设计与实测](../design/2026-11-13-prompt-diet.md)、[ADR 0030](0030-prefix-stable-model-requests.md)、[ADR 0042](0042-single-tool-catalog.md)
+相关：[ADR 0030](0030-prefix-stable-model-requests.md)、[ADR 0042](0042-single-tool-catalog.md)。
 
 ## 背景
 

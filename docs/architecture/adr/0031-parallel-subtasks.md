@@ -1,6 +1,5 @@
 # ADR 0031：Work 运行内的并行子任务（run_subtasks）
-
-状态：已采纳（首版）。来源：DeepSeek《Super-agent 设计探索》第 2 节双层架构（Router/Worker）与 DeepSeek Harness 的 fork 子 agent。
+状态：已采纳（2026-10-30）。来源：DeepSeek《Super-agent 设计探索》第 2 节双层架构（Router/Worker）与 DeepSeek Harness 的 fork 子 agent。
 
 ## 背景
 

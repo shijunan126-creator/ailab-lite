@@ -1,6 +1,5 @@
 # ADR 0035 · 每个作用域一份有界记忆文档
-
-状态：已实施，PR #174 最终 CI 验收中（2026-11-09）。替换此前核心/目录、条目检索、独立 judge 与 consolidation 方案；不改变原始历史按需检索、权限和费用合同。
+状态：已采纳（2026-11-09），部分被 [ADR 0036](0036-memory-quality.md)、[ADR 0037](0037-memory-single-origin.md) 修改。替换此前核心/目录、条目检索、独立 judge 与 consolidation 方案；不改变原始历史按需检索、权限和费用合同。
 
 ## 文档与工具
 
@@ -36,9 +35,7 @@ isolated→shared 项目融合为**程序事务**，没有模型调用：活动�
 
 参考：[OpenAI Dreaming](https://openai.com/index/chatgpt-memory-dreaming/)、[Claude memory 与历史搜索](https://support.claude.com/en/articles/11817273-use-claude-s-chat-search-and-memory-to-build-on-previous-context)、[Mastra Observational Memory](https://mastra.ai/research/observational-memory)。借鉴后台综合、稳定上下文和原始历史按需查询，不声称产品采用相同存储或单调用实现；Mastra 报告的94.87%不是本项目质量证明。
 
-检查基线、测量与边界：[实施记录](../../progress/updates/2026-11-09-memory-document.md)。
-
-## PR174 审查修正（2026-11-09）
+## 审查修正
 
 存储暂停态 suppressed 可往返输入适配层。创建原因 `created_by` 与旧行替换原因 `superseded_reason` 为0066独立列，不能复用；失效链只读后者，后续用户/工具纠正始终标为 correction。容量淘汰原因 evicted 不推送：事实仍真，只因空间移出文档。
 
@@ -50,7 +47,7 @@ isolated→shared 项目融合为**程序事务**，没有模型调用：活动�
 
 0066新增 memory_item_sources 反向索引投影，来源删除通过 run_id 索引分批清理 closed 版本；只剩被删来源的派生行删除，其余清 quote/已删来源。该投影从 source_run_ids 派生，没有第二份内容。no_signal 不取消后续 episode context；test/repro 才重读。项目来源超过50保留最新50，不使融合失败。
 
-## 全系统审查收口（2026-11-10）
+## 全系统审查收口
 
 写作用域只允许账号或isolated项目；shared项目的工具add/replace/remove写账号，0066标记遗留shared项目待程序融合。融合携带review，重复项目行关闭为condense重定向，不作删除通知。replace默认保留kind与origin，explicit请求提升保护，created_by=correction。
 

@@ -1,46 +1,58 @@
-# Adapter contract groups
+# 真实后端契约
 
-Run one group at a time on small machines (never use developer databases):
+这里的测试用真实 Redis、PostgreSQL、S3、Docker/OpenSandbox、ClamAV 或 OIDC 验证适配器，不替代普通单元测试。未配置对应后端时测试干净跳过；CI 中被选中的组不允许用跳过冒充通过。
 
-```bash
-pytest tests/contracts/test_storage.py -ra   # local; S3 skips without all three env vars
-pytest tests/contracts/test_queue.py -ra     # memory; Redis skips without URL
-pytest tests/contracts/test_database.py -ra  # SQLite; PG uses a private temporary schema
-pytest tests/contracts/test_backup.py tests/contracts/test_lifecycle.py -ra
-```
-
-Real endpoints: `AILAB_TEST_REDIS_URL=redis://127.0.0.1:16450/15`, `AILAB_TEST_POSTGRES_URL=postgresql+psycopg://USER@127.0.0.1:15450/ailab_migrations`, `AILAB_TEST_S3_URL=http://127.0.0.1:19450`, `AILAB_TEST_S3_ACCESS_KEY`, `AILAB_TEST_S3_SECRET_KEY`. Only throwaway services: the rest of the suite wipes the PG migration DB. S3 creates a unique temporary bucket per test and removes it. The PostgreSQL backup drill additionally requires CREATE/DROP DATABASE privileges on the throwaway server. CI builds real MinIO from a fixed official source archive with a checked SHA256 (`scripts/ci_minio.sh`), caches the binary, and runs it as an independent job on loopback. It no longer depends on an unavailable Docker Hub tag or on Python-suite success. This is a protocol fixture, not a production storage recommendation. See [CI](../../../.github/CI.md).
-
-`test_gc_queries_have_indexed_plans` proves index eligibility on both SQL dialects (PG disables sequential scans for the empty fixture); it is not a production-scale latency benchmark. Backup's SQLite drill starts a separate application process, verifies file bytes and reads a conversation after restoring to an empty directory. The GC interleaving holds the real user lock while a completion freezes its object and a collector waits.
-
-Performance probe: `python scripts/measure_storage.py --mib 50` then `--mib 100`. On this macOS checkout, 50/100 MiB stream write + copy + read took 0.15/0.38 s, Python allocation peak 148,697 bytes, RSS growth 278,528/688,128 bytes; two objects used 100/200 MiB of disk plus tiny metadata. These are local adapter measurements, not target-node or Broker/Worker acceptance.
-
-Controlled-fetch / deny-all acceptance on disposable real providers:
+从 `platform` 目录运行，先看单组结果：
 
 ```bash
-AILAB_TEST_DOCKER=1 AILAB_TEST_OSB_URL=http://127.0.0.1:18090 \
-AILAB_OSB_NETWORK_MODE=kubernetes AILAB_OSB_USE_SERVER_PROXY=true \
-AILAB_SANDBOX_IMAGE=your-nonroot-python-image AILAB_TEST_PUBLIC_FETCH=1 \
-pytest tests/contracts/test_sandbox_transfer.py tests/contracts/test_sandbox_lifecycle.py tests/contracts/test_controlled_fetch.py -q
+.venv/bin/pytest tests/contracts/test_storage.py -ra
+.venv/bin/pytest tests/contracts/test_queue.py -ra
+.venv/bin/pytest tests/contracts/test_database.py -ra
+.venv/bin/pytest tests/contracts/test_backup.py tests/contracts/test_lifecycle.py -ra
 ```
 
-Use `sidecar` for a compatible Docker/runc OpenSandbox server; never retry without policy automatically. `test_controlled_fetch` performs real public downloads, a small GitHub archive and an offline PyPI install. Malicious archives are generated locally and injected through Broker HTTP. Skill path retrieval uses the real sandbox; its API receiver is a stub (the independent API/scan tests cover persistence).
+| 组 | 主要文件 | 后端与变量 |
+|---|---|---|
+| 对象存储 | `test_storage.py` | S3；`AILAB_TEST_S3_URL`、`AILAB_TEST_S3_ACCESS_KEY`、`AILAB_TEST_S3_SECRET_KEY` |
+| 队列 | `test_queue.py`、`test_queue_health.py` | Redis；`AILAB_TEST_REDIS_URL` |
+| 数据库与迁移 | `test_database.py`、`test_lifecycle.py` | SQLite；PostgreSQL 另用 `AILAB_TEST_POSTGRES_URL` 的私有 schema |
+| 账本与备份 | `test_ledger_database.py`、`test_backup.py` | 一次性 PG；`AILAB_TEST_DATABASE_URL` / `AILAB_TEST_POSTGRES_URL` |
+| 沙箱 | `test_sandbox_lifecycle.py`、`test_sandbox_transfer.py`、`test_controlled_fetch.py` | Docker 或 OpenSandbox；见下方 |
+| 文档运行时 | `test_document_reader.py`、`test_office_production.py` | 指定镜像；`AILAB_TEST_DOCUMENT_IMAGE` / `AILAB_TEST_OFFICE_IMAGE` |
+| 扫描与身份 | `test_clamd.py`、`test_keycloak_identity.py` | `AILAB_TEST_CLAMD`；`AILAB_TEST_OIDC_*` |
 
-`test_sandbox_network.py` additionally takes `AILAB_TEST_SANDBOX_TCP_TARGETS` (comma-separated `IPv4:port`, public/Service/Pod/node/metadata) and `AILAB_TEST_SANDBOX_UDP_TARGET` (a disposable node UDP echo responder). Check those endpoints from the node first: refusal from an already dead endpoint proves nothing. Capture node ICMP rule counters, and verify the ICMP test fails with the rule removed. This test is IPv4-only and does not establish dual-stack isolation.
+`platform/tests/contracts/conftest.py::engine` 为 PostgreSQL 建唯一临时 schema，结束后 `DROP ... CASCADE`；S3 用例使用唯一临时 bucket。只能连接一次性服务，绝不能指向开发库或生产对象存储。备份演练还需要在该一次性 PG 上创建和删除数据库的权限。
 
-CI now verifies JUnit groups, so configured Redis/PG/S3 contracts cannot silently skip. Heavy Docker/Redis recovery, actual Office image smoke/skills recovery, ClamAV and browser Keycloak contracts run in `.github/workflows/real-components.yml` weekly or manually with disposable fixtures. Every selected heavy case must execute successfully (zero skips). The minimal Docker image exercises the provider contract only; the Office job separately builds the real image and runs `test_skill_sandbox.py`. Explicitly configure OpenSandbox/gVisor before claiming their acceptance. See [.github/CI.md](../../../.github/CI.md) for coverage and resource boundaries.
+## 沙箱与联网
 
-For Docker-backed OpenSandbox, `[egress] mode = "dns+nft"` is required: DNS-only filtering does not stop literal-IP connections even with `NetworkPolicy(default_action="deny")`. Verify live TCP/UDP targets from outside the sandbox before running the negative checks; a dead target proves nothing. Do not reuse the same `broker_owner` across direct Docker and OpenSandbox reconcilers sharing a daemon.
-
-The five-service browser fixture also supports real backends. Keep every service disposable, including the PostgreSQL database (migrated and populated by the test). Models remain deterministic mocks, and scanning remains the test scanner. Use a dedicated Redis instance because fixture cleanup deletes lease keys:
+Docker、OpenSandbox 和真实公网下载都要求显式选择后端和一次性镜像：
 
 ```bash
-AILAB_E2E=1 AILAB_E2E_SANDBOX_PROVIDER=opensandbox \
-AILAB_E2E_SANDBOX_IMAGE=your-current-office-image \
-AILAB_OSB_DOMAIN=127.0.0.1:18090 AILAB_OSB_USE_SERVER_PROXY=true \
-AILAB_E2E_DATABASE_URL=postgresql+psycopg://USER@127.0.0.1:15450/disposable_e2e \
-AILAB_TEST_REDIS_URL=redis://127.0.0.1:16450/13 \
-pytest e2e/test_portal.py::test_a_spreadsheet_opens_in_the_preview_once_it_is_done_and_can_be_revised -ra
+AILAB_TEST_DOCKER=1 \
+AILAB_TEST_OSB_URL=http://127.0.0.1:<osb-port> \
+AILAB_OSB_NETWORK_MODE=kubernetes \
+AILAB_OSB_USE_SERVER_PROXY=true \
+AILAB_SANDBOX_IMAGE=<non-root-image> \
+AILAB_TEST_PUBLIC_FETCH=1 \
+.venv/bin/pytest tests/contracts/test_sandbox_transfer.py tests/contracts/test_sandbox_lifecycle.py \
+  tests/contracts/test_controlled_fetch.py -q
 ```
 
-Supply the disposable server key through `AILAB_OSB_API_KEY`. For direct Docker use `AILAB_E2E_SANDBOX_PROVIDER=docker` and optionally `AILAB_SANDBOX_RUNTIME=runsc`. Unknown providers and missing real images fail explicitly; defaults still use mock + isolated SQLite. The real Office image and Broker checkout must have identical skills; `skill_index_mismatch` requires rebuilding the image, never bypassing attestation.
+上面的示例使用集群侧 `kubernetes` 模式，要求策略已经验收。本机 Docker/runc 的 OpenSandbox 服务改用 `sidecar`；不要在无策略的情况下自动重试。`AILAB_TEST_PUBLIC_FETCH=1` 才会实际下载公开站点、GitHub 归档和离线 PyPI 包。失败时先确认网络策略和镜像，不重试成“通过”。
+
+`test_sandbox_network.py` 还要求实际可达的 `AILAB_TEST_SANDBOX_TCP_TARGETS`（逗号分隔 `IPv4:port`）与 `AILAB_TEST_SANDBOX_UDP_TARGET`。先用干净客户端验证目标存活，再从沙箱验证拒绝；已失效的地址不能证明隔离。该测试只覆盖 IPv4。
+
+Docker 下受控联网需要 `[egress] mode = "dns+nft"`；只有 DNS 过滤会放过直接连接字面量 IP。不要复用同一个 `broker_owner` 给两个共享 daemon 的 Broker reconciler。
+
+## 验证边界
+
+`test_gc_queries_have_indexed_plans` 和 `test_ledger_queries_use_bounded_index_ranges` 证明查询能使用索引，不是生产规模延迟基准。后端契约证明协议适配与清理，不自动覆盖五服务浏览器链路、真实模型质量、目标机容量或灾备 RPO/RTO。
+
+容量耗尽场景用一次性容器 tmpfs，不填宿主磁盘：
+
+```bash
+DOCKER_CONTEXT=<owned-context> AILAB_TEST_STORAGE_DOCKER_IMAGE=<pinned-image> \
+  .venv/bin/pytest tests/contracts/test_storage_disk_full.py -q
+```
+
+CI 对必验组执行 `.github/scripts/verify_junit.py`；哪些组必须实际运行、S3 唯一允许的 local inode 跳过，以及重型组件分片见 [CI](../../../.github/CI.md)。新增契约组的方法见[测试](../../../docs/modules/testing.md#加一个真后端契约测试)。

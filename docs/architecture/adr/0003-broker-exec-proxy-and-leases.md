@@ -1,6 +1,5 @@
 # ADR 0003 · Broker exec proxy and recoverable single-node leases
-
-Status: accepted for the single-node implementation (2026-10-23).
+状态：已采纳（2026-10-23），部分被 [ADR 0020](0020-elastic-sandbox-allowance-and-idle-reclaim.md) 修改。
 
 The Broker is the only sandbox lifecycle and exec boundary. The Agent receives an opaque lease id and calls the Broker; it never receives a container socket, OpenSandbox API key, execd address/token, or a sandbox id selected by model output. The target architecture's direct Agent → authenticated execd path requires verified Secure Access and network isolation. The single-node server does not yet establish that path, so proxying exec/file access keeps ownership, path checks and byte limits in one trusted service. This adds one internal HTTP hop and one provider inspection per operation (another inspection after a nonzero exec result to distinguish resource loss).
 
@@ -86,4 +85,3 @@ Remaining provider limits: Docker has no native TTL controller; Broker downtime 
 
 Upgrade boundary: resources created by the old implementation lack an owner group and cannot be safely adopted by scoped `list_owned`. Drain or explicitly remove those legacy containers during the one-time upgrade; this Broker never deletes another group or globally wipes runtime resources.
 
-Validation (2026-10-23): full SQLite + Redis 449 passed / 10 skipped; PostgreSQL 16 + Redis 457 passed / 2 skipped, including 48 fault cases across memory/Redis. The final two skips are real Docker/OpenSandbox contracts; SQLite additionally skips eight PostgreSQL cases. Portal 4 tests and production build passed. Ruff check/format, diff whitespace and dependency-lock checks passed. Temporary Redis 16440 and PostgreSQL 15440 were stopped after verification.

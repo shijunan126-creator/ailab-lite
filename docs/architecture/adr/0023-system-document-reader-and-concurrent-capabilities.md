@@ -1,6 +1,5 @@
 # ADR 0023：平台文件读取执行边界与并发
-
-状态：本地实现中，2026-10-29。用户已授权实施，未授权发布。取代早期“只设计”的本会话限制。
+状态：已采纳（2026-10-29），工具目录部分被 [ADR 0030](0030-prefix-stable-model-requests.md)、[ADR 0042](0042-single-tool-catalog.md)、[ADR 0043](0043-on-demand-tools.md) 修改。
 
 用户确认平台面向数百人同时使用；当前开发机不承担数百人容量验收。OCR先只计量，不计费、不设用户累计用量配额；字节、像素、超时和执行槽位仍属于故障隔离。
 
@@ -24,6 +23,3 @@ ZCode Office Runtime是平台固定版本的读取引擎，不是独立业务服
 
 当前开发验收只可声明双库合同、真实系统容器有限并发及浏览器行为；目标服务器吞吐、Chat排队TTFT、NPU30分钟负载和数百人容量必须另验。不得以测试数量代替这些边界。
 
-## 2026-10-29 核心后续
-
-已用现有DeepSeek跑核心压缩/账本/恢复、显式CPU RapidOCR跑Worker/API/HTTP识别与私有缓存链路；不是NPU或数百人验收。已补跨frame校准队列、按页OCR私有复制和由API执行的ops墓碑应用器，最新范围与证据见[核心记录](../../progress/updates/2026-10-29-file-context-core-validation.md)。工作树现位于AILab lite项目内`.worktrees/file-context-ocr`。

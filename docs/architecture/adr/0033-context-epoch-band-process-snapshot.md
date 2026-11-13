@@ -1,6 +1,5 @@
 # ADR 0033：上下文纪元、绝对压缩区间与运行过程快照
-
-状态：已采纳（2026-11-04，本地实施，未合并/部署）。设计来源：[上下文压缩 HLD v4](../design/2026-11-03-context-compaction-hld.md)，本 ADR 记录与 HLD 的差异及实施中的产品决定。部分取代 [ADR 0030](0030-prefix-stable-model-requests.md) 之后由[前缀缓存设计](../design/2026-10-31-prefix-cache.md)描述的压缩规则（85% 触发、固定保留最近两组、自由文本摘要）。
+状态：已采纳（2026-11-04）。部分取代 [ADR 0024](0024-model-window-compaction-and-adaptive-output.md) 的压缩触发与压缩后目标，以及 [ADR 0030](0030-prefix-stable-model-requests.md) 之后由[前缀缓存设计](../design/2026-10-31-prefix-cache.md)描述的压缩规则（85% 触发、固定保留最近两组、自由文本摘要）。
 
 ## 背景
 
@@ -27,4 +26,3 @@
 
 - 每次真实压缩/重建带来一次可预期的冷启动未命中，之后严格追加。升级后旧对话按原字节继续，不因升级强制重建。
 - 历史过程不再依赖 30 天事件保留；迁移前已被 GC 的事件无法恢复。
-- 成本与证据见[实施记录](../../progress/updates/2026-11-04-context-hld.md)。

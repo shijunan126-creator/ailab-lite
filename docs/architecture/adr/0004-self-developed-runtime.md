@@ -1,6 +1,5 @@
 # ADR 0004 · Self-developed Agent runtime and platform-owned checkpoints
-
-Status: accepted for the single-node implementation (2026-10-23). Integrated on `feat/remaining-work@4f9f3cb`; see [T07 review](../../reviews/2026-10-23-t07-runtime.md) for evidence and unverified boundaries.
+状态：已采纳（2026-10-23）。
 
 ## Context
 
@@ -29,4 +28,4 @@ The current loop is the only runtime today. Its behaviour is covered by tests, a
 - **Cost.** Each model response and each tool result writes one gzipped checkpoint object, at most `checkpoint_max_bytes` (4 MiB) uncompressed. Each write is one business transaction with one row insert and one CAS update. Old checkpoints are deleted after the second newest, and all of a run's checkpoints expire 7 days after it finishes. The terminal transaction freezes expires_at and lifecycle uses its range index. Lifecycle cleans unreferenced objects after the grace period. The measured cost is in the review.
 - **No framework lock-in.** Replacing the loop requires implementing four methods and reading the same state. No framework private state exists to migrate.
 - **Restrictions.** The Agent is the only writer of run state. The platform cannot resume a run whose checkpoint is missing or from another runtime version; it fails explicitly. Only the single-node SQLite and PostgreSQL deployments are in scope; the claim serialisation relies on the same database as the business state.
-- **Unverified.** Real OpenSandbox lease loss and Broker restart during a checkpoint write are not covered by this decision's evidence. Those boundaries are listed in the review.
+- **Unverified.** Real OpenSandbox lease loss and Broker restart during a checkpoint write are not covered by this decision's evidence.
