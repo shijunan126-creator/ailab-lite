@@ -71,3 +71,37 @@
 - **Chat `view_document`**：`api/document_visual.py` 对 PDF/PPTX 页图优先尝试 Portal 浏览器；Word/Excel，或浏览器不可用/超时，再由 `server_inputs → request_page_render → Worker process_preview → Broker LibraryRenderer` 补缺失页。因此本次批量容量优化自动覆盖服务器回退的多页生成；单页请求及直接浏览器路径不受益，缓存页直接复用。
 - **Work 给用户看的预览**：`broker/service.py:_refresh_previews` 只发现变化并通知原生查看，不主动转换；显式兼容性回退经 `viewer.workspace → render_workspace_preview → _render_preview --pdf` 导出一个 PDF（表格为 sheets），按文件版本/渲染版本缓存，通常没有九张页图的逐页账本开销。
 - **Work 模型 `view_workspace_file` / `review_artifact`**：`broker/workspace_view.py` 在本 Run 沙箱中使用同一个 `sandbox_tools/render_preview.py` 栅格化核心，最多选 4 页，一次 JSON/base64 回传，不经过 `LibraryRenderer` 或逐页账本发布。因此不能直接套用本次批量接口优化。已有租约内 LO listener 预热/复用，但 `view_workspace_file.py` 每次建临时目录并重新将 Office 转 PDF，调用完成清掉 PDF；重复查看同一未改文件仍转换，这与资料库已有 PDF 缓存不同。后续若优化，应在本 Run 内按内容版本复用有界 PDF 缓存并验证编辑后失效，而不是放宽资源/健康阈值。
+
+## 沙箱复用与 Work PDF 缓存修复
+
+用户随后明确授权全部分析修复。以下覆盖此前的待讨论项；基线 `1388d3fa` 加本提交产品修改，不包含合并或部署。
+
+### 根因与实施
+
+- Library 将所有进程 `VmRSS` 相加，Work 对 LO 单进程读 `VmRSS`。真实 runsc 下这些数包含大量干净文件映射，不能据此认定匿名内存泄漏。新增共享 `sandbox_memory.py`，逐行读取 smaps，对每个映射计 `max(Anonymous, Private_Dirty + Shared_Dirty) + Swap`；匿名/脏页不重复加，跨进程共享脏页保守计费。读取失败关闭复用。容器硬限额、原检查阈值、最大寿命、作业次数和 tmpfs 清理不变；没有抬高限额。
+- Work 的另一个独立根因：直接 `soffice.bin` 首次初始化新 profile 返回 81。实测首次返回 81、同 profile 第二次正常常驻；旧启动器直接结束，UNO 客户端白等 10 秒再冷转换。现在仅对此初始化信号最多重启一次，其他退出不重试。
+- 模型查看与评审在本 Run 的 `/tmp/ailab-work-view/pdf-cache` 复用 PDF，key 含源文件快照内容、格式、renderer 与 UNO 代码摘要。缓存最多 4 项/64 MiB、单项 32 MiB；LRU 淘汰、闲置 120 秒失效，独立文件锁覆盖转换/读取/清理，原子替换。转换/后续读取失败移除缓存；超大 PDF 不入缓存，崩溃残留导出目录在下一次受锁清理时删除。listener 闲置退出清空 PDF，沙箱释放回收全部目录；缓存不进 workspace snapshot/资料库，不跨 Run。评审仍对原件做结构检查，XLSX 从同一 PDF 读取 sheet outline。
+- Library 新增归档、下载、解包独立计时；解包只累计 yield 前自身耗时，不把调用方写入/发布计入其中。Work 记录 listener、PDF 命中/导出、栅格化和 helper 总耗时，Broker 取出并记录允许的数值字段，模型返回格式不增加计时字段。
+
+### 实测与验证
+
+复用现有 Office 镜像，创建独立断网真实 runsc 容器：Library 1 CPU/768 MiB，Work 1 CPU/1536 MiB。同一 9 页 PPTX（77,879 字节）。本轮是实际沙箱脚本链路，未经过 API/Broker HTTP/模型/队列，不混用此前完整 HTTP 对照的统计。
+
+| 项目 | 修复前 | 修复后 |
+|---|---:|---:|
+| Work 新 profile 首次查看 4 页 | 12.844 s | 3.100 s |
+| 随后查看 4 页，3 次中位数 | 2.284 s | 0.357 s |
+| 随后 3 次样本 | 2.284 / 1.881 / 2.621 s | 0.360 / 0.321 / 0.357 s |
+
+- 4 次 PPT 查看修复前后逐图 SHA256 全相同；新 listener PID 在后续 PPT、编辑、评审和 XLSX 查看期间保持不变。仅各 1 个冷样本、3 个后续样本，不推导稳定百分比或生产 p95。
+- 编辑第一页后缓存 miss，4 页耗时 0.937 秒；随后 review 命中，耗时 0.556 秒，首图摘要确实变化、其后复用一致，结构结果存在且 quality gate 仍待模型判断。XLSX 首次 3.448 秒、复用 0.277 秒，Revenue/Notes 页映射与图片一致。该会话 3 个版本 PDF 合计 269,270 字节。
+- 真实等候闲置后检查：activity 距今 127.94 秒，listener 已退出，PDF 数量与字节数都为 0。未缩短产品 120 秒阈值。
+- Library 同一已热 listener 连续完整转换/栅格化 8 次，原 RSS 总和 563.26–576.25 MiB，保留占用 235.56–248.55 MiB；旧阈值 537.6 MiB 会全部误判，新检查全部通过。外部 Docker 最后观测 259.3 MiB；每次 9 张 PNG 摘要相同，单次沙箱处理（含摘要与采样）1.284–1.621 秒。不是容器获取或首次 API 发布耗时。
+- `pytest tests/test_sandbox_memory.py tests/test_render_sandbox_health.py tests/test_work_view_listener.py tests/test_workspace_view.py tests/test_library_render.py tests/test_render_standby.py tests/test_broker_routes.py tests/test_workspace_previews.py -q -o addopts=''`：**92 passed**，53.38 秒。涵盖启动信号只重启一次、保留内存超限、listener 丢失、缓存命中/内容/格式/转换版本失效、容量/数量/过期/活动读取/符号链接/失败清理，以及归档 generator 调用方暂停不计入解包。
+- Ruff 全部 Python 检查通过，11 个变更 Python 文件格式检查通过。首轮测试因 runtime 构建产物已清理而中断；执行 `npm ci --ignore-scripts && npm run build` 后相关范围复跑通过，未修改依赖。
+
+### 成本、清理与边界
+
+无新依赖、迁移、配置或镜像内容；Broker 额外注入一个小的内存 helper。smaps 检查按流逐行读取；Work 沿用原每秒健康检查，缓存索引正常最多 4 项，输入 hash 流式读至多 20 MiB。每个活跃 Work Run 增加最多 64 MiB PDF 缓存，临时转换沿用既有受限沙箱；实际样本约 263 KiB。缓存命中仍需栅格化和 JPEG/base64，不承诺零成本。未测长期多 Run 并发峰值或周期检查 CPU 的独立占比。
+
+全部临时容器、运行输出及 runtime 构建产物本轮清理；主工作区并发修改保留。最终 CI 以推送后新 head 为准；未做浏览器、PostgreSQL 本地重跑、全模型场景、NPU/OpenSandbox、长期压力或部署验收。原来的 7.390 秒余页延迟仍未复现，本轮修复不宣称已经精确解释该单次延迟。

@@ -39,7 +39,9 @@ class LibraryRenderer:
             self.manager.default_spec(ttl_seconds=ttl), profile="render", memory=settings.sandbox_render_memory_bytes, max_lifetime=ttl
         )
 
-    def _bundle(self, handle, directory: str, names: list[str], deadline: float, *, pdf_name: str | None = None, retained=None):
+    def _bundle(
+        self, handle, directory: str, names: list[str], deadline: float, *, pdf_name: str | None = None, retained=None, phases=None
+    ):
         """Pack ``names`` once in the sandbox, download one archive and yield each validated member as (name, path, sha256).
 
         One transfer avoids a provider round trip per page. The archive is untrusted, so members are never extracted
@@ -50,11 +52,18 @@ class LibraryRenderer:
             raise LeaseError("render_timeout")
         archive = f"{directory}.tar"
         args = " ".join(shlex.quote(name) for name in names)
+        started = time.monotonic()
         packed = self._exec(handle.lease_id, f"COPYFILE_DISABLE=1 tar -C {directory} -cf {archive} -- {args}", remaining)
+        if phases is not None:
+            phases["archive_seconds"] = time.monotonic() - started
         if packed.exit_code != 0 or time.monotonic() >= deadline:
             raise LeaseError("render_failed")
         with self.manager.transfer_file() as local:
+            started = time.monotonic()
             self.manager._download(self.manager.get(handle), archive, local, 65 * 1024 * 1024)
+            if phases is not None:
+                phases["download_seconds"] = time.monotonic() - started
+            started = time.monotonic()
             with tarfile.open(local, "r:") as bundle:
                 members = {m.name: m for m in bundle.getmembers()}
                 if (
@@ -67,7 +76,10 @@ class LibraryRenderer:
                     or sum(m.size for m in members.values() if m.name != pdf_name) > (32 if pdf_name else 64) * 1024 * 1024
                 ):
                     raise LeaseError("invalid_render_output")
+                if phases is not None:
+                    phases["extract_seconds"] = time.monotonic() - started
                 for name in names:
+                    started = time.monotonic()
                     if time.monotonic() >= deadline:
                         raise LeaseError("render_timeout")
                     source = bundle.extractfile(members[name])
@@ -80,6 +92,8 @@ class LibraryRenderer:
                             for chunk in iter(lambda: source.read(1024 * 1024), b""):
                                 digest.update(chunk)
                                 out.write(chunk)
+                        if phases is not None:
+                            phases["extract_seconds"] += time.monotonic() - started
                         yield name, asset, digest.hexdigest()
 
     def render(self, file_id: str, job_id: str) -> dict:
@@ -329,7 +343,10 @@ class LibraryRenderer:
 
                     with ExitStack() as retained:
                         batch = []
-                        for item in self._bundle(handle, "/workspace/.ailab/rest", rest_names, deadline, retained=retained):
+                        bundle_phases = {}
+                        for item in self._bundle(
+                            handle, "/workspace/.ailab/rest", rest_names, deadline, retained=retained, phases=bundle_phases
+                        ):
                             batch.append(item)
                             if len(batch) == 8:
                                 publish_batch(batch)
@@ -337,6 +354,7 @@ class LibraryRenderer:
                                 batch = []
                         if batch:
                             publish_batch(batch)
+                    phases.update({"remaining_" + key: value for key, value in bundle_phases.items()})
                     phases["remaining_pages_seconds"] = time.monotonic() - rest_started
                 names = [names_by_page[page] for page in page_numbers]
                 if template:
@@ -426,7 +444,7 @@ class LibraryRenderer:
                 names = [*names, pdf_name]
             assets = {}
             export_started = time.monotonic()
-            for name, local, digest in self._bundle(handle, "/workspace/.ailab/preview", names, deadline, pdf_name=pdf_name):
+            for name, local, digest in self._bundle(handle, "/workspace/.ailab/preview", names, deadline, pdf_name=pdf_name, phases=phases):
                 is_pdf = name == pdf_name
                 key = cache_key if is_pdf else f"derived/{file_id}/preview/{job_id}/{name}"
                 self.storage.put_file(key, local, "application/pdf" if is_pdf else mime)
