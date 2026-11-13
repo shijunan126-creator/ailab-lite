@@ -2,7 +2,7 @@
 
 ## 范围与根因
 
-用户先授权本地修复，随后要求提交、提 PR 并部署本机；未授权合并。分支 `fix/legacy-artifact-preview`，本地测试基线为 `main@ef76d55a` 加本轮产品变更，已固化为 `1927ad78`，后续仅更新交接文档。[PR #192](https://github.com/shijunan126-creator/ailab-lite/pull/192) 已创建，完整 CI 以最终 head 为准，发布时不重复已完成的检查。
+用户先授权本地修复，随后要求提交、提 PR 并部署本机，再要求 CI 通过后合并。分支 `fix/legacy-artifact-preview`，本地测试基线为 `main@ef76d55a` 加本轮产品变更，已固化为 `1927ad78`。[PR #192](https://github.com/shijunan126-creator/ailab-lite/pull/192) 完整 CI 以最终 head 为准，发布时不重复已完成的检查。
 
 #161（`2bf86144`）之前的交付代码已经扫描，但只保存文件 `ready`，缺少扫描结果。新版派生文件写入要求 `scan.verdict=clean`，而历史数据没有恢复路径；预览任务渲染完成后保存图片才被拒绝。公有预览接口和排队入口又永久复用失败缓存，单独更新新文件写入无法恢复这些旧文件。
 
@@ -22,6 +22,16 @@
 - 7 个新增回归覆盖旧 PPT/文本恢复到真实 API 派生资源发布、并发打开与旧 claim 拒绝、短暂扫描故障恢复、扫描耗尽/病毒/摘要不符和任务过期。扫描器及渲染器使用既有测试替身，不代表真实 ClamAV/OpenSandbox 验收。
 
 首轮新增用例因测试没有认领新扫描任务被 `stale_file_attempt` 拒绝；已改为真实调用 claim 接口，没有放松产品围栏。
+
+## CI 中的既有队列测试竞态
+
+`6e077a49` 的 PostgreSQL CI：`3193 passed / 91 skipped / 1 failed`，唯一失败为 `test_reserved_render_slot_survives_full_general_pool_and_queue[memory]`；聚合 `CI` 因此失败，其他所选检查均成功。
+
+用例用真实线程排入仅存活 0.2 秒的票据，然后创建渲染沙箱、检查第二次通用请求必须收到 `queue_full`。CI 调度停顿足以让原票据先过期，因此第二次请求进入空队列、到期收到 `queue_deadline`。这是测试场景未固定，不涉及预览产品代码。
+
+改为测试局部的受控单调时钟，直接通过真实 admission 占满队列，再通过真实 LeaseManager 验证保留渲染槽可用、通用请求严格拒绝 `queue_full`，最后推进同一票据期限断言 `queue_deadline` 和移除。没有放宽断言、增加 sleep、重试或期限；原 FIFO/线程等待测试仍保留。
+
+本地 `ruff check`、`ruff format --check` 通过；故障模块 `tests/faults/test_broker_recovery.py` 使用隔离内存及新建的临时 Redis（随机非默认端口）全部 `60 passed`，5.92 秒。测试后 Redis 进程和临时目录已清理；未重复完整本地套件，等待最终 CI。
 
 ## 成本与边界
 

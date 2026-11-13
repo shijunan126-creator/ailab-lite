@@ -279,23 +279,30 @@ def test_user_at_cap_does_not_block_other_users(env):
 
 
 def test_reserved_render_slot_survives_full_general_pool_and_queue(env, monkeypatch):
+    from unittest.mock import Mock
+
+    clock = Mock(wraps=time)
+    clock.monotonic.return_value = 100.0
+    monkeypatch.setattr("ailab_platform.broker.service.time", clock)
+    monkeypatch.setattr("ailab_platform.domain.admission.time", clock)
     make, _, _, _ = env
     monkeypatch.setattr(settings, "sandbox_queue_limit", 1)
     manager = make()
     take(manager)
     take(manager, "r2", "u2")
-    queued = threading.Event()
-    with ThreadPoolExecutor(1) as pool:
-        waiter = pool.submit(manager.acquire, spec(), LeasePrincipal("u3", "r3"), wait_seconds=0.2, on_queued=lambda _: queued.set())
-        assert queued.wait(1)
+    with manager._condition:
+        queued = manager.admission.admit(LeasePrincipal("u3", "r3"), spec(), request_id="waiting", wait_seconds=0.2)
+        assert queued.status == "queued" and queued.position == 1
         render = SandboxSpec(image="office", profile="render", memory=512 * 1024**2, ttl=20, max_lifetime=20)
         handle = manager.acquire(render, LeasePrincipal("system:worker", "render:job", system=True), wait_seconds=0)
         assert manager.get(handle)["spec"]["profile"] == "render"
         with pytest.raises(AdmissionRejected) as exc:
             manager.acquire(spec(), LeasePrincipal("u4", "r4"), wait_seconds=0.1)
         assert exc.value.reason == "queue_full"
-        with pytest.raises(AdmissionTimeout):
-            waiter.result(timeout=1)
+        clock.monotonic.return_value += 0.2
+        expired = manager.admission.admit(LeasePrincipal("u3", "r3"), spec(), request_id="waiting", wait_seconds=0)
+        assert expired.status == "rejected" and expired.reason == "queue_deadline"
+        assert manager.admission_status("r3") == {"status": "absent"}
 
 
 def test_queue_deadline_is_a_typed_rejection(env):
