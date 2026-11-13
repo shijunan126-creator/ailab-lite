@@ -105,8 +105,28 @@ def names(offered: list[dict]) -> frozenset[str]:
 
 
 def _documented(messages: list[dict], name: str) -> bool:
-    marker = json.dumps({DOC_KEY: name}, ensure_ascii=False)[1:-1]
-    return any(m.get("role") == "tool" and marker in str(m.get("content", "")) for m in messages)
+    """Whether this tool's description, as returned by an earlier `call_tool`, is still in the context.
+
+    Only results paired with a `call_tool` call count, read at their top level: another tool's output that merely
+    contains the marker (a web page, a run_js value) must not stand in for the rules the model never saw.
+    """
+    ids = {
+        call.get("id")
+        for m in messages
+        if m.get("role") == "assistant"
+        for call in m.get("tool_calls") or []
+        if (call.get("function") or {}).get("name") == CALL
+    }
+    for m in messages:
+        if m.get("role") != "tool" or m.get("tool_call_id") not in ids:
+            continue
+        try:
+            result = json.loads(m.get("content") or "")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(result, dict) and result.get(DOC_KEY) == name and "parameters" in result:
+            return True
+    return False
 
 
 def _arguments(value):
@@ -124,21 +144,22 @@ def resolve(call: ToolCall, available: frozenset[str], messages: list[dict]) -> 
     A tool runs only once its description is in the context: a schedule prompt or a memory line written without the
     tool's rules is worse than one extra round trip.
     """
-    args = call.arguments or {}
+    args = call.arguments if isinstance(call.arguments, dict) else {}
     name, inner = args.get("name"), _arguments(args.get("arguments"))
-    if name not in available or inner is None or not _documented(messages, name):
+    if not isinstance(name, str) or name not in available or inner is None or not _documented(messages, name):
         return None
     return ToolCall(call.id, name, inner)
 
 
 def describe(arguments: dict, definitions: dict[str, dict], messages: list[dict]) -> dict:
     """The result of a `call_tool` that did not run: the tool's description, or why the call cannot go ahead."""
-    name = (arguments or {}).get("name")
-    tool = definitions.get(name)
+    arguments = arguments if isinstance(arguments, dict) else {}
+    name = arguments.get("name")
+    tool = definitions.get(name) if isinstance(name, str) else None
     if tool is None:
         return {"ok": False, "error": f"没有按需工具 {name!r}；可用：{', '.join(sorted(definitions))}"}
     if _documented(messages, name):
-        if "arguments" in (arguments or {}):
+        if "arguments" in arguments:
             return {"ok": False, "error": "arguments 必须是 JSON 对象"}
         return {"ok": True, "note": f"{name} 的说明已在上文，直接传 arguments 调用"}
     function = tool["function"]

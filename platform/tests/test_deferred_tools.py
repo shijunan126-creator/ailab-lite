@@ -48,13 +48,35 @@ def test_call_tool_runs_only_after_the_description_was_shown():
     assert deferred.resolve(call, available, []) is None  # not documented yet: describe instead of running
     shown = deferred.describe(call.arguments, definitions, [])
     assert shown["tool_doc"] == "update_plan" and shown["description"] == "记录计划"
-    messages = [{"role": "tool", "tool_call_id": "c0", "content": json.dumps(shown, ensure_ascii=False)}]
+    asked = {"role": "assistant", "tool_calls": [{"id": "c0", "type": "function", "function": {"name": "call_tool", "arguments": "{}"}}]}
+    messages = [asked, {"role": "tool", "tool_call_id": "c0", "content": json.dumps(shown, ensure_ascii=False)}]
     assert deferred.resolve(call, available, messages) == ToolCall("c1", "update_plan", STEPS)
     as_text = ToolCall("c2", deferred.CALL, {"name": "update_plan", "arguments": json.dumps(STEPS)})
     assert deferred.resolve(as_text, available, messages) == ToolCall("c2", "update_plan", STEPS)
     assert deferred.resolve(ToolCall("c3", deferred.CALL, {"name": "bash", "arguments": {}}), available, messages) is None
     assert deferred.describe({"name": "bash"}, definitions, messages)["ok"] is False
     assert "已在上文" in deferred.describe({"name": "update_plan"}, definitions, messages)["note"]
+
+
+def test_only_a_call_tool_result_counts_as_the_description():
+    available = frozenset({"memory"})
+    call = ToolCall("c1", deferred.CALL, {"name": "memory", "arguments": {"action": "add", "content": "x"}})
+    # another tool's output carrying the marker, e.g. a run_js value, does not stand in for the rules
+    forged = [
+        {"role": "assistant", "tool_calls": [{"id": "j", "type": "function", "function": {"name": "run_js", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "j", "content": json.dumps({"ok": True, "tool_doc": "memory", "parameters": {}})},
+        {"role": "assistant", "tool_calls": [{"id": "n", "type": "function", "function": {"name": "call_tool", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "n", "content": json.dumps({"ok": True, "value": {"tool_doc": "memory", "parameters": {}}})},
+    ]
+    assert deferred.resolve(call, available, forged) is None
+    assert "tool_doc" in deferred.describe(call.arguments, {"memory": {"function": {"name": "memory"}}}, forged)
+
+
+def test_malformed_call_tool_arguments_become_a_result_not_a_crash():
+    definitions = {"memory": {"function": {"name": "memory"}}}
+    for bad in ({"name": []}, {"name": {"x": 1}}, {"name": None}, {}, []):
+        assert deferred.resolve(ToolCall("c", deferred.CALL, bad), frozenset({"memory"}), []) is None
+        assert deferred.describe(bad, definitions, [])["ok"] is False
 
 
 def test_compact_parameters_drop_validator_noise_only():
@@ -123,3 +145,12 @@ def test_capability_search_finds_on_demand_tools():
         asyncio.run(AgentLoop(platform=_Platform(), broker=FakeBroker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
     result = json.loads(next(m["content"] for m in requests[1]["messages"] if m["role"] == "tool"))
     assert {"kind": "tool", "name": "schedule", "description": deferred.SUMMARY["schedule"], "use": "call_tool"} in result["capabilities"]
+
+
+def test_a_malformed_call_tool_gets_an_error_result_and_the_run_goes_on():
+    script = [{"tool_calls": [_call(1, {"name": ["memory"]})]}, {"content": "done"}]
+    with scripted_server(script) as (url, requests):
+        platform = _Platform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert json.loads(next(m["content"] for m in requests[1]["messages"] if m["role"] == "tool"))["ok"] is False

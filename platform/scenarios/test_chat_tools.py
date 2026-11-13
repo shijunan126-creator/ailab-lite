@@ -54,11 +54,14 @@ def test_recurring_reminder_becomes_a_schedule(api):
 
 def test_memory_is_saved_and_forgotten_on_request(api):
     marker = "北极星" + uuid.uuid4().hex[:4]
-    cid, first = api.start(f"记住：我负责的项目代号是「{marker}」，下个月上线。", mode="chat")
-    contracts(first)
-    assert "memory" in first.tools(), first.tools()
-    assert any(marker in e["content"] for e in api.memory_entries()), "not saved"
-    second = api.ask(cid, "把刚才让你记的项目代号那条忘掉。", mode="chat")
-    contracts(second, later=True)
-    left = [e for e in api.memory_entries() if marker in e["content"]]
-    assert not left, left
+    try:
+        cid, first = api.start(f"记住：我负责的项目代号是「{marker}」，下个月上线。", mode="chat")
+        contracts(first)
+        assert "memory" in first.tools(), first.tools()
+        assert any(marker in e["content"] for e in api.memory_entries()), "not saved"
+        second = api.ask(cid, "把刚才让你记的项目代号那条忘掉。", mode="chat")
+        contracts(second, later=True)
+        left = [e for e in api.memory_entries() if marker in e["content"]]
+        assert not left, left
+    finally:
+        api.forget(marker)  # the account must not keep a test fact when an assertion above failed

@@ -130,6 +130,13 @@ class Client:
         """The account's active memory lines."""
         return [e for e in self._ok(self.http.get("/v1/memory"))["entries"] if (e.get("status") or "active") == "active"]
 
+    def forget(self, text: str) -> None:
+        """Remove the account's memory lines containing text (deleting a conversation keeps its memory)."""
+        for entry in self.memory_entries():
+            if text in entry["content"]:
+                revision = self._ok(self.http.get("/v1/memory"))["revision"]
+                self._ok(self.http.delete(f"/v1/memory/items/{entry['id']}", params={"expected_revision": revision}))
+
     def blocks(self, file_id: str, *, deadline: float = 120) -> dict:
         """The viewer structure of a library file: what a reader can select a passage from."""
         end = time.monotonic() + deadline
