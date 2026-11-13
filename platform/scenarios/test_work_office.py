@@ -56,6 +56,8 @@ def test_chinese_pdf_report_embeds_its_fonts(api):
     for page in reader.pages:
         for font in (page.get("/Resources", {}).get("/Font") or {}).values():
             font = font.get_object()
+            if font.get("/Subtype") == "/Type3":
+                continue  # glyphs are drawn by procedures inside the PDF itself: embedded by definition
             descendant = font["/DescendantFonts"][0].get_object() if "/DescendantFonts" in font else font
             descriptor = descendant.get("/FontDescriptor")
             # a CJK font that is not embedded renders as boxes on any machine without it

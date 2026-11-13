@@ -1,3 +1,11 @@
+## 2026-11-13 按需工具与 token 实测
+
+- 按需工具只在 `call_tool` 的 `name` 枚举里冻结名字，说明取当前代码。判断“已读说明”只认与 `call_tool` 调用 ID 配对、且顶层带 `tool_doc` 和 `parameters` 的结果，不要退回字符串搜索（其他工具的输出能伪造）。新增按需工具时，要在 `deferred.SUMMARY` 写一句话简介。
+- 网关按会话缓存（`x-opencode-session`）：新对话的首请求通常全部未命中，偶尔会命中跨会话缓存。比较 token 时，以账本 `model_usage`（按 run_id）的 prompt / cached / weighted_amount 为准，单个样本的未命中数带运气成分。
+- Work 任务调用次数波动很大（同场景 9–30 次）。比较改前改后至少每组 4 个样本，并逐个看工具序列，判断差异来自路线还是改动。
+- 场景测试会撞上每用户同时运行 run 数上限（默认 2，超出返回 429）和每日额度（默认 200 万加权 token，耗尽后 run 被暂停）。本机测试环境已调为 4 和 5000 万；被暂停的 run 不能计入对比。
+- 中文 PDF 场景里，Type3 字体没有 FontFile 也算内嵌（字形是 PDF 内的绘图指令）。
+
 ## 2026-11-13 单一工具目录
 
 - 旧文档工具名（`read_library_file`/`extract_text`/`view_attachment`/`document_view`）已在 `RETIRED_TOOLS`。恢复旧 checkpoint 会重建 `messages[0]` 与工具目录并记 `context_boundary`；**不要**再把它们加回目录，`permitted` 不再有版本参数。
