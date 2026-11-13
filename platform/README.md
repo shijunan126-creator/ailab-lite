@@ -194,6 +194,14 @@ Key 存进 Secret 的 `AILAB_KEY_MAIN`。`--models-file FILE` 可以直接给一
 内容随 Run 保存）。像 DeepSeek V4.x 这样要求把它在工具调用的多轮里**回传**的模型，平台第一次收到这类 400 时会自动打开回传
 （不用手动配 `echo_reasoning`；不支持该字段的接口则一直不发）。模型不支持工具调用时在目录里写 `tools = false`，就只聊天不动手。
 
+**思考从哪里来**：平台按顺序读取 `reasoning_content`、`reasoning`（新版 vLLM、Ollama 兼容接口）、`thinking`、`reasoning_details`（OpenRouter、MiniMax），只取其中一个，不会重复计入。
+推荐由模型服务把思考单独放进字段：vLLM / SGLang 启动时加 `--reasoning-parser`（在 GPUStack 里写在后端参数中），
+Higress 用 openai 类 provider 透传；如果用通义千问 provider，要设 `reasoningContentMode = "passthrough"`，**不要设成 `concat`**，否则网关会把思考包回 `<think>` 塞进正文。
+如果上游做不到，比如 vLLM 没开 parser，思考就会以 `<think>…</think>` 的形式混在正文里，这时在目录里给该模型写上
+`think_tag = "think"`；如果模板会预先打开思考块、输出里只有 `</think>`（DeepSeek-R1、GLM 这类），再加 `think_prefilled = true`。
+拆分只认输出开头的开始标签，正文中间出现的 `<think>` 按普通文字处理。一旦上游返回了思考字段，就不再按标签拆分。
+关闭思考的请求（`thinking.type=disabled`、`enable_thinking=false` 等）不会把输出当成思考。
+
 本机开发：`models.toml` 随仓库，Key 写在 `platform/.env` 的 `AILAB_KEY_DEEPSEEK=`。
 k3s：`bash scripts/k8s_models.sh` 把目录发布成 ConfigMap `platform-models`（改目录不用重建镜像，会重启 api 和 agent），
 Key 由 `AILAB_KEY_DEEPSEEK=sk-... bash scripts/k8s_secrets.sh` 写进 Secret。

@@ -23,6 +23,9 @@
 #   AILAB_MODEL_MAX_OUTPUT_TOKENS can optionally impose a smaller operator ceiling.
 #   capabilities    tools, vision and/or genui; omitted preserves the legacy tools flag
 #   reasoning       thinking strengths users can pick: a profile name from reasoning.toml (omitted: no choice)
+#   think_tag       only for upstreams that leave thinking inside the text (vLLM/SGLang without --reasoning-parser):
+#                   the tag name, e.g. "think" for <think>...</think>; omitted reads thinking from its own field only
+#   think_prefilled true when the chat template already opens the block (DeepSeek-R1, GLM): only </think> arrives
 #   default         the model preselected for new runs (exactly one, or the first one is used)
 
 [[models]]

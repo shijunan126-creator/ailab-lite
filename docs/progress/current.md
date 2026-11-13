@@ -1,10 +1,18 @@
+# 思考来源兼容（2026-11-13）
+
+- 用户要求：在 PR #194（思考块按标记收起）跑 CI 期间，实施思考内容的上游兼容，要求高性能，参考成熟项目。
+- 已完成：思考字段统一读取（流式和非流式都一样）；对没开 reasoning parser 的上游，可以按模型配置 `think_tag` / `think_prefilled`，由流式拆分器把 `<think>` 块拆到思考通道；README 写明 GPUStack / Higress 的推荐配置。性能和验证见[本轮记录](updates/2026-11-13-thinking-compat.md)。
+- 分支 `feat/thinking-compat`，已 rebase 到 `main@ccbc014e`，[PR #195](https://github.com/shijunan126-creator/ailab-lite/pull/195)，以 CI 为准；用户没有要求合并。接入真实的 vLLM / Higress 时抓一次 SSE 核对。
+
+---
+
 # 思考块按标记展开/收起（2026-11-13）
 
 - 用户要求：思考过程中展开，正式回答一开始就收起，界面不乱跳。看过「按回答已开始折叠整个过程框」的方案和别家产品的做法后，用户选定「按思考/正文通道准确收起」。
 - 已完成：正在写的思考块默认展开，模型做下一件事（写正文、调工具）时立刻收起，手动选择优先；过程框仍是工作时展开、结束后收起；时间线变矮时平滑过渡（`useSmoothShrink`）。删掉了之前按猜测折叠过程框的实现。
 - 验证与边界：见[本轮记录](updates/2026-11-13-thought-fold.md)。
-- 思考通道的上游兼容（各家字段、vLLM `<think>` 标签、Higress 透传）：调研已完成，用户已授权实施，在另一个分支进行。
-- 分支 `fix/process-collapse-on-answer`，已 rebase 到 `main@910f1525`。用户要求开 PR，CI 全绿后合并；以 CI 结果为准。
+- 思考通道的上游兼容：见上一条「思考来源兼容」。
+- 已合并：[PR #194](https://github.com/shijunan126-creator/ailab-lite/pull/194) 在 head `3708d758` 上 11 项 CI 全部通过，squash 合并为 `ccbc014e`，合并后的代码与 CI 验证的提交一致；分支已删除。未部署。
 
 ---
 

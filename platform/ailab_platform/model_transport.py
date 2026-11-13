@@ -16,6 +16,7 @@ import httpx
 from .catalog import ReasoningProfile
 from .config import settings
 from .llm import RETRYABLE_STATUS, LLMClient, LLMError, LLMResponse, TextSink, _parse_tool_calls, _StreamState, _usage, model_call
+from .thinking import ThinkSplitter, reasoning_of, split_think, thinking_disabled
 
 log = logging.getLogger("ailab.llm")
 
@@ -40,6 +41,8 @@ class ModelTransport(LLMClient):
         disable_reasoning_for_quiet: bool = False,
         session_header: str = "",
         reasoning: ReasoningProfile | None = None,
+        think_tag: str = "",
+        think_prefilled: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -51,6 +54,15 @@ class ModelTransport(LLMClient):
         self.disable_reasoning_for_quiet = disable_reasoning_for_quiet
         self.session_header = session_header
         self.reasoning = reasoning
+        self.think_tag = think_tag
+        self.think_prefilled = think_prefilled
+
+    def _splitter(self, payload: dict) -> ThinkSplitter | None:
+        """A fresh <think> splitter for one response, for models whose upstream leaves thinking in the text. A request that
+        switches thinking off opens no prefilled block, so its output starts as answer."""
+        if not self.think_tag:
+            return None
+        return ThinkSplitter(self.think_tag, self.think_prefilled and not thinking_disabled(payload))
 
     def _outgoing(self, messages: list[dict]) -> list[dict]:
         if self.echo_reasoning:
@@ -177,7 +189,7 @@ class ModelTransport(LLMClient):
         attempts = 1 if call is not None else settings.llm_max_retries + 1
         for attempt in range(attempts):
             last = attempt == attempts - 1
-            state = _StreamState()
+            state = _StreamState(self._splitter(payload))
             try:
                 async with (
                     asyncio.timeout(settings.ttft_timeout_seconds) as first_output,
@@ -211,6 +223,11 @@ class ModelTransport(LLMClient):
                                     state.emitted = True
                                     await on_text(text)
                             if state.completed:
+                                text, thinking = state.flush()
+                                if thinking and on_reasoning:
+                                    await on_reasoning(thinking)
+                                if text and on_text:
+                                    await on_text(text)
                                 return state.response()
                             if last or state.emitted:  # some of the answer was shown: a retry would repeat it
                                 raise LLMError("model stream is incomplete: ended without a completion marker", retryable=True)
@@ -266,7 +283,8 @@ class ModelTransport(LLMClient):
     async def _chat(
         self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None, *, max_tokens: int | None = None
     ) -> LLMResponse:
-        data = await self._post(*self._request(messages, tools, model, user_id, stream=False, max_tokens=max_tokens))
+        payload, headers = self._request(messages, tools, model, user_id, stream=False, max_tokens=max_tokens)
+        data = await self._post(payload, headers)
 
         call = model_call.get()
         if call is not None:
@@ -277,10 +295,14 @@ class ModelTransport(LLMClient):
         finish_reason = choice.get("finish_reason") or "stop"
         if finish_reason == "length":
             raise LLMError("model output was truncated (finish_reason=length); raise max tokens or shorten the task")
+        content = message.get("content") or ""
+        reasoning = reasoning_of(message)
+        if self.think_tag and not reasoning and isinstance(content, str):
+            content, reasoning = split_think(content, self.think_tag, self.think_prefilled and not thinking_disabled(payload))
         return LLMResponse(
-            content=message.get("content") or "",
+            content=content,
             tool_calls=_parse_tool_calls(message.get("tool_calls") or []),
             usage=_usage(data.get("usage") or {}),
             finish_reason=finish_reason,
-            reasoning_content=message.get("reasoning_content") or "",
+            reasoning_content=reasoning,
         )

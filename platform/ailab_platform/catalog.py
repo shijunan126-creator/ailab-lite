@@ -15,6 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from .config import settings
+from .thinking import TAG_RE
 
 log = logging.getLogger("ailab.catalog")
 
@@ -99,6 +100,11 @@ class ModelSpec:
     session_header: str = ""
     # Name of a reasoning.toml profile: the thinking strengths users can pick for this model.
     reasoning: str = ""
+    # For upstreams that send thinking inside the answer text (a server without a reasoning parser): the tag name, e.g.
+    # "think" for <think>...</think>. Empty: thinking arrives only in its own field. Never guessed (see thinking.py).
+    think_tag: str = ""
+    # The chat template opens the thinking block in the prompt (DeepSeek-R1 style): only the closing tag arrives.
+    think_prefilled: bool = False
 
     def supports(self, required: set[str]) -> bool:
         declared = set(self.capabilities) if self.capabilities is not None else ({"tools"} if self.tools else set())
@@ -225,6 +231,10 @@ def parse_catalog(data: dict, reasoning: dict[str, ReasoningProfile] | None = No
             or not 1 <= spec.max_output_tokens < spec.context_tokens
         ):
             raise CatalogError(f"{where}: invalid context/output budget")
+        if not isinstance(spec.think_tag, str) or (spec.think_tag and not TAG_RE.match(spec.think_tag)):
+            raise CatalogError(f"{where}: think_tag must be a tag name such as 'think'")
+        if type(spec.think_prefilled) is not bool or (spec.think_prefilled and not spec.think_tag):
+            raise CatalogError(f"{where}: think_prefilled must be a boolean and needs think_tag")
         if not isinstance(spec.reasoning, str):
             raise CatalogError(f"{where}: reasoning must be a profile name")
         if spec.reasoning and spec.reasoning not in (reasoning or {}):
