@@ -498,15 +498,20 @@ def _ready_file(db: Session, file_id: str, user: User) -> FileObject:
         and ((file.meta or {}).get("scan") or {}).get("verdict") == "clean"
         and bool((file.meta or {}).get("preview_job_id"))
     )
-    if not (file.status == FileStatus.READY or scanned):
+    rescanning = file.status == FileStatus.PENDING and bool((file.meta or {}).get("preview_rescan"))
+    if not (file.status == FileStatus.READY or scanned or rescanning):
         raise HTTPException(status_code=404, detail="preview not found")
     return file
 
 
 @router.get("/{file_id}/preview", response_model=FilePreview, response_model_exclude_unset=True)
 def get_preview(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    from .preview_requests import legacy_preview_scan_required, request_preview
+
     file = _ready_file(db, file_id, user)
     cached = (file.meta or {}).get("preview")
+    if legacy_preview_scan_required(file):
+        cached = None
     now = datetime.now(UTC).timestamp()
     if cached and cached.get("reason") == "text_unavailable":
         cached = None
@@ -522,12 +527,12 @@ def get_preview(file_id: str, user: User = Depends(current_user), db: Session = 
         file = _ready_file(db, file_id, user)
         meta = dict(file.meta or {})
         cached = meta.get("preview")
+        if legacy_preview_scan_required(file):
+            cached = None
         if cached and cached.get("reason") == "text_unavailable":
             cached = None
         if cached and (cached["status"] != "pending" or now - meta.get("preview_requested_at", 0) <= 300):
             return cached
-        from .preview_requests import request_preview
-
         manifest, job_id = request_preview(db, file)
         db.commit()
         if job_id:

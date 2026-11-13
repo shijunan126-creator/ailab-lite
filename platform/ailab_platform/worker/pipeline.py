@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
@@ -142,7 +143,12 @@ def _process_file_impl(file_id: str, platform: PlatformClient, storage: Storage 
         and meta.get("purpose", "library") == "library"
         and not any(flags.get(name) for name in ("template_kind", "brand_kind", "skill_claim"))
     )
-    if not thumbnail_only and not safety_only and PurePath(meta["filename"]).suffix.lower() in {".pdf", ".docx", ".pptx", ".xlsx"}:
+    if (
+        not thumbnail_only
+        and not safety_only
+        and not flags.get("preview_rescan")
+        and PurePath(meta["filename"]).suffix.lower() in {".pdf", ".docx", ".pptx", ".xlsx"}
+    ):
         hint = getattr(platform, "prewarm_render", None)
         if hint:
             try:
@@ -183,6 +189,18 @@ def _process_file_impl(file_id: str, platform: PlatformClient, storage: Storage 
         if scan["verdict"] == "infected":
             platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan}, status="rejected")
             return {"file_id": file_id, "rejected": scan}
+        if flags.get("preview_rescan"):
+            with source.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            if digest != meta["sha256"] or source.stat().st_size != meta["size"]:
+                platform.patch_file(
+                    file_id,
+                    meta={"processing": "rejected", "scan": scan, "safety_reason": "file_integrity_mismatch"},
+                    status="rejected",
+                )
+                return {"file_id": file_id, "rejected": "file_integrity_mismatch"}
+            platform.patch_file(file_id, meta={"processing": "done", "scan": scan}, status="ready")
+            return {"file_id": file_id, "scan_ready": True}
         if safety_only:
             try:
                 safety = execute("safety", source, Path(tmp) / "safety", filename=meta["filename"])

@@ -47,8 +47,27 @@ def request_ready_preview(db, file):
         request_preview(db, file, retry_stale=False)
 
 
+def legacy_preview_scan_required(file):
+    meta = file.meta or {}
+    return file.status == "ready" and meta.get("source") == "sandbox" and not (meta.get("scan") or {}).get("verdict")
+
+
 def request_preview(db, file, *, retry_stale=True, run=None, preparation=None):
     meta = dict(file.meta or {})
+    if legacy_preview_scan_required(file):
+        job = stage_job(db, "file", file_id=file.id)
+        manifest = {"status": "pending", "kind": preview_kind(file.filename, file.content_type)}
+        file.status = "pending"
+        file.meta = {
+            **meta,
+            "preview_rescan": True,
+            "processing": "queued",
+            "processing_job_id": job.id,
+            "preview": manifest,
+        }
+        return manifest, job.id
+    if meta.get("preview_rescan"):
+        return meta["preview"], None
     now = datetime.now(UTC).timestamp()
     cached = meta.get("preview")
     if cached and cached.get("status") == "pending" and meta.get("preview_job_id"):

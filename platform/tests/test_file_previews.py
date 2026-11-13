@@ -255,6 +255,148 @@ def preview(api, fid):
     return response.json()
 
 
+def legacy_artifact(api, name, data=None):
+    fid = upload(api, name, data, process=False)
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        file.status = "ready"
+        file.meta = {
+            "source": "sandbox",
+            "artifact_filename": name,
+            "preview": {"status": "failed", "kind": "pages", "reason": "render_failed"},
+        }
+        db.commit()
+    return fid
+
+
+def rescan_client(api, fid):
+    with SessionLocal() as db:
+        job_id = db.get(FileObject, fid).meta["processing_job_id"]
+    worker = ApiClient(api)
+    worker.attempt = worker._post(f"/internal/jobs/{job_id}/claim", {"consumer": "legacy-scan-fixture"})["token"]
+    return worker
+
+
+@pytest.mark.parametrize("name", ["legacy.pptx", "legacy.md"])
+def test_legacy_artifact_rescans_before_retrying_failed_preview(api, name):
+    from sqlalchemy import select
+
+    from ailab_platform.models import OutboxMessage
+
+    fid = legacy_artifact(api, name)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert all(result["status"] == "pending" for result in pool.map(lambda _: preview(api, fid), range(2)))
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.status == "pending" and "scan" not in file.meta
+        scan_job = file.meta["processing_job_id"]
+        file.meta = {**file.meta, "preview_requested_at": 0}
+        db.commit()
+    for _ in range(2):
+        assert preview(api, fid)["status"] == "pending"
+    with SessionLocal() as db:
+        jobs = db.scalars(select(OutboxMessage).where(OutboxMessage.payload["file_id"].as_string() == fid)).all()
+        assert not any(job.payload["kind"] == "preview" for job in jobs)
+        assert sum(job.id == scan_job for job in jobs) == 1
+    stale = api.patch(
+        f"/internal/files/{fid}",
+        headers=SERVICE,
+        json={"status": "ready", "meta": {"scan": {"verdict": "clean"}}},
+    )
+    assert stale.status_code == 409 and stale.json()["detail"] == "stale_file_attempt"
+    scanner = rescan_client(api, fid)
+    assert process_file(fid, platform=scanner)["scan_ready"]
+    assert scanner.renders == 0
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.status == "ready" and file.meta["scan"]["verdict"] == "clean"
+        assert "preview_rescan" not in file.meta
+        preview_job = file.meta["preview_job_id"]
+        assert preview_job != scan_job and db.get(OutboxMessage, preview_job).payload["kind"] == "preview"
+    renderer = ApiClient(api)
+    process_preview(fid, preview_job, renderer)
+    assert preview(api, fid)["status"] == "ready"
+
+
+def test_legacy_artifact_transient_scanner_failure_reuses_recovery_job(api, monkeypatch):
+    from ailab_platform.ports.scanner import ScanResult
+    from ailab_platform.worker.pipeline import ScanUnavailable
+
+    fid = legacy_artifact(api, "legacy.md")
+    assert preview(api, fid)["status"] == "pending"
+    worker = rescan_client(api, fid)
+
+    class Scanner:
+        def scan(self, stream):
+            return ScanResult("unavailable", "test")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("ailab_platform.worker.pipeline.get_scanner", lambda: Scanner())
+        with pytest.raises(ScanUnavailable):
+            process_file(fid, platform=worker)
+    assert preview(api, fid)["status"] == "pending"
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.meta["scan_attempts"] == 1
+        job_id = file.meta["processing_job_id"]
+    assert process_file(fid, platform=worker)["scan_ready"]
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.meta["processing_job_id"] == job_id
+        assert file.meta["scan"]["verdict"] == "clean"
+
+
+def test_legacy_artifact_expired_scan_does_not_leave_preview_pending(api):
+    from datetime import timedelta
+
+    from ailab_platform.models import OutboxMessage
+
+    fid = legacy_artifact(api, "legacy.pptx")
+    assert preview(api, fid)["status"] == "pending"
+    with SessionLocal() as db:
+        job_id = db.get(FileObject, fid).meta["processing_job_id"]
+        job = db.get(OutboxMessage, job_id)
+        job.payload = {**job.payload, "deadline": (datetime.now(UTC) - timedelta(seconds=1)).isoformat()}
+        db.commit()
+    assert ApiClient(api)._post(f"/internal/jobs/{job_id}/claim", {"consumer": "expired-scan-fixture"})["state"] == "done"
+    assert preview(api, fid) == {"status": "failed", "kind": "pages", "reason": "job_expired"}
+
+
+@pytest.mark.parametrize("failure", ["infected", "unavailable", "integrity"])
+def test_legacy_artifact_scan_failure_never_renders(api, monkeypatch, failure):
+    from ailab_platform.ports.scanner import ScanResult
+    from ailab_platform.worker.pipeline import ScanUnavailable
+
+    fid = legacy_artifact(api, "legacy.pptx")
+    assert preview(api, fid)["status"] == "pending"
+    if failure == "integrity":
+        with SessionLocal() as db:
+            file = db.get(FileObject, fid)
+            file.sha256 = "0" * 64
+            db.commit()
+    else:
+
+        class Scanner:
+            def scan(self, stream):
+                return ScanResult(failure, "test")
+
+        monkeypatch.setattr("ailab_platform.worker.pipeline.get_scanner", lambda: Scanner())
+    worker = rescan_client(api, fid)
+    if failure == "unavailable":
+        monkeypatch.setattr(settings, "file_max_attempts", 1)
+        with pytest.raises(ScanUnavailable):
+            process_file(fid, platform=worker)
+        assert preview(api, fid) == {"status": "failed", "kind": "pages", "reason": "scan_unavailable"}
+    else:
+        assert "rejected" in process_file(fid, platform=worker)
+    assert worker.renders == 0
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.status != "ready"
+        assert file.meta["preview"]["status"] == "failed"
+        assert "preview_job_id" not in file.meta
+
+
 @pytest.mark.parametrize(
     "name,fmt,language",
     [

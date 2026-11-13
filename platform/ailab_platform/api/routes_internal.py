@@ -1247,6 +1247,25 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
         if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
             raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
         file.status = body.status
+    if (file.meta or {}).get("preview_rescan"):
+        if file.status == FileStatus.READY and (file.meta.get("scan") or {}).get("verdict") == "clean":
+            from .preview_requests import request_preview
+
+            file.meta = {
+                key: value
+                for key, value in file.meta.items()
+                if key not in {"preview_rescan", "preview", "preview_job_id", "preview_requested_at"}
+            }
+            request_preview(db, file)
+        elif file.meta.get("scan_exhausted") or file.status == FileStatus.REJECTED:
+            file.meta = {
+                **file.meta,
+                "preview": {
+                    **file.meta.get("preview", {}),
+                    "status": "failed",
+                    "reason": "scan_unavailable" if file.meta.get("scan_exhausted") else "file_rejected",
+                },
+            }
     if file.purpose == "platform_skill":
         from .platform_skills import activate
 

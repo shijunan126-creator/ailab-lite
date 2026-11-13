@@ -1,3 +1,8 @@
+## 2026-11-13 历史交付件扫描记录与预览
+
+- #161 之前的 sandbox 交付代码扫描通过后只存 `ready`，没有持久化 `scan`；不能据此认定旧文件未扫描或把 `ready` 直接补成 `scan.clean`。新版派生文件写入需要真实扫描记录，缺记录的旧文件必须经现有 Worker 队列重扫，并校验内容摘要/大小后才能排预览。
+- 恢复要同时覆盖公有预览接口的失败缓存短路与 `request_preview` 的缓存短路；只修排队入口，旧 `render_failed` 仍会永久返回。恢复扫描期间的重复轮询、扫描重试和任务过期也必须有终态，不得提前排渲染。扫描补丁需要当前 `processing_job_id` 的实际 claim token，测试同样不能绕过这个围栏。
+
 ## 2026-11-12 分叉沿用 checkpoint
 
 - 供应商按会话头缓存：OpenCode Go 换 `x-opencode-session` 后同一前缀命中为 0。分叉换了会话 ID，只复制 checkpoint 不够，必须沿用血缘根会话（`fork_context.cache_session`）。对照里新会话头偶尔也会命中（落到同一后端），不能当作“会话头无所谓”。

@@ -260,6 +260,11 @@ def _claim_locked(db, job, body):
                 attempt.ended_at, attempt.outcome = now, "deadline"
         if expired and envelope.kind == "file" and not done:
             file.meta = {**(file.meta or {}), "processing": "job_expired", "scan_exhausted": True}
+            if file.meta.get("preview_rescan"):
+                file.meta = {
+                    **file.meta,
+                    "preview": {**file.meta.get("preview", {}), "status": "failed", "reason": "job_expired"},
+                }
         elif expired and envelope.kind in {"document_ocr", "native_scope", "document_view"} and not done:
             from .document_visual import fail as view_fail
             from .routes_document_ocr import fail as ocr_fail
