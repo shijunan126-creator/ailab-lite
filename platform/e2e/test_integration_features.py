@@ -38,6 +38,9 @@ def test_full_reasoning_and_early_title_while_answer_streams(logged_in, stack):
     try:
         expect(page.locator(".assistant-body > .md")).to_have_text(FEATURE_ANSWER, timeout=15000)
         expect(page.locator(".turn-meta")).to_have_count(0)
+        # the thought was open while written and folded when the answer began; the process stays open around it
+        expect(page.locator(".assistant-body .steps-head")).to_have_attribute("aria-expanded", "true")
+        expect(page.locator(".pr-thought > button").first).to_have_attribute("aria-expanded", "false")
         assert page.locator(".pr-thought-body").count() == 0
         page.locator(".pr-thought > button").first.click()
         body = page.locator(".pr-thought-body")

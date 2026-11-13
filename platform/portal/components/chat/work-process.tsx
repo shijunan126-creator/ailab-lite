@@ -6,6 +6,8 @@ import { useFollow } from "../../lib/use-follow";
 import { type Item, type PlanStep, type Step, siteOf, thoughtOutline, workHeading } from "../../lib/work-process";
 import { IconBulb, IconBook, IconCheck, IconChevronDown, IconFile, IconFilePen, IconGlobe, IconSearch, IconSparkles, IconTerminal, IconX, IconCornerDownRight } from "../icons";
 import { useViewport } from "../viewport-block";
+import { useCollapse } from "../motion/use-collapse";
+import { useSmoothShrink } from "../motion/use-smooth-shrink";
 import Markdown from "../markdown";
 import Answer from "./answer";
 
@@ -35,14 +37,16 @@ function Status({ status }: { status: Step["status"] }) {
   return null;
 }
 
-function Thinking({ item, live, expanded, onToggle, label }: {
-  live: boolean; item: Extract<Item, { kind: "thinking" }>; expanded: boolean; onToggle: () => void; label: string;
+function Thinking({ item, live, choice, onToggle, label }: {
+  live: boolean; item: Extract<Item, { kind: "thinking" }>; choice: boolean | undefined; onToggle: (open: boolean) => void; label: string;
 }) {
   const thinkingNow = live && !item.done;
+  // A thought reads live while the model writes it and folds the moment the model does anything else; a reader's choice wins.
+  const expanded = choice ?? thinkingNow;
   // Only the header needs a short preview; the body always receives the original text.
   const title = thoughtOutline(item.text.slice(0, 500))[0]?.title || label;
   return <div className={`pr-thought ${expanded ? "open" : ""}`} data-thinking-step={item.step}>
-    <button className={`pr-row pr-think ${thinkingNow ? "now" : ""}`} aria-expanded={expanded} onClick={onToggle}>
+    <button className={`pr-row pr-think ${thinkingNow ? "now" : ""}`} aria-expanded={expanded} onClick={() => onToggle(!expanded)}>
       <span className="pr-icon"><IconBulb size={14} /></span>
       <span className={`pr-label ${thinkingNow ? "shimmer" : ""}`}>{title}</span>
       {item.seconds >= 1 ? <span className="pr-time">{Math.round(item.seconds)} 秒</span> : null}
@@ -86,9 +90,10 @@ function current(items: Item[] | null | undefined, thinking: string): string {
   return "";
 }
 
-export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, items, live, loading, error, more, onLoad, renderAsk, expanded, onExpanded }: {
-  thoughtsExpanded: Set<number>;
-  onToggleThought: (step: number) => void;
+export default function WorkProcess({ thoughts, onThought, run, items, live, loading, error, more, onLoad, renderAsk, expanded, onExpanded }: {
+  /** the reader's choice per thought, by model step; a thought without one follows whether it is being written */
+  thoughts: Map<number, boolean>;
+  onThought: (step: number, open: boolean) => void;
   expanded: boolean | null;
   onExpanded: (value: boolean) => void;
   run: Run;
@@ -102,6 +107,7 @@ export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, it
 }) {
   const active = ["queued", "running", "waiting_user", "interrupted"].includes(run.status);
   const open = expanded ?? active;
+  const fold = useCollapse(open);
   const chat = run.options?.mode === "chat";
   const thinking = chat ? "思考" : "梳理任务";
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -109,6 +115,8 @@ export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, it
   const running = run.status === "running" || run.status === "queued" || !!run.result?.file_wait;
   // the newest step and the thought being written stay in view while the run works, unless the reader scrolls up
   const follow = useFollow(scroller, { enabled: open && active });
+  // a thought folding at the answer shrinks the box; it glides so the answer below does not jump
+  useSmoothShrink(scroller);
   useLayoutEffect(() => {
     if (open && active) follow.settle(true);
   }, [open, active, follow]);
@@ -135,13 +143,13 @@ export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, it
       {doing ? <span className="steps-now">{doing}</span> : null}
       <span className="chev"><IconChevronDown size={14} /></span>
     </button>
-    <div className="collapse" data-open={open} inert={!open}>
+    <div className="collapse" data-open={open} inert={!open} ref={fold.ref}>
       <div>
         <div className="work-timeline" ref={scroller} onScroll={follow.onScroll}>
           <div ref={follow.content}>
-          {open ? items?.map((item, i) => <div key={i} className={`work-entry process-${item.kind}`}>
+          {fold.body ? items?.map((item, i) => <div key={i} className={`work-entry process-${item.kind}`}>
             {item.kind === "text" ? (item.text.trim() ? <div className="pr-narration"><Answer virtual text={item.text} streaming={live && i === items.length - 1} /></div> : null)
-              : item.kind === "thinking" ? <Thinking item={item} live={live} label={thinking} expanded={thoughtsExpanded.has(item.step)} onToggle={() => onToggleThought(item.step)} />
+              : item.kind === "thinking" ? <Thinking item={item} live={live} label={thinking} choice={thoughts.get(item.step)} onToggle={(value) => onThought(item.step, value)} />
               : item.kind === "ask" ? renderAsk(item)
               : item.kind === "steer" ? <div className="pr-steer"><IconCornerDownRight size={13} /> 收到补充</div>
               : item.kind === "plan" ? <ol className="steps-list" aria-label="计划">{item.steps.map((step) => <li key={step.id} className={`step plan-step ${MARK[step.status]}`}>
