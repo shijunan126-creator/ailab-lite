@@ -30,7 +30,7 @@ from ..contracts.jobs import RunStatus
 from ..contracts.usage import UsageStatus
 from ..domain.answer_parts import for_history
 from ..domain.answer_parts import inspect as inspect_answer
-from ..domain.document_tools import catalog_version, permitted
+from ..domain.document_tools import permitted
 from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMError, ModelCall, ToolCall, llm_for, model_call
 from ..model_policy import ModelPolicy, estimator
 from ..paths import OUTPUTS
@@ -107,10 +107,9 @@ SKILL_PACKAGE_UPDATED = "技能包已更新：上文更早读到的本技能导�
 def _tools_for_run(run):
     if "_fixed_catalog" in run:
         return run["_fixed_catalog"]
-    version = catalog_version(run.get("options"))
     catalog = [
         discovery.SEARCH,
-        *(tools_for_chat(version) if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn(version)),
+        *(tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn()),
     ]
     if not settings.client_js_enabled or (run.get("options") or {}).get("client") != "portal":
         catalog = [t for t in catalog if t["function"]["name"] != "run_js"]
@@ -118,16 +117,9 @@ def _tools_for_run(run):
     if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
         catalog = [t for t in catalog if t["function"]["name"] != "ui_components"]
     if spec and not spec.supports({"vision"}):
-        catalog = [t for t in catalog if t["function"]["name"] not in {"view_attachment", "view_workspace_file", "view_document"}]
+        catalog = [t for t in catalog if t["function"]["name"] not in {"view_workspace_file", "view_document"}]
     if spec and not spec.supports({"tools"}):
         return []
-    if spec:
-        input_budget = ModelPolicy.input_budget(spec)
-        budget = min(input_budget, max(800, int(input_budget * 0.15)))
-        try:
-            return discovery.catalog_for_budget(catalog, budget, version)
-        except ValueError as exc:
-            raise LLMError(str(exc)) from exc
     return catalog
 
 
@@ -240,11 +232,8 @@ _FILE_TOOLS = {
     "deliver_file",
     "download_url",
     "copy_library_file",
-    "read_library_file",
     "search_library",
     "resolve_attachment",
-    "view_attachment",
-    "extract_text",
 }
 
 
@@ -1176,10 +1165,7 @@ class AgentLoop:
                 break
             child_images = []
             for ordinal, c in enumerate(response.tool_calls):
-                version = catalog_version(run.get("options"))
-                available = c.name in subtasks.allowed(version)
-                if version == 2:
-                    available = available and c.name in {t["function"]["name"] for t in offered}
+                available = c.name in subtasks.allowed() and c.name in {t["function"]["name"] for t in offered}
                 if available:
                     # The parent call is part of the invocation: the same command in the same slot of a
                     # second run_subtasks is a different execution, not a retry of the first one.
@@ -1202,7 +1188,7 @@ class AgentLoop:
             messages,
             turn.net_budget,
             mode=(turn.run.get("options") or {}).get("mode", "work"),
-            document_tools_version=catalog_version(turn.run.get("options")),
+            timezone=(turn.run.get("options") or {}).get("timezone") or "",
         )
         ctx.run_aliases = self._states[run_id].get("run_aliases") or {}
         budget = self._budgets[run_id]
@@ -1211,7 +1197,7 @@ class AgentLoop:
         if call.name == "bash":
             ctx.command_handle = command_handle(run_id, invocation, command_text(call.arguments))
         try:
-            if call.name == "view_workspace_file" and ctx.document_tools_version == 2:
+            if call.name == "view_workspace_file":
                 import base64
 
                 from .checkpoint_budget import encoded_size
@@ -1263,13 +1249,9 @@ class AgentLoop:
     async def _user_content(self, run_id, run, model):
         options = run.get("options") or {}
         prompt = user_text(run["prompt"], skills=options.get("skills"), refs=run.get("doc_refs"), schedule=options.get("schedule"))
-        prompt_options = (
-            {"mode": (run.get("options") or {}).get("mode", "work"), "document_tools_version": 2}
-            if catalog_version(run.get("options")) == 2
-            else {}
-        )
+        mode = options.get("mode", "work")
         files = run.get("input_files") or []
-        if prompt_options.get("mode") == "work" and run.get("workspace_restore_key"):
+        if mode == "work" and run.get("workspace_restore_key"):
             injected = "本轮inputs为空" if not files else "本轮inputs仅含本消息附件清单中的原件"
             prompt += (
                 "\n\n平台工作区恢复事实：已保存的work/assets/outputs可恢复，但历史inputs不会由快照恢复；"
@@ -1278,36 +1260,22 @@ class AgentLoop:
                 "不要先执行并等待FileNotFoundError后再补文件。"
             )
         images = [
-            file
+            file for file in files if (file.get("content_type") or "").startswith("image/") and file.get("input_strategy") != "reference"
+        ]
+        # Inline pages are canonical renders: their digest is the region revision.
+        document_pages = [
+            {**page, "region_ref": {"page": page["page"], "revision": page["digest"]}} if page.get("digest") else page
             for file in files
-            if (file.get("content_type") or "").startswith("image/")
-            and not (prompt_options.get("document_tools_version") == 2 and file.get("input_strategy") == "reference")
+            for page in file.get("visual_pages", [])
         ]
-        document_pages = [page for file in files for page in file.get("visual_pages", [])]
-        if prompt_options.get("document_tools_version") == 2:
-            # Inline pages are canonical renders: their digest is the region revision.
-            document_pages = [
-                {**page, "region_ref": {"page": page["page"], "revision": page["digest"]}} if page.get("digest") else page
-                for page in document_pages
-            ]
         if not images and not document_pages:
-            return user_prompt(prompt, files, **prompt_options)
-        parts = [
-            {
-                "type": "text",
-                "text": user_prompt(
-                    prompt,
-                    files if prompt_options.get("document_tools_version") == 2 else [file for file in files if file not in images],
-                    **prompt_options,
-                ),
-            }
-        ]
+            return user_prompt(prompt, files, mode=mode)
+        parts = [{"type": "text", "text": user_prompt(prompt, files, mode=mode)}]
         spec = get_catalog().get(model)
         for file in [*images, *document_pages]:
             image_parts = await self._image_content(run_id, run, file, spec)
-            if (file in document_pages or prompt_options.get("document_tools_version") == 2) and not any(
-                part.get("type") == "image_url" for part in image_parts
-            ):
+            # A prepared image or render the model cannot see would be answered from a note as if it had been seen.
+            if not any(part.get("type") == "image_url" for part in image_parts):
                 raise ToolError("附件视觉页面不可读取，请重新准备；本轮未向模型发送不完整文档")
             parts.extend(image_parts)
         from ..memory_recall.guard import escape_memory_tags
@@ -1337,7 +1305,7 @@ class AgentLoop:
         if name in BASE_SKILLS:
             mode = (turn.run.get("options") or {}).get("mode", "work")
             visible = self._module_views.setdefault(run_id, ModuleVisibility()).read(state["messages"])
-            if module_identity(read_module(name, mode, document_tools_version=catalog_version(turn.run.get("options")))) in visible:
+            if module_identity(read_module(name, mode)) in visible:
                 return
         call_id = "skill_" + uuid4().hex
         call = ToolCall(call_id, "load_skill", {"name": name})
@@ -1428,9 +1396,7 @@ class AgentLoop:
                 spec = get_catalog().get(turn.run.get("model"))
                 if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
                     raise ToolError("ui_components is not available for this model")
-            if not permitted(
-                call.name, mode=(turn.run.get("options") or {}).get("mode", "work"), version=catalog_version(turn.run.get("options"))
-            ):
+            if not permitted(call.name, mode=(turn.run.get("options") or {}).get("mode", "work")):
                 raise ToolError("document tool is not available for this run mode/catalog")
             if turn.allowed_tools is not None and call.name not in turn.allowed_tools:
                 raise ToolError("tool is not available in the current model catalog")
@@ -1443,15 +1409,6 @@ class AgentLoop:
                 turn.personal = {s["name"]: s for s in latest.get("personal_skills") or []}
             if wanted and not wanted.startswith("platform.") and wanted in turn.disabled_skills:
                 raise ToolError(f"技能 {wanted} 已被用户关闭，不能使用；用沙箱里的 Python 库自己完成")
-            if call.name in {"view_attachment", "extract_text"}:
-                from .stuck import fingerprint
-
-                state = self._states[run_id]
-                key = fingerprint({"name": call.name, "arguments": call.arguments})
-                waits = state.setdefault("file_wait_deadlines", {})
-                deadline = waits.setdefault(key, time.time() + (settings.ocr_deadline_seconds if call.name == "extract_text" else 150))
-                if time.time() >= deadline:
-                    raise ToolError("文件处理超过截止时间，已停止等待；不要sleep或重复提取，请告知用户处理失败")
             if call.name == "load_skill" and "cursor" in call.arguments:
                 raise ToolError("load_skill reads whole files; cursor is unsupported")
             if wanted in BASE_SKILLS:
@@ -1460,9 +1417,7 @@ class AgentLoop:
                 if call.arguments.get("version") not in (None, current):
                     raise ToolError(f"技能 {wanted} 只提供当前版本 {current}；不传 version 即可读取")
                 try:
-                    result = read_module(
-                        wanted, mode, call.arguments.get("resource"), document_tools_version=catalog_version(turn.run.get("options"))
-                    )
+                    result = read_module(wanted, mode, call.arguments.get("resource"))
                 except (ValueError, OSError) as exc:
                     raise ToolError(str(exc)) from exc
                 # Only the installed package can be read; the one this conversation read earlier is gone after a
@@ -1501,22 +1456,6 @@ class AgentLoop:
                         raise ToolError("文档图像当前不可读取")
                     self._states[run_id].setdefault("pending_image_inputs", []).append(parts)
                 if binding["files"]:
-                    result = {**binding, "ok": True, "input": "image"}
-            elif call.name == "view_attachment":
-                spec = get_catalog().get(turn.run.get("model"))
-                if not spec or not spec.supports({"vision"}):
-                    raise ToolError("当前模型不支持图像理解；OCR只能读字，不能理解架构图、照片或布局，请告知用户改用视觉模型")
-                binding = await self._interruptible(run_id, self.platform.library(run_id, "image-reference", call.arguments))
-                if binding.get("pending"):
-                    raise FileDependencyPending(call.arguments["file_id"], "image-reference", call.arguments.get("pages"), deadline)
-                if binding.get("error"):
-                    raise ToolError(binding["error"])
-                else:
-                    for file in binding["files"]:
-                        parts = await self._image_content(run_id, turn.run, file, spec)
-                        if not any(p.get("type") == "image_url" for p in parts):
-                            raise ToolError("图片当前不可读取")
-                        self._states[run_id].setdefault("pending_image_inputs", []).append(parts)
                     result = {**binding, "ok": True, "input": "image"}
             elif call.name in {"view_workspace_file", "review_artifact"}:
                 import base64
@@ -1578,13 +1517,8 @@ class AgentLoop:
                             "不能把exit0、WARN、文件存在或结构通过当成全部质量通过。"
                         ),
                     )
-            elif call.name in {"read_library_file", "read_document", "search_document"}:
-                request = (
-                    self.platform.library(run_id, "read", call.arguments)
-                    if call.name == "read_library_file"
-                    else self.platform.document_input(run_id, call.name, call.arguments)
-                )
-                result = await self._interruptible(run_id, request)
+            elif call.name in {"read_document", "search_document"}:
+                result = await self._interruptible(run_id, self.platform.document_input(run_id, call.name, call.arguments))
                 if result.get("pending") and result.get("action") in {"document-ocr", "native-scope"}:
                     raise FileDependencyPending(
                         call.arguments["file_id"], result["action"], result.get("pages"), result["deadline"], result["operation_id"]
@@ -1592,19 +1526,11 @@ class AgentLoop:
                 if result.get("pending") and result.get("action") == "native-text":
                     state = self._states[run_id]
                     key = "native-text:" + call.arguments["file_id"]
-                    wait_until = result.get("deadline", time.time() + 150) if call.name != "read_library_file" else time.time() + 150
-                    deadline = state.setdefault("file_wait_deadlines", {}).setdefault(key, wait_until)
+                    deadline = state.setdefault("file_wait_deadlines", {}).setdefault(key, result.get("deadline", time.time() + 150))
                     if time.time() >= deadline:
                         raise ToolError("文件文字准备超过截止时间，请告知用户处理失败")
                     raise FileDependencyPending(call.arguments["file_id"], "native-text", None, deadline)
                 result = {"ok": not bool(result.get("error")), **result}
-            elif call.name == "extract_text":
-                result = await self._interruptible(run_id, self.platform.library(run_id, "extract-text", call.arguments))
-                if result.get("ocr") in {"pending", "running"}:
-                    raise FileDependencyPending(call.arguments["file_id"], "extract-text", call.arguments.get("pages"), deadline)
-                result = {"ok": result.get("ocr") == "done", **result}
-                if not result["ok"]:
-                    result["error"] = "文字提取失败：" + str(result.get("reason") or result.get("ocr")) + "；不得反复提取或sleep等待"
             elif call.name == "ui_components":
                 result = ui_components(call.arguments, self._states[run_id], html_enabled=settings.genui_html_enabled)
             elif call.name == "search_capabilities":
@@ -1646,7 +1572,7 @@ class AgentLoop:
                     turn.messages,
                     turn.net_budget,
                     mode=(turn.run.get("options") or {}).get("mode", "work"),
-                    document_tools_version=catalog_version(turn.run.get("options")),
+                    timezone=(turn.run.get("options") or {}).get("timezone") or "",
                 )
                 ctx.run_aliases = self._states[run_id].get("run_aliases") or {}
                 budget = self._budgets[run_id]
@@ -1683,11 +1609,7 @@ class AgentLoop:
             except (ValueError, AttributeError):
                 detail = None
             public_reason = detail if isinstance(detail, str) and detail in DOCUMENT_ERRORS else None
-            if (
-                exc.status == 409
-                and call.name not in {"extract_text", "read_library_file", "view_attachment"}
-                and not (document_tool and public_reason)
-            ):
+            if exc.status == 409 and not (document_tool and public_reason):
                 raise
             log.warning("tool %s client request failed", call.name, exc_info=True)
             result = {"ok": False, "error": "工具请求失败"}
@@ -1745,22 +1667,13 @@ class AgentLoop:
         metrics.TOOL_CALLS.labels(tool, str(bool(result.get("ok"))).lower()).inc()
         # Only identities returned by authorization-enforcing platform tools grant
         # summary provenance. Arguments, file text and recall never do.
-        if result.get("ok") and call.name in {
-            "read_library_file",
-            "copy_library_file",
-            "document_view",
-            "read_document",
-            "search_document",
-            "view_document",
-        }:
-            metadata = result.get("view") if call.name == "document_view" else result
-            if isinstance(metadata, dict):
-                source = {key: metadata[key] for key in ("file_id", "block_id") if isinstance(metadata.get(key), str)}
-                sources = self._states[run_id].setdefault("context_sources", [])
-                if source and source not in sources:
-                    if len(sources) >= 2048:
-                        raise BudgetPause("来源数量超过上下文容量，已保存进度")
-                    sources.append(source)
+        if result.get("ok") and call.name in {"copy_library_file", "read_document", "search_document", "view_document"}:
+            source = {key: result[key] for key in ("file_id", "block_id") if isinstance(result.get(key), str)}
+            sources = self._states[run_id].setdefault("context_sources", [])
+            if source and source not in sources:
+                if len(sources) >= 2048:
+                    raise BudgetPause("来源数量超过上下文容量，已保存进度")
+                sources.append(source)
         shown = result.get("skill")
         await self._event(
             run_id,
@@ -1783,11 +1696,6 @@ class AgentLoop:
                 ),
                 "stderr": (result.get("stderr") or "")[:2000],
                 "error": result.get("error"),
-                **(
-                    {k: result[k] for k in ("ocr", "completed_pages", "text_only", "reason") if k in result}
-                    if call.name == "extract_text"
-                    else {}
-                ),
                 **({"sources": web_sources(result)} if call.name in {"web_search", "read_url"} else {}),
                 **({"images": [i["path"] for i in result.get("images", [])]} if call.name == "search_images" else {}),
             },
@@ -1800,12 +1708,6 @@ class AgentLoop:
             if isinstance(path, str):
                 turn.delivered[path] = {"sha256": result["sha256"], "size": result["size"]}
                 self._states[run_id].setdefault("delivery_names", {})[path] = result.get("filename") or path.rsplit("/", 1)[-1]
-        if call.name in {"view_attachment", "extract_text"}:
-            from .stuck import fingerprint
-
-            self._states[run_id].setdefault("file_wait_deadlines", {}).pop(
-                fingerprint({"name": call.name, "arguments": call.arguments}), None
-            )
         spec = get_catalog().get(turn.run.get("model"))
         if spec:
             result = admit_tool_result(
@@ -2013,73 +1915,6 @@ class AgentLoop:
                     run_id, {"status": RunStatus.WAITING_USER, "question": q, "result": {"sources": state["sources"]}}
                 )
                 raise RunPaused()
-        elif call.name == "document_view":
-            if call.name not in {t["function"]["name"] for t in _tools_for_run(turn.run)}:
-                return {"status": "unavailable"}
-            from pydantic import ValidationError
-
-            from ..contracts.document_view import DocumentView
-
-            args = call.arguments
-            try:
-                DocumentView.model_validate(args)
-                if args.get("op") != "get_view" and bool(args.get("file_id")) == bool(args.get("path")):
-                    raise ValueError("document target required")
-                if args.get("op") == "reveal" and not args.get("targets"):
-                    raise ValueError("reveal targets required")
-            except (ValidationError, ValueError):
-                return {
-                    "error": "document_view: open需file_id或path；reveal需file_id或path + targets[{at, quote?}]，"
-                    "quote放在targets内，不传filename；get_view可选view_id；capture需file_id或path + view_id/at/source"
-                }
-            spec = get_catalog().get(turn.run.get("model"))
-            if args.get("op") == "capture" and (not spec or not spec.supports({"vision"})):
-                return {"status": "unavailable", "reason": "model_vision_required"}
-            identity = delivery_id_var.set(f"{run_id}:{invocation}")
-            try:
-                result = await self.platform.document_view(run_id, args)
-                if result.get("status") == "capture":
-                    view = result["view"]
-
-                    async def capture():
-                        reply = await self.platform.create_client_call(
-                            run_id,
-                            {
-                                "call_id": f"{run_id}:{invocation}",
-                                "kind": "capture_view",
-                                "payload": {
-                                    "input": {
-                                        "view_id": view["view_id"],
-                                        **({"at": args["at"]} if args.get("at") else {}),
-                                        "max_width": args.get("max_width", 1600),
-                                    },
-                                    "timeout_ms": 10000,
-                                },
-                            },
-                        )
-                        deadline = time.monotonic() + 20
-                        while reply["status"] in {"pending", "claimed"} and time.monotonic() < deadline:
-                            await asyncio.sleep(0.25)
-                            reply = await self.platform.get_client_call(run_id, f"{run_id}:{invocation}")
-                        response = reply.get("result") or {}
-                        return response.get("value") if response.get("ok") else {"status": "unavailable"}
-
-                    result = await self._interruptible(run_id, asyncio.wait_for(capture(), timeout=20))
-                if result.get("status") == "ready" and result.get("capture_id"):
-                    file = {"capture_id": result["capture_id"], "filename": "文档截图", "page": 1, "content_type": "image/png"}
-                    from .multimodal import CaptureExpired
-
-                    try:
-                        parts = await self._image_content(run_id, turn.run, file, spec)
-                    except CaptureExpired:
-                        return {"status": "unavailable", "reason": "capture_expired"}
-                    if not any(p.get("type") == "image_url" for p in parts):
-                        return {"status": "unavailable", "reason": "capture_expired"}
-                    state.setdefault("pending_image_inputs", []).append(parts)
-            except (ClientError, TimeoutError):
-                result = {"status": "unavailable"}
-            finally:
-                delivery_id_var.reset(identity)
         elif call.name == "run_js":
             if call.name not in {t["function"]["name"] for t in _tools_for_run(turn.run)}:
                 return {"ok": False, "error": {"type": "unavailable", "message": "当前运行没有可用的浏览器执行环境"}}

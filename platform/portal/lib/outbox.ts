@@ -120,7 +120,9 @@ async function turnOf(p: Pending) {
 async function dispatch(p: Pending, fileIds: string[]): Promise<Pending["sent"]> {
   const skills = p.options.skills?.map(({ name, file_id, at }) => ({ name, file_id, at }));
   const upload_ids = Object.fromEntries(p.attachments.map(getUpload).filter((u) => u?.key.startsWith("local:") && u.fileId).map((u) => [u!.fileId!, u!.key]));
-  const body = { expected_branch_revision: p.expectedBranchRevision, prompt: p.prompt, model: p.model || undefined, reasoning: p.reasoning, file_ids: fileIds, upload_ids, ...p.options, ...(skills ? { skills } : {}), ...(p.docRefs?.length ? { doc_refs: p.docRefs } : {}) };
+  // The run is frozen with this zone: current_time, and a schedule the model creates, answer in the user's day.
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const body = { expected_branch_revision: p.expectedBranchRevision, prompt: p.prompt, model: p.model || undefined, reasoning: p.reasoning, file_ids: fileIds, upload_ids, ...p.options, ...(skills ? { skills } : {}), timezone: timezone || undefined, ...(p.docRefs?.length ? { doc_refs: p.docRefs } : {}) };
   let conversation: Conversation | undefined = p.sent?.conversation;
   if (!p.conversationId && !conversation) {
     const started = await api<{ conversation: Conversation; run: Run }>("/v1/conversations/start", {

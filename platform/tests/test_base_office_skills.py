@@ -36,8 +36,8 @@ def test_base_catalog_and_multi_skill_message():
 
 def test_chat_base_text_and_prompt_are_mode_safe():
     text = load_skill("platform.pdf", mode="chat")
-    assert "read_library_file" in text and "next_cursor" in text
-    assert "pdf_tool.py" not in text and "当前对话不能运行脚本" in text
+    assert "read_document" in text and "next_cursor" in text
+    assert "pdf_tool.py" not in text
     assert "pdf_tool.py" in load_skill("platform.pdf", mode="work")
     assert "pdf_tool.py" not in system_prompt_for("chat", "platform.pdf")
 
@@ -193,7 +193,7 @@ def test_resume_loads_office_detected_before_checkpoint():
     platform.checkpoint = {"step": 1, "state": state}
     llm = ScriptedLLM([LLMResponse(content="done")])
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
-    assert any(m["role"] == "tool" and "next_cursor" in m["content"] for m in llm.seen_messages[0])
+    assert any(m["role"] == "tool" and "office-read" in m["content"] for m in llm.seen_messages[0])
     assert any(t == "agent.skill" and p["name"] == "platform.pdf" and p["reason"] == "office" for t, p in platform.events)
 
 

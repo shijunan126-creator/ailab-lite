@@ -149,7 +149,7 @@ def test_schedule_due_query_index():
         assert "ix_scheduled_tasks_due" in str(list(plan))
 
 
-def test_library_page_windows_and_project_bootstrap():
+def test_project_library_bootstrap():
     from ailab_platform.agent.prompts import project_library_prompt, system_prompt_for
 
     with TestClient(app) as c:
@@ -168,24 +168,12 @@ def test_library_page_windows_and_project_bootstrap():
             )
             db.add(file)
             db.commit()
-            file_id, key = file.id, file.meta["text_key"]
-        content = "\f[page:1]\n" + "中" * 32000 + "\f[page:2]\nsecond"
-        get_storage().put_bytes(key, content.encode())
-        from tests.document_fixtures import legacy_run
-
-        legacy_run({"id": run["run_id"]})
+            file_id = file.id
         url = f"/internal/runs/{run['run_id']}"
-        first = c.post(url + "/library/read", headers=SERVICE, json={"file_id": file_id}).json()
-        assert first["pages"] == [{"page": 1, "offset": 10}]
-        last = c.post(url + "/library/read", headers=SERVICE, json={"file_id": file_id, "offset": 30000}).json()
-        assert last["pages"] == [{"page": 1, "offset": 0}, {"page": 2, "offset": 2020}]
-        assert first["text"] + last["text"] == content
         bootstrap = c.get(url, headers=SERVICE).json()
         assert bootstrap["project_library"] == [{"file_id": file_id, "filename": "报告.pdf"}]
         plain = c.post("/v1/runs", headers=auth, json={"prompt": "hello"}).json()
         assert c.get(f"/internal/runs/{plain['id']}", headers=SERVICE).json()["project_library"] == []
-        get_storage().put_bytes(key, b"legacy text without pages")
-        assert c.post(url + "/library/read", headers=SERVICE, json={"file_id": file_id}).json()["pages"] == []
         assert file_id in project_library_prompt(bootstrap["project_library"])
         assert project_library_prompt([]) == ""
         for mode in ["chat", "work"]:

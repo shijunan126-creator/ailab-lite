@@ -235,13 +235,12 @@ def submit_result(run_id: str, call_id: str, body: Result, user: User = Depends(
         if call.status == "completed" and call.kind == "capture_view" and call.claim_token == body.claim_token and body.ok:
             import hashlib
 
-            from ..domain.document_tools import catalog_version
             from ..models import ViewerCapture
             from .viewer_captures import validate_png
 
             capture_id = ((call.result or {}).get("value") or {}).get("capture_id")
             capture = db.get(ViewerCapture, capture_id) if capture_id else None
-            if catalog_version(run.options) == 2 and capture and capture.digest == hashlib.sha256(validate_png(body.value)).hexdigest():
+            if capture and capture.digest == hashlib.sha256(validate_png(body.value)).hexdigest():
                 from .routes_document_view import authorize_state
 
                 authorize_state(db, user, capture.target)

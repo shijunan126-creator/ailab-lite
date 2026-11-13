@@ -26,6 +26,7 @@ from ..service_auth import require_scope
 from ..skill_policy import run_disabled_skills
 from ..skill_registry import resolve_name
 from .routes_runs import skills, start_run, usable_personal
+from .timezones import user_timezone
 
 router = APIRouter(prefix="/v1/schedules", tags=["schedules"])
 EXECUTIONS = Counter("ailab_schedule_executions_total", "Schedule executions", ["status"])
@@ -466,6 +467,7 @@ def execute_task(db, task, user, now, occurrence, *, dispatched=False, manual=Fa
                 client=(leaf.options or {}).get("client") if leaf is not None else "portal",
                 locked=True,
                 commit=False,
+                timezone=task.timezone,
             )
             run.options = {
                 **run.options,
@@ -569,16 +571,6 @@ class ScheduleOperation(BaseModel):
     enabled: bool | None = None
 
 
-def user_timezone(db, user) -> str:
-    """The zone the user last scheduled in, else the one memory consolidation uses, else the platform default."""
-    latest = db.scalar(
-        select(ScheduledTask.timezone).where(ScheduledTask.user_id == user.id).order_by(ScheduledTask.updated_at.desc()).limit(1)
-    )
-    from ..memory_dream.settings import dream_settings
-
-    return latest or dream_settings(user).timezone or settings.memory_dream_default_timezone
-
-
 def soonest_date(schedule: dict | None, zone: str) -> dict | None:
     """A single time without a date means the next time the clock shows it."""
     if not isinstance(schedule, dict) or schedule.get("kind") != "once" or schedule.get("date"):
@@ -627,7 +619,7 @@ def run_schedules(
         conv = db.get(Conversation, run.conversation_id) if run.conversation_id else None
         if conv is None or conv.deleted_at is not None:
             return {"ok": False, "error": "只能在会话中设置定时任务"}
-        zone = user_timezone(db, user)
+        zone = (run.options or {}).get("timezone") or user_timezone(db, user)
         now = {"now": local_text(utcnow(), zone), "timezone": zone}
         if body.action == "list":
             rows = list_rows(db, user.id, conv.id)

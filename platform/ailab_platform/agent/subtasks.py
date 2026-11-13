@@ -44,19 +44,17 @@ ALLOWED = frozenset(
         "bash_wait",
         "bash_kill",
         "search_library",
-        "read_library_file",
         "web_search",
         "read_url",
         "search_images",
         "recall_history",
+        "current_time",
     }
 )
 
 
-def allowed(version=1):
-    if version == 2:
-        return (ALLOWED - {"read_library_file"}) | {"resolve_attachment", "copy_library_file", "view_workspace_file", "ocr_workspace_image"}
-    return ALLOWED
+def allowed():
+    return ALLOWED | {"resolve_attachment", "copy_library_file", "view_workspace_file", "ocr_workspace_image"}
 
 
 REPORT_CHARS = 4000

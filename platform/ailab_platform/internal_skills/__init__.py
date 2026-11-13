@@ -3,7 +3,6 @@
 from ..skill_registry import ALIASES
 
 VERSION = "office-a60ba6a-ailab3"
-TOOLS = ["resolve_attachment", "search_library", "read_library_file", "copy_library_file", "view_attachment", "extract_text"]
 
 
 def metadata():

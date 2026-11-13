@@ -19,12 +19,7 @@ def ready(db, dependency):
     if dependency.get("retry_at", 0) > time.time():
         return False
     file = db.get(FileObject, dependency["file_id"], populate_existing=True)
-    if not file or file.deleted_at or file.purged_at:
-        return True
-    meta = file.meta or {}
-    if time.time() >= dependency["deadline"]:
-        if dependency["action"] == "extract-text" and meta.get("ocr") in {"pending", "running"}:
-            file.meta = {**meta, "ocr": "failed", "ocr_reason": "deadline"}
+    if not file or file.deleted_at or file.purged_at or time.time() >= dependency["deadline"]:
         return True
     if dependency["action"] in {"document-ocr", "native-scope", "document-view"}:
         from ..models import DocumentOperation
@@ -35,36 +30,8 @@ def ready(db, dependency):
         from .native_preparation import native_state
 
         return native_state(file).get("status") in {"ready", "failed"}
-    if dependency["action"] == "extract-text":
-        from .routes_ocr import extraction_result
-
-        result = extraction_result(db, file, dependency.get("pages"))
-        return result["ocr"] not in {"pending", "running"}
-    from ..models import RenderedPage
-    from .document_content import visual_pages
-
-    selected = dependency.get("pages")
-    if selected is None:
-        selected = visual_pages(file)
-        if selected is None:
-            preview = meta.get("ocr_preview") or {}
-            if preview.get("status") == "ready" and preview.get("page_count"):
-                selected = list(range(1, min(preview["page_count"], 20) + 1))
-            elif meta.get("render_page_count"):
-                selected = list(range(1, min(meta["render_page_count"], 20) + 1))
-    if selected == []:
-        return True
-    if selected:
-        cached = set(
-            db.scalars(
-                select(RenderedPage.page).where(
-                    RenderedPage.file_id == file.id, RenderedPage.page.in_(selected[:20]), RenderedPage.version == "poppler-1280-v1"
-                )
-            )
-        )
-        if all(p in cached for p in selected[:20]):
-            return True
-    return (meta.get("ocr_preview") or {}).get("status") == "failed"
+    # A dependency of a retired tool: resume now, and the run meets the current catalog.
+    return True
 
 
 def reconcile():
@@ -92,31 +59,14 @@ def reconcile():
 
 
 def prepare(db, dependency, *, run=None):
-    """Ask for the rendered pages a waiting image reference needs. The tool asks once, but while another preview of
-    the file is still pending (the sheet preview every new spreadsheet gets) this tick promotes its queued job.
-    Once that job finishes, the next tick requests any pages still missing. Asking repeatedly does not create
-    duplicate durable jobs."""
-    if dependency["action"] in {"document-ocr", "native-scope", "document-view"}:
-        return  # its immutable durable outbox job drives preparation
-    if dependency["action"] == "native-text":
-        file = db.get(FileObject, dependency["file_id"])
-        if file and not file.deleted_at and not file.purged_at:
-            from .native_preparation import request_native
-
-            request_native(db, file, run=run)
-        return
-    if dependency["action"] != "image-reference" or dependency.get("retry_at", 0) > time.time():
+    """Keep native text moving for a waiting read. Document operations are driven by their durable outbox jobs."""
+    if dependency["action"] != "native-text":
         return
     file = db.get(FileObject, dependency["file_id"])
-    if not file or file.deleted_at or file.purged_at or file.content_type.startswith("image/"):
-        return
-    from .routes_library_tools import document_images
-    from .routes_ocr import request_page_render
+    if file and not file.deleted_at and not file.purged_at:
+        from .native_preparation import request_native
 
-    selected = dependency.get("pages")
-    missing = document_images(db, file, selected, prepare=False)
-    if missing.get("pending"):
-        request_page_render(db, file, None if selected is None else missing["pages"])
+        request_native(db, file, run=run)
 
 
 def wake_file(db, file):

@@ -1,3 +1,23 @@
+# 单一工具目录：退役 V1 与精简目录（2026-11-13）
+
+- 用户要求：V1 文档工具彻底退役，全部走 V2（含旧 Run 恢复）；精简目录也去掉，只留全量目录，降低维护成本。设计见 [ADR 0042](../architecture/adr/0042-single-tool-catalog.md)，实施与验证见[本轮记录](updates/2026-11-13-single-catalog.md)。
+- 已完成：删除四个 V1 工具及其 handler、`document_tools_version` 参数链与 `catalog_version`；删除 `REDUCED_V1/V2` 与 `catalog_for_budget`；V2 文案直接写进提示词与技能指南；`RETIRED_TOOLS` 收旧工具名、`CONTEXT_ABI_VERSION` 7→8，旧 Run 恢复时重建到新目录并记边界。
+- 验证：ruff 通过；本机全量 SQLite 3368 项 0 失败 0 错误 257 跳过（需 GNU coreutils/findutils 在 PATH）。PostgreSQL、E2E、真模型、浏览器未在本机跑，按仓库约定由 CI 与部署后验证承担。
+- PR 评审修复（同一 PR）：附件图片取不到时恢复报错；未知浏览器时区回退而不是 422；强制过渡，删除旧内部端点和只服务它们的代码（含 Agent 里残留的四个 V1 handler）；清理 `canonical` 等残留。详见[本轮记录](updates/2026-11-13-single-catalog.md#pr-评审修复2026-11-13同一-pr)。本机全量 SQLite 3104 passed / 257 skipped，Portal 302 项通过。
+- 分支 `feat/current-time-tool`（含前一条 `current_time` 工具），已推送，[PR #196](https://github.com/shijunan126-creator/ailab-lite/pull/196)，base `main@84f0b442`；未合并、未部署。下一步：等 CI；合并与部署按用户当次授权。
+
+---
+
+# 当前日期查询工具（2026-11-13）
+
+- 用户要求：Chat/Work 都能查“今天几号”，按浏览器本地时区；提示词尽量短、按需调用。Work 里模型自己跑 `bash date` 太慢，Chat 里借用 `schedule` 返回的 `now` 也不是查询接口。
+- 已完成：零参数工具 `current_time`（Agent 本地实现，不起沙箱、不发 HTTP）；浏览器时区随发送写入 `run.options.timezone` 并冻结，API 校验 IANA 名，无客户端时区时按账号口径回退；会话内 `schedule` 的 `now`/新建时区改用同一个 Run 时区；两模式提示词各加一行并升级版本号。设计、验证与边界见[本轮记录](updates/2026-11-13-current-time-tool.md)。
+- 定时任务时间口径复核：存储 UTC、按任务时区算墙钟、消息头 `at` 用任务时区、DST 空档顺延、结束日期按任务时区比较；调度循环 30 秒一轮。未改调度逻辑。
+- 验证：ruff 通过；定向 Python 478 项 0 失败 7 跳过；Portal 302 项与生产构建通过。真模型场景与浏览器未跑，需要部署本分支并给测试 token。
+- 下一步：等用户确认设计后推送/提 PR；合并与部署按当次授权。分支 `feat/current-time-tool`，base `main`。
+
+---
+
 # 原生查看恢复与渲染复用提速（2026-11-13）
 
 - 用户要求：修复旧 PPT 原生入口返回安全错误后错误进入渲染沙箱的问题，随后授权提交并提 PR；现已授权合并，未授权部署。

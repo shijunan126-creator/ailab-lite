@@ -132,7 +132,7 @@ class Platform(FakePlatform):
             "model": self.model,
             "conversation_id": f"conv_memory_cache_{self.mode}_{self.case}",
             "prompt": QUESTIONS[index],
-            "options": {"mode": self.mode, "document_tools_version": 2},
+            "options": {"mode": self.mode},
             "memory": await self.get_memory_context(run_id),
         }
         if index:

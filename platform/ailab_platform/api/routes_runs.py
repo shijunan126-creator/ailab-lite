@@ -51,6 +51,7 @@ from ..storage import get_storage
 from .conversation_mode import resolve_conversation_mode
 from .routes_skills import personal_skills, usable_personal
 from .serializers import run_dict
+from .timezones import user_timezone
 from .ui_state import UIState
 
 router = APIRouter(prefix="/v1", tags=["runs"])
@@ -117,10 +118,10 @@ def validate_run_input(
     selections=None,
     conversation=None,
     turn_mode=None,
-    document_tools_version=None,
     preparation_send_id=None,
     frozen_document_input=None,
     reasoning=None,
+    timezone=None,
 ):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
@@ -199,8 +200,8 @@ def validate_run_input(
         db, conversation, mode, turn_mode=turn_mode, requires_work=bool(template is not None and conversation is not None)
     )
     options["mode"] = mode
-    if document_tools_version is None or document_tools_version == 2:
-        options["document_tools_version"] = 2
+    # The browser's zone wins; a turn the platform starts itself (a schedule, a retry) keeps the account's.
+    options["timezone"] = timezone or user_timezone(db, user)
 
     catalog = get_catalog()
     model_id = model or catalog.default_id()
@@ -243,8 +244,7 @@ def validate_run_input(
             inputs.append(file.id)
     if mode == "work" and inputs and not spec.supports({"tools"}):
         raise HTTPException(422, {"code": "work_model_requires_tools", "message": "请选择支持工具的模型，或切换对话模式读取文件"})
-    new_chat_documents = mode == "chat" and options.get("document_tools_version") == 2
-    if new_chat_documents and inputs:
+    if mode == "chat" and inputs:
         from .document_input_plan import prepare, validate_frozen
 
         files = [db.get(FileObject, file_id) for file_id in inputs]
@@ -253,14 +253,10 @@ def validate_run_input(
             options["document_input_plan"] = frozen_document_input
         else:
             options["document_input_plan"] = prepare(db, user, files, spec, prompt, send_id=preparation_send_id)
-    if inputs and ((mode == "chat" and not new_chat_documents) or (mode == "work" and spec.supports({"vision"}))):
+    if mode == "work" and inputs and spec.supports({"vision"}):
         from .attachment_input import prepare_input_images
 
         prepare_input_images(db, inputs)
-    if mode == "chat" and inputs and not new_chat_documents:
-        from .attachment_input import validate_chat_files
-
-        validate_chat_files(db, inputs, model_id, prompt)
     from .templates import freeze_template
 
     if template is not None:
@@ -291,10 +287,10 @@ def start_run(
     doc_refs=None,
     frozen_doc_refs=None,
     upload_ids=None,
-    document_tools_version=None,
     frozen_document_input=None,
     preparation_send_id=None,
     reasoning=None,
+    timezone=None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
@@ -348,10 +344,10 @@ def start_run(
             selections=selections,
             conversation=conversation,
             turn_mode=(sibling_of.options or {}).get("mode", "work") if sibling_of else None,
-            document_tools_version=document_tools_version,
             preparation_send_id=client_send_id or preparation_send_id,
             frozen_document_input=frozen_document_input,
             reasoning=reasoning,
+            timezone=timezone,
         )
         from .document_view import validate_refs
 
@@ -464,6 +460,7 @@ def create_run(body: RunCreate, user: User = Depends(current_user), db: Session 
         client_send_id=body.client_send_id,
         client="portal",
         reasoning=body.reasoning,
+        timezone=body.timezone,
     )
     return run_dict(db, run, detail=True)
 
@@ -747,6 +744,7 @@ def _new_version(db, user, run_id, body, editing=False):
             frozen_doc_refs=None if editing and body.doc_refs is not None else document_refs(db, "run_prompt", old.id, visible=False),
             client="portal",
             reasoning=reasoning,
+            timezone=options.get("timezone"),
         )
         # Validation decided skills and the thinking level afresh; a model without levels must not inherit one.
         new.options = {**{k: v for k, v in options.items() if k not in {"skill", "skill_title", "skills", "reasoning"}}, **new.options}

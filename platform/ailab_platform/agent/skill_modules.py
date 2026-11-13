@@ -18,7 +18,7 @@ def document_guides():
     return guides
 
 
-def read_module(name, mode, resource=None, *, document_tools_version=1):
+def read_module(name, mode, resource=None):
     entry = catalog().get(name)
     if entry is None:
         raise ValueError("unknown skill")
@@ -28,21 +28,10 @@ def read_module(name, mode, resource=None, *, document_tools_version=1):
     common = {"ok": True, "name": name, "version": entry["version"], "package_hash": entry["sha256"], "mode": mode}
     if mode == "work":
         common["base_path"] = f"/opt/skills/{name}"
-    overlay = None
-    if document_tools_version == 2:
-        overlay = document_guides()["formats"][name.removeprefix("platform.")][mode]
-        common["guide_revision"] = hashlib.sha256(json.dumps(overlay, sort_keys=True).encode()).hexdigest()
+    overlay = document_guides()["formats"][name.removeprefix("platform.")][mode]
+    common["guide_revision"] = hashlib.sha256(json.dumps(overlay, sort_keys=True).encode()).hexdigest()
     if resource is None:
-        if overlay is not None:
-            text = overlay["navigation"]
-            return {**common, "skill": text, "navigation": True, "hash": hashlib.sha256(text.encode()).hexdigest()}
-        text = entry["path"].read_text()
-        if mode == "chat":
-            import re
-
-            text = re.sub(r"<!-- work -->.*?<!-- /work -->", "", text, flags=re.DOTALL)
-        if mode == "chat":
-            text += "\n当前对话不能运行脚本、创建或交付文件。"
+        text = overlay["navigation"]
         return {**common, "skill": text, "navigation": True, "hash": hashlib.sha256(text.encode()).hexdigest()}
     if not isinstance(resource, str) or PurePosixPath(resource).is_absolute() or ".." in PurePosixPath(resource).parts:
         raise ValueError("invalid resource")
@@ -55,13 +44,11 @@ def read_module(name, mode, resource=None, *, document_tools_version=1):
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != module["sha256"]:
         raise ValueError("resource hash mismatch; rebuild context with the installed package")
-    adapted_resource = None
-    if overlay is not None:
-        adapted_resource = (
-            {"source_sha256": overlay["viewer_source_sha256"], "text": overlay["viewer"]}
-            if resource == "viewer/SKILL.md"
-            else overlay.get("resources", {}).get(resource)
-        )
+    adapted_resource = (
+        {"source_sha256": overlay["viewer_source_sha256"], "text": overlay["viewer"]}
+        if resource == "viewer/SKILL.md"
+        else overlay.get("resources", {}).get(resource)
+    )
     if adapted_resource is not None:
         if module["sha256"] != adapted_resource["source_sha256"]:
             raise ValueError("document guide source changed; regenerate versioned guides")

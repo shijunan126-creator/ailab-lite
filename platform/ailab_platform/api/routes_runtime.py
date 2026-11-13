@@ -188,7 +188,7 @@ MAX_EVICT_RESUMES = 3
 
 class FileDependencyIn(BaseModel):
     file_id: str = Field(min_length=1, max_length=40)
-    action: Literal["extract-text", "image-reference", "native-text", "document-ocr", "native-scope", "document-view"]
+    action: Literal["native-text", "document-ocr", "native-scope", "document-view"]
     pages: list[int] | None = Field(default=None, min_length=1, max_length=20)
     deadline: float = Field(ge=0, allow_inf_nan=False)
     operation_id: str | None = Field(default=None, max_length=40)
@@ -252,22 +252,15 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
                 dep.pop("operation_id", None)
             file = db.get(FileObject, dep.get("file_id"))
             maximum_deadline = datetime.now(UTC).timestamp() + settings.ocr_deadline_seconds + 150
-            if dep["action"] in {"document-view", "document-ocr", "native-scope", "native-text"}:
-                saved_deadline = ((run.runtime_meta or {}).get("document_budget") or {}).get("deadline")
-                if saved_deadline:
-                    maximum_deadline = datetime.fromisoformat(saved_deadline).timestamp()
+            saved_deadline = ((run.runtime_meta or {}).get("document_budget") or {}).get("deadline")
+            if saved_deadline:
+                maximum_deadline = datetime.fromisoformat(saved_deadline).timestamp()
             if (
                 body.status != RunStatus.INTERRUPTED
                 or not file
                 or file.user_id != run.user_id
                 or dep["deadline"] > maximum_deadline
-                or any(
-                    type(p) is not int
-                    or not 1 <= p <= (2147483647 if dep.get("action") in {"native-scope", "document-ocr", "document-view"} else 100000)
-                    for p in dep.get("pages") or []
-                )
-                or dep.get("action")
-                not in {"extract-text", "image-reference", "native-text", "document-ocr", "native-scope", "document-view"}
+                or any(type(p) is not int or not 1 <= p <= 2147483647 for p in dep.get("pages") or [])
                 or not isinstance(dep.get("deadline"), (float, int))
                 or not db.scalar(
                     select(MessageFileRef.id).where(MessageFileRef.run_id == run.id, MessageFileRef.file_id == file.id).limit(1)

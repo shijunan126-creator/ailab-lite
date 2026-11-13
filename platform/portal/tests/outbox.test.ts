@@ -86,6 +86,13 @@ test("a rejected attachment prevents dispatch; deleting its message releases its
   expect(useUploads.getState().uploads[key]).toBeUndefined();
 });
 
+test("a send carries the browser zone so the model can tell today's date", async () => {
+  request.mockResolvedValue({ id: "run" });
+  enqueue(message("今天几号"));
+  await vi.waitFor(() => expect(request).toHaveBeenCalled());
+  expect(JSON.parse(request.mock.calls[0][1]!.body as string).timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+});
+
  test.each([{ docRefs: undefined }, { docRefs: [] }, { docRefs: [{ file_id: "f", version: "v", at: "p:1", quote: "text" }] }])("doc_refs sent only when populated: %j", async ({ docRefs }) => {
   request.mockResolvedValue({ id: "run" });
   const id = enqueue({ ...message("quote"), docRefs });

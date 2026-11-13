@@ -113,6 +113,7 @@ def _start_turn(db: Session, user: User, conversation: Conversation, body: Messa
         commit=commit,
         client="portal",
         reasoning=body.reasoning,
+        timezone=body.timezone,
     )
 
 

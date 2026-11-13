@@ -276,7 +276,16 @@ def test_agent_assembles_image_input_with_budgeted_usage_and_explicit_fallback(m
                 **await super().get_run(run_id),
                 "model": "image-test",
                 "options": {"mode": "chat"},
-                "input_files": [{"id": "image", "filename": "photo.png", "content_type": "image/png", "meta": {"ocr": "unavailable"}}],
+                # Chat inlines an image only for a vision model; a text model is told where to read it instead.
+                "input_files": [
+                    {
+                        "id": "image",
+                        "filename": "photo.png",
+                        "content_type": "image/png",
+                        "input_strategy": "prepared" if vision else "reference",
+                        "meta": {"ocr": "unavailable"},
+                    }
+                ],
             }
 
         async def get_file_image(self, file_id, run_id):
@@ -291,12 +300,14 @@ def test_agent_assembles_image_input_with_budgeted_usage_and_explicit_fallback(m
     platform, broker = Platform(), FakeBroker()
     llm = ScriptedLLM([LLMResponse(content="done")])
     asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id="attempt"))
-    assert platform.statuses[-1][0] == "succeeded"
-    parts = llm.seen_messages[0][-1]["content"]
-    assert any(part["type"] == "image_url" for part in parts) == (vision and available)
-    if not (vision and available):
-        assert any("图片未能读取" in part.get("text", "") for part in parts)
     assert platform.reads == int(vision)
+    if vision and not available:
+        # A prepared image the model cannot see stops the turn before any model call.
+        assert platform.statuses[-1][0] == "failed" and not llm.seen_messages
+        return
+    assert platform.statuses[-1][0] == "succeeded"
+    content = llm.seen_messages[0][-1]["content"]
+    assert (isinstance(content, list) and any(part["type"] == "image_url" for part in content)) == vision
     assert broker.leases == 0
     reservation = next(iter(platform.reservations.values()))
     assert reservation["estimated_input_tokens"] < settings.vision_input_tokens + 10_000

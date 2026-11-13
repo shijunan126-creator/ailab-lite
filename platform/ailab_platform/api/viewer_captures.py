@@ -3,10 +3,9 @@
 import base64
 import binascii
 import hashlib
-import re
 import struct
 import zlib
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, Response
 from sqlalchemy import select
@@ -67,23 +66,20 @@ def validate_png(value):
 def save(db, run, identity, target, data, mime="image/png", *, validate=None, bind=None):
     """Publish one canonical object and its receipt in the same transaction.
 
-    Browser pixels cannot be reconstructed deterministically. V2 retains them
-    with the originating message; legacy calls keep their frozen expiry contract.
+    Browser pixels cannot be reconstructed deterministically; they are retained with
+    the originating message.
     """
-    from ..domain.document_tools import catalog_version
     from . import derived_assets as assets
     from .owned_assets import publish
     from .routes_document_view import authorize_state
 
     run_id, owner = run.id, run.user_id
-    canonical = catalog_version(run.options) == 2
     capture_id = hashlib.sha256((run_id + ":" + identity).encode()).hexdigest()
     file_id = target.get("file_id")
     prefix = f"derived/{file_id}" if file_id else f"viewer/{run_id}"
     key = f"{prefix}/captures/{capture_id}"
     digest = hashlib.sha256(data).hexdigest()
     receipt = {"status": "ready", "capture_id": capture_id, "version": target["version"], "source": target["source"]}
-    expires = None if canonical else datetime.now(UTC) + timedelta(minutes=10)
 
     def check():
         current = db.get(Run, run_id, populate_existing=True)
@@ -97,8 +93,7 @@ def save(db, run, identity, target, data, mime="image/png", *, validate=None, bi
             or (
                 current.status != RunStatus.RUNNING
                 and not (
-                    canonical
-                    and current.status == RunStatus.INTERRUPTED
+                    current.status == RunStatus.INTERRUPTED
                     and ((current.runtime_meta or {}).get("file_dependency") or {}).get("action") == "document-view"
                 )
             )
@@ -125,10 +120,10 @@ def save(db, run, identity, target, data, mime="image/png", *, validate=None, bi
                     storage_key=storage_key,
                     digest=digest,
                     content_type=mime,
-                    expires_at=expires,
+                    expires_at=None,
                 )
             )
-        assets.pin(db, storage_key, "capture:" + capture_id, kind="message", run_id=run_id, expires_at=None if canonical else expires)
+        assets.pin(db, storage_key, "capture:" + capture_id, kind="message", run_id=run_id, expires_at=None)
         if bind:
             bind(receipt)
         return receipt
@@ -145,63 +140,6 @@ def save(db, run, identity, target, data, mime="image/png", *, validate=None, bi
         bind=attach,
         content_type=mime,
     )
-
-
-def render_capture(db, run, body, identity):
-    # Structural Word paragraphs and spreadsheet cells have no proven physical-page mapping.
-    if body.path and body.at:
-        from .workspace_documents import request_workspace
-
-        result = request_workspace(db, db.get(User, run.user_id), run.id, body.path, "render", [body.at], body.version)
-        if result.get("version") != body.version:
-            raise HTTPException(409, "workspace version changed")
-        data = base64.b64decode(result["image"], validate=True)
-        if len(data) > MAX_IMAGE:
-            return {"status": "unavailable", "reason": "render_size_limit"}
-        from ..contracts.document_view import RENDER_REVISION
-
-        captured = save(
-            db,
-            run,
-            body.version + RENDER_REVISION + body.at,
-            {"run_id": run.id, "path": body.path, "version": body.version, "at": body.at, "source": "render"},
-            data,
-            result["mime_type"],
-        )
-        db.commit()
-        return captured
-    if not body.file_id or not body.at or not re.fullmatch(r"(?:page:|slide:)[1-9]\d*", body.at):
-        return {"status": "unavailable", "reason": "precise_render_range_unavailable"}
-    from .routes_files import _ready_file, get_preview
-
-    file = _ready_file(db, body.file_id, db.get(User, run.user_id))
-    if not (
-        (body.at.startswith("page:") and file.filename.lower().endswith(".pdf"))
-        or (body.at.startswith("slide:") and file.filename.lower().endswith(".pptx"))
-    ):
-        return {"status": "unavailable", "reason": "precise_render_range_unavailable"}
-    preview = get_preview(file.id, db.get(User, run.user_id), db)
-    page = int(body.at.split(":")[1])
-    if preview.get("status") != "ready" or not 1 <= page <= len(preview.get("pages", [])):
-        return {"status": "unavailable", "reason": "render_range_not_ready"}
-    name = preview["pages"][page - 1]
-    asset = (file.meta or {}).get("preview_assets", {}).get(name, {})
-    storage = get_storage()
-    key = asset.get("key")
-    if not key or storage.size(key) > MAX_IMAGE:
-        return {"status": "unavailable", "reason": "render_size_limit"}
-    from ..contracts.document_view import RENDER_REVISION
-
-    result = save(
-        db,
-        run,
-        file.sha256 + RENDER_REVISION + body.at,
-        {"file_id": file.id, "version": file.sha256, "at": body.at, "source": "render"},
-        storage.get_bytes(key),
-        asset.get("content_type", "image/png"),
-    )
-    db.commit()
-    return result
 
 
 def image(db, run_id, capture_id):

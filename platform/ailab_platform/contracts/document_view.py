@@ -1,7 +1,5 @@
 """Bounded, version-bound document viewer wire contracts."""
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PARSER_REVISION = "office-viewer-a60ba6a7-v1"
@@ -48,25 +46,6 @@ class ViewState(BaseModel):
         if not ((self.file_id and not self.run_id and not self.path) or (not self.file_id and self.run_id and self.path)):
             raise ValueError("exactly one document target required")
         return self
-
-
-class Target(BaseModel):
-    at: str = Field(min_length=1, max_length=300)
-    quote: str | None = Field(default=None, max_length=4000)
-
-
-class DocumentView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    op: Literal["open", "reveal", "get_view", "capture"]
-    file_id: str | None = Field(default=None, max_length=100)
-    path: str | None = Field(default=None, max_length=1000)
-    view_id: str | None = Field(default=None, max_length=160)
-    version: str | None = Field(default=None, max_length=100)
-    targets: list[Target] = Field(default_factory=list, max_length=8)
-    note: str | None = Field(default=None, max_length=1000)
-    at: str | None = Field(default=None, max_length=300)
-    source: Literal["viewport", "render"] = "viewport"
-    max_width: int = Field(default=1600, ge=320, le=2400)
 
 
 def text_block(refs):

@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from ..contracts.document_input import ReadDocument, SearchDocument
 from ..deps import get_db
-from ..domain.document_tools import catalog_version
 from ..models import RunStatus
 from ..service_auth import require_scope
 from .document_text import available_ocr, current_index, text_operation
@@ -23,7 +22,7 @@ router = APIRouter(prefix="/internal/runs", dependencies=[Depends(require_scope(
 
 def text_request(db, run_id, body, attempt):
     run = _run_or_404(db, run_id)
-    if catalog_version(run.options) != 2 or (run.options or {}).get("mode", "work") != "chat":
+    if (run.options or {}).get("mode", "work") != "chat":
         raise HTTPException(422, "document_tool_not_available_for_catalog")
     with fenced_run(db, run, attempt):
         if run.status != RunStatus.RUNNING:

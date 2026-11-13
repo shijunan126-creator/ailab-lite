@@ -14,10 +14,9 @@ from sqlalchemy import select
 
 from ailab_platform.api import view_state
 from ailab_platform.api.document_sources import index_document
-from ailab_platform.api.preview_dispatch import dispatch_preview_jobs
 from ailab_platform.contracts.document_view import PARSER_REVISION
 from ailab_platform.db import SessionLocal
-from ailab_platform.models import Conversation, FileObject, MessageDocRef, Run, RunEvent, User
+from ailab_platform.models import Conversation, FileObject, MessageDocRef, Run, User
 from ailab_platform.storage import get_storage
 from ailab_platform.worker.viewer import build
 from tests.test_ledger_protocol import AUTH, SERVICE, api  # noqa: F401
@@ -44,7 +43,6 @@ def recorded_native_ranges(monkeypatch):
             return result
 
     monkeypatch.setattr(viewer, "checked_ranges", checked)
-    monkeypatch.setattr("ailab_platform.api.routes_document_view.checked_ranges", checked)
 
 
 def document(api):  # noqa: F811
@@ -246,7 +244,7 @@ def test_view_state_ttl_isolation_and_no_events(api, monkeypatch):  # noqa: F811
 
 
 def test_workspace_heartbeat_is_cheap_but_consumers_revalidate_current_bytes(api, monkeypatch):  # noqa: F811
-    rid, _, headers = owned(api)
+    rid, _, _ = owned(api)
     cid = conv(api)
     with SessionLocal() as db:
         run = db.get(Run, rid)
@@ -271,8 +269,10 @@ def test_workspace_heartbeat_is_cheap_but_consumers_revalidate_current_bytes(api
         assert api.put(url, headers=AUTH, json=state).status_code == 200
     assert view_state.views(owner, cid) == [state]
     assert len(requests) == 1  # no Broker snapshots, hashing, parsing or rendering for unchanged heartbeats
-    response = api.post(f"/internal/runs/{rid}/document-view", headers=headers, json={"op": "get_view"})
-    assert response.status_code == 200 and response.json()["views"] == [state]
+    from ailab_platform.api.routes_document_view import active_views
+
+    with SessionLocal() as db:
+        assert active_views(db, db.get(Run, rid)) == [state]  # a consumer revalidates the current bytes
     assert len(requests) == 2
     assert api.put(url, headers=AUTH, json={**state, "at": "p:2"}).status_code == 200
     assert len(requests) == 3
@@ -287,31 +287,6 @@ def test_workspace_heartbeat_is_cheap_but_consumers_revalidate_current_bytes(api
         db.commit()
     assert api.put(url, headers=AUTH, json=state).status_code == 410
     assert len(requests) == 5
-
-
-def test_reveal_outbox_is_fenced_and_redelivery_is_idempotent(api):  # noqa: F811
-    fid, version, _ = document(api)
-    rid, _, headers = owned(api)
-    url = f"/internal/runs/{rid}/document-view"
-    payload = {"op": "reveal", "file_id": fid, "targets": [{"at": "p:1"}]}
-    assert api.post(url, headers=SERVICE, json=payload).status_code == 409
-    headers = {**headers, "X-Delivery-Id": rid + ":reveal"}
-    response = api.post(url, headers=headers, json=payload)
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "sent"
-    assert api.post(url, headers=headers, json=payload).json() == response.json()
-    dispatch_preview_jobs()
-    dispatch_preview_jobs()
-    with SessionLocal() as db:
-        events = list(db.scalars(select(RunEvent).where(RunEvent.run_id == rid, RunEvent.type == "document.reveal")))
-        assert len(events) == 1
-        assert events[0].payload == {
-            "command_id": response.json()["command_id"],
-            "file_id": fid,
-            "filename": response.json()["document"]["title"],
-            "version": version,
-            "targets": [{"at": "p:1"}],
-        }
 
 
 def capture_setup(api):  # noqa: F811
@@ -361,7 +336,8 @@ def test_viewport_capture_png_version_and_claim(api):  # noqa: F811
     body["value"] = value
     result = api.post(path, headers=AUTH, json=body)
     assert result.status_code == 200, result.text
-    assert api.post(path, headers=AUTH, json=body).status_code == 409
+    # A repeated result for the same claim is idempotent; the tool call closes once.
+    assert api.post(path, headers=AUTH, json=body).json() == {"status": "completed"}
     state = api.get(f"/internal/runs/{rid}/client-calls/capture", headers=SERVICE).json()
     capture_id = state["result"]["value"]["capture_id"]
     image = api.get(f"/internal/runs/{rid}/captures/{capture_id}", headers=SERVICE)

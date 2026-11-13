@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_serializer, field_validator, model_
 from .document_view import DocRef
 from .skills import SkillSelection
 from .templates import TemplateSelection
+from .time import Timezone
 
 
 class InboxUTC(BaseModel):
@@ -76,6 +77,7 @@ class QueueCreate(BaseModel):
     skills: list[SkillSelection] | None = Field(default=None)
     steer: bool = False
     client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
+    timezone: Timezone = None
 
     @field_validator("prompt")
     @classmethod

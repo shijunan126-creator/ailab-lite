@@ -82,16 +82,20 @@ def test_source_gc_serializes_with_user_writers(monkeypatch):
             future.result(timeout=5)
 
 
-def test_library_read_rechecks_source_after_waiting_for_user_lock(monkeypatch):
+def test_document_read_rechecks_source_after_waiting_for_user_lock(monkeypatch):
     from contextlib import contextmanager
 
-    from ailab_platform.api import routes_library_tools
+    from ailab_platform.api import runtime_fence
     from ailab_platform.library import trash_lineages
     from ailab_platform.locks import user_critical_section
+    from tests.document_fixtures import read_document
 
     with TestClient(app) as c:
         fid = upload(c, "race.txt", b"secret-read-race", "text/plain")
-        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [fid]}).json())
+        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "mode": "chat"}).json()
+        from tests.test_conversations import _status
+
+        _status(c, run["id"], "running")
 
         @contextmanager
         def delete_before_admission(db, uid):
@@ -101,7 +105,7 @@ def test_library_read_rechecks_source_after_waiting_for_user_lock(monkeypatch):
             with user_critical_section(db, uid):
                 yield
 
-        monkeypatch.setattr(routes_library_tools, "user_critical_section", delete_before_admission)
-        response = c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid})
-        assert response.status_code == 404
+        monkeypatch.setattr(runtime_fence, "user_critical_section", delete_before_admission)
+        response = read_document(c, run["id"], fid, start=False)
+        assert response.status_code == 404, response.text
         assert "secret-read-race" not in response.text

@@ -16,7 +16,7 @@ from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject, OcrPageResult, OutboxMessage, Run
 from ailab_platform.storage import get_storage
-from tests.document_fixtures import legacy_run
+from tests.document_fixtures import legacy_run, read_document
 from tests.test_document_context import upload
 from tests.test_file_previews import AUTH, SERVICE
 from tests.test_ocr import photo
@@ -62,7 +62,7 @@ def office_image(kind, with_text=False):
 @pytest.mark.parametrize("kind", ["pdf", "docx", "pptx", "xlsx"])
 @pytest.mark.parametrize("with_text", [False, True])
 def test_office_images_are_detected_and_never_presented_as_complete_text(kind, with_text):
-    from ailab_platform.api.document_content import manifest
+    from ailab_platform.api.document_content import manifest, visual_info
 
     with TestClient(app) as c:
         fid = upload(c, "diagram." + kind, office_image(kind, with_text), "application/" + kind, legacy=True)
@@ -70,15 +70,11 @@ def test_office_images_are_detected_and_never_presented_as_complete_text(kind, w
             doc = manifest(db.get(FileObject, fid))
             assert doc["visual_units"]
             assert all(u["quality"] == "no_text" for u in doc["units"]) if not with_text or kind == "pdf" else doc["chars"] > 0
-        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "解释图形关系", "file_ids": [fid]}).json())
-        read = c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid}).json()
-        assert read["visual"]["status"] == "present"
-        assert "图" in read["visual_note"]
-        assert "(image)" not in read["text"] if not with_text else True
+            assert visual_info(db.get(FileObject, fid))["status"] == "present"
 
 
 def cache_page(db, file, page, content):
-    key = f"derived/{file.id}/regression/{page}.txt"
+    key = f"derived/{file.id}/ocr/regression-{page}.txt"  # where the page cache lives, so Chat can adopt it
     get_storage().put_bytes(key, content.encode(), "text/plain")
     db.add(
         OcrPageResult(
@@ -97,6 +93,7 @@ def cache_page(db, file, page, content):
 
 def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeholder_is_not_body(monkeypatch):
     monkeypatch.setattr(settings, "ocr_executor_url", "")  # cache remains readable while executor is offline
+    monkeypatch.setattr(settings, "ocr_engine_fingerprint", "regression-fingerprint")
     with TestClient(app) as c:
         fid = upload(c, "scanned.pdf", office_image("pdf"), "application/pdf", legacy=True)
         with SessionLocal() as db:
@@ -122,17 +119,23 @@ def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeh
             get_storage().put_bytes(manifest_key, json.dumps(old_manifest).encode(), "application/json")
             cache_page(db, file, 0, "Invoice amount 123")
             db.commit()
-        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid]}).json())
-        endpoint = f"/internal/runs/{run['id']}/library/extract-text"
+        from ailab_platform.api.routes_ocr import request_extraction
+
         for _ in range(3):
-            result = c.post(endpoint, headers=SERVICE, json={"file_id": fid, "pages": [1]}).json()
-            assert result["ocr"] == "done" and "Invoice amount 123" in result["content"]["text"]
-            assert result["content"]["coverage"][0]["method"] == "ocr"
+            with SessionLocal() as db:
+                assert request_extraction(db, db.get(FileObject, fid), [1])["ocr"] == "done"
+                db.commit()
         with SessionLocal() as db:
             assert not [j for j in db.scalars(select(OutboxMessage)) if j.payload.get("file_id") == fid and j.payload.get("kind") == "ocr"]
-        chat = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid], "mode": "work"}).json(), mode="chat")
-        model_input = c.get(f"/internal/runs/{chat['id']}/model-input", headers=SERVICE).json()
-        assert model_input["input_files"][0]["text"] == "Invoice amount 123"
+        chat = c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "mode": "chat"}).json()
+        read = read_document(c, chat["id"], fid, text_source="ocr", selector={"kind": "pages", "pages": [1]})
+        assert read.status_code == 200, read.text
+        assert "Invoice amount 123" in read.json()["text"] and "no extractable text" not in read.json()["text"]
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid]}).json())
+        # Work points at the original and never inlines a cached body; Chat reads text through read_document.
+        model_input = c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()
+        assert not model_input["input_files"][0].get("text")
+        assert model_input["input_files"][0]["input_strategy"] == "reference"
 
 
 def test_pdf_inflight_selection_is_not_replaced_and_failure_is_terminal(monkeypatch):
@@ -153,31 +156,43 @@ def test_pdf_inflight_selection_is_not_replaced_and_failure_is_terminal(monkeypa
             db.rollback()
 
 
+def native(fid, status):
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        representations = (file.meta or {}).get("representations") or {}
+        file.meta = {
+            **file.meta,
+            "representations": {**representations, "native_text": {**representations.get("native_text", {}), "status": status}},
+        }
+        db.commit()
+
+
 def test_dependency_reconciliation_is_idempotent_bounded_and_does_not_revive_cancelled_run(monkeypatch):
     from ailab_platform.api import file_dependencies
 
     with TestClient(app) as c:
-        fid = upload(c, "scan.pdf", office_image("pdf"), "application/pdf")
+        fid = upload(c, "doc.txt", b"source", "text/plain")
         run_id = c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid]}).json()["id"]
+        native(fid, "pending")
         with SessionLocal() as db:
             run = db.get(Run, run_id)
             run.status = "interrupted"
             run.runtime_meta = {
                 **run.runtime_meta,
-                "file_dependency": {"file_id": fid, "action": "extract-text", "pages": [1], "deadline": time.time() + 100},
+                "file_dependency": {"file_id": fid, "action": "native-text", "deadline": time.time() + 100},
             }
-            file = db.get(FileObject, fid)
-            file.meta = {**file.meta, "ocr": "pending"}
             db.commit()
             plan = select(Run.id).where(Run.status == "interrupted", Run.id > "").order_by(Run.id).limit(100)
             sql = str(plan.compile(db.bind, compile_kwargs={"literal_binds": True}))
             assert db.execute(text(("EXPLAIN QUERY PLAN " if db.bind.dialect.name == "sqlite" else "EXPLAIN ") + sql)).all()
+        from ailab_platform.api import native_preparation
+
+        monkeypatch.setattr(native_preparation, "request_native", lambda *a, **k: {"status": "pending"})
         monkeypatch.setattr(file_dependencies, "_after", "")
         file_dependencies.reconcile()
         with SessionLocal() as db:
             assert db.get(Run, run_id).status == "interrupted"
-            cache_page(db, db.get(FileObject, fid), 0, "ready OCR")
-            db.commit()
+        native(fid, "ready")
         for _ in range(3):
             monkeypatch.setattr(file_dependencies, "_after", "")
             file_dependencies.reconcile()
@@ -189,7 +204,7 @@ def test_dependency_reconciliation_is_idempotent_bounded_and_does_not_revive_can
             run.status = "canceled"
             run.runtime_meta = {
                 **run.runtime_meta,
-                "file_dependency": {"file_id": fid, "action": "extract-text", "pages": [1], "deadline": 0},
+                "file_dependency": {"file_id": fid, "action": "native-text", "deadline": 0},
             }
             db.commit()
         monkeypatch.setattr(file_dependencies, "_after", "")
@@ -198,47 +213,35 @@ def test_dependency_reconciliation_is_idempotent_bounded_and_does_not_revive_can
             assert db.get(Run, run_id).status == "canceled"
 
 
-def test_image_reference_asked_while_another_preview_is_pending_still_gets_its_pages(monkeypatch):
-    monkeypatch.setattr(settings, "render_prewarm", 0)
+@pytest.mark.parametrize("action", ["extract-text", "image-reference"])
+def test_a_run_waiting_on_a_retired_file_tool_resumes_instead_of_waiting_forever(monkeypatch, action):
+    """A run paused by a retired tool before the deploy is continued; it then meets the current catalog."""
     from ailab_platform.api import file_dependencies
-    from ailab_platform.api.routes_library_tools import document_images
 
     with TestClient(app) as c:
-        fid = upload(c, "deck.pdf", office_image("pdf"), "application/pdf")
-        run_id = c.post("/v1/runs", headers=AUTH, json={"prompt": "看图", "file_ids": [fid]}).json()["id"]
+        fid = upload(c, "scan.pdf", office_image("pdf"), "application/pdf")
+        run_id = c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid]}).json()["id"]
         with SessionLocal() as db:
-            file = db.get(FileObject, fid)
-            # the ordinary preview a delivered file gets is still running when the model asks to see the pages
-            file.meta = {**file.meta, "preview": {"status": "pending", "kind": "sheets"}, "preview_job_id": "eager"}
-            assert document_images(db, file, [1])["pending"]
             run = db.get(Run, run_id)
             run.status = "interrupted"
             run.runtime_meta = {
                 **run.runtime_meta,
-                "file_dependency": {"file_id": fid, "action": "image-reference", "pages": [1], "deadline": time.time() + 100},
+                "file_dependency": {"file_id": fid, "action": action, "pages": [1], "deadline": time.time() + 100},
             }
+            file = db.get(FileObject, fid)
+            file.meta = {**file.meta, "ocr": "pending", "preview": {"status": "pending"}}
             db.commit()
-
-        def renders():
-            with SessionLocal() as db:
-                return [j for j in db.scalars(select(OutboxMessage)) if j.payload.get("file_id") == fid and j.id != "eager"]
-
-        before = len(renders())
         monkeypatch.setattr(file_dependencies, "_after", "")
         file_dependencies.reconcile()
-        assert len(renders()) == before  # nothing stacked on the pending preview
         with SessionLocal() as db:
-            file = db.get(FileObject, fid)
-            file.meta = {**file.meta, "preview": {"status": "ready", "kind": "sheets"}}
-            db.commit()
-        for _ in range(3):
-            monkeypatch.setattr(file_dependencies, "_after", "")
-            file_dependencies.reconcile()
-        with SessionLocal() as db:
-            meta = db.get(FileObject, fid).meta
-            assert meta["preview"]["status"] == "pending" and meta["ocr_render_pages"] == [1]
-            assert db.get(Run, run_id).status == "interrupted"
-        assert len(renders()) == before + 1  # one render, however many ticks
+            run = db.get(Run, run_id)
+            assert run.status == "queued" and "file_dependency" not in run.runtime_meta
+            jobs = [
+                j
+                for j in db.scalars(select(OutboxMessage))
+                if j.payload.get("file_id") == fid and j.payload.get("kind") in {"ocr", "preview"}
+            ]
+            assert not jobs  # nothing is prepared for a tool no Agent can call
 
 
 def test_pending_ocr_suspends_paid_tool_and_resumes_without_model_poll_or_sandbox():
@@ -249,13 +252,24 @@ def test_pending_ocr_suspends_paid_tool_and_resumes_without_model_poll_or_sandbo
     class Platform(FakePlatform):
         done = False
 
-        async def library(self, run_id, action, payload):
-            return {"ocr": "done", "content": {"text": "cached words"}} if self.done else {"ocr": "pending"}
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": "chat"}}
+
+        async def document_input(self, run_id, name, payload):
+            if self.done:
+                return {"ok": True, "ocr": "done", "text": "cached words"}
+            return {
+                "ok": True,
+                "pending": True,
+                "action": "document-ocr",
+                "file_id": payload["file_id"],
+                "deadline": 0,
+                "operation_id": "op",
+            }
 
     platform, broker = Platform(), FakeBroker()
-    model = ScriptedLLM(
-        [LLMResponse(tool_calls=[ToolCall("ocr", "extract_text", {"file_id": "file", "pages": [1]})]), LLMResponse(content="概述")]
-    )
+    call = {"file_id": "file", "text_source": "ocr", "selector": {"kind": "pages", "pages": [1]}}
+    model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("ocr", "read_document", call)]), LLMResponse(content="概述")])
     asyncio.run(AgentLoop(platform, broker, model).process("run_1", attempt_id="a"))
     assert platform.paused["file_dependency"]["file_id"] == "file"
     assert len(model.seen_messages) == 1 and broker.leases == 0
@@ -307,19 +321,14 @@ def test_safe_file_pause_keeps_sse_live_and_quota_gate_defers_recovery(monkeypat
             db.commit()
         saved = c.put(f"/internal/runs/{rid}/checkpoint", headers=headers, json={"expected_step": 0, "state": {"runtime_version": 1}})
         assert saved.status_code == 200
-        with SessionLocal() as db:
-            file = db.get(FileObject, fid)
-            file.meta = {**file.meta, "ocr": "pending"}
-            db.commit()
-        dep = {"file_id": fid, "action": "extract-text", "pages": [1], "deadline": time.time() + 100}
+        native(fid, "pending")
+        dep = {"file_id": fid, "action": "native-text", "deadline": time.time() + 100}
         paused = c.post(f"/internal/runs/{rid}/pause", headers=headers, json={"status": "interrupted", "file_dependency": dep})
         assert paused.status_code == 200
         detail = c.get(f"/v1/runs/{rid}", headers=AUTH).json()
-        assert detail["result"]["file_wait"] == {"action": "extract-text"} and not detail["resumable"]
+        assert detail["result"]["file_wait"] == {"action": "native-text"} and not detail["resumable"]
         assert _poll_events(rid, 0)[2] is True
-        with SessionLocal() as db:
-            cache_page(db, db.get(FileObject, fid), 0, "ready")
-            db.commit()
+        native(fid, "ready")
 
         def full(*args):
             raise HTTPException(429, "too many active runs")
@@ -377,6 +386,29 @@ def test_chat_document_visual_bytes_are_required_before_any_model_call(monkeypat
     }
     with pytest.raises(ToolError, match="不完整文档"):
         asyncio.run(AgentLoop(platform=Platform())._user_content("run", run, "vision-bytes"))
+
+
+def test_a_prepared_image_the_model_cannot_see_stops_the_turn(monkeypatch):
+    """A Work image sent as pixels must arrive as pixels; a text note would be answered as if it had been seen."""
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.agent.tools import ToolError
+    from ailab_platform.clients import ClientError
+
+    monkeypatch.setitem(
+        get_catalog().models, "vision-image", ModelSpec(id="vision-image", name="Vision", provider="mock", capabilities=["vision"])
+    )
+
+    class Platform:
+        async def get_file_image(self, *args):
+            raise ClientError("GET", "/missing", 503, "unavailable")
+
+    run = {
+        "prompt": "图里写了什么",
+        "options": {"mode": "work"},
+        "input_files": [{"id": "f", "file_id": "f", "filename": "photo.png", "content_type": "image/png", "input_strategy": "prepared"}],
+    }
+    with pytest.raises(ToolError, match="不完整文档"):
+        asyncio.run(AgentLoop(platform=Platform())._user_content("run", run, "vision-image"))
 
 
 def test_ocr_rejects_nonexistent_image_and_document_pages_before_staging():
@@ -440,14 +472,13 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
             assert file.meta["ocr_copied_pages"] == 1
             record = db.scalar(select(OcrPageResult).where(OcrPageResult.file_id == target))
             assert record.text_key.startswith(f"derived/{target}/") and record.seconds == 0
-        run = legacy_run(
-            c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [target], "mode": "work"}).json(), mode="chat"
-        )
+        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [target], "mode": "work"}).json()
         model_input = c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()
-        assert model_input["input_files"][0]["text"] == "cached legacy invoice"
+        assert not model_input["input_files"][0].get("text")
     from ailab_platform.internal_skills import load
 
-    assert "不要启动沙箱sleep" in load("platform.pdf.read", "zcode-3c5b227-ailab1")
+    # A checkpoint pinned to the former internal reader now loads the current guide.
+    assert "office-read" in load("platform.pdf.read", "zcode-3c5b227-ailab1")
 
 
 def test_document_upload_fixture_keeps_identical_pdfs_and_ocr_state_independent(monkeypatch):
@@ -470,49 +501,7 @@ def test_document_upload_fixture_keeps_identical_pdfs_and_ocr_state_independent(
             db.rollback()
 
 
-@pytest.mark.parametrize("kind", ["docx", "xlsx"])
-@pytest.mark.parametrize("count", [8, 30])
-def test_visual_cache_uses_known_render_count_before_final_manifest(kind, count):
-    from ailab_platform.api.routes_library_tools import document_images
-    from ailab_platform.models import RenderedPage
-
-    with TestClient(app) as client:
-        fid = upload(client, "mixed." + kind, office_image(kind, True), "application/" + kind)
-        with SessionLocal() as db:
-            file = db.get(FileObject, fid)
-            file.meta = {**file.meta, "render_page_count": count, "preview": {"status": "pending"}}
-            for page in range(1, min(count, 20) + 1):
-                db.add(RenderedPage(file_id=fid, page=page, version="poppler-1280-v1", key=f"derived/{fid}/{page}.png", digest="a"))
-            db.flush()
-            result = document_images(db, file, None, prepare=False)
-            assert result["page_count"] == count
-            assert result["truncated"] is (count > 20)
-            assert len(result["files"]) == min(count, 20)
-            assert all(image["content_type"] == "image/png" for image in result["files"])
-            db.delete(db.get(RenderedPage, (fid, 2, "poppler-1280-v1")))
-            db.flush()
-            assert document_images(db, file, None, prepare=False)["pending"] is True
-
-
-def test_unknown_page_count_and_explicit_subset_do_not_claim_whole_file():
-    from ailab_platform.api.routes_library_tools import document_images
-    from ailab_platform.models import RenderedPage
-
-    with TestClient(app) as client:
-        fid = upload(client, "mixed.docx", office_image("docx", True), "application/docx")
-        with SessionLocal() as db:
-            file = db.get(FileObject, fid)
-            file.meta = {**file.meta, "preview": {"status": "pending"}}
-            db.add(RenderedPage(file_id=fid, page=1, version="poppler-1280-v1", key=f"derived/{fid}/1.jpg", digest="a"))
-            db.flush()
-            assert document_images(db, file, None, prepare=False)["pending"] is True
-            subset = document_images(db, file, [1], prepare=False)
-            assert subset["page_count"] is None
-            assert subset["files"][0]["content_type"] == "image/jpeg"
-
-
-@pytest.mark.parametrize("version", [1, 2])
-def test_v2_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypatch, version):
+def test_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypatch):
     from ailab_platform.agent.loop import AgentLoop
 
     monkeypatch.setitem(
@@ -525,7 +514,7 @@ def test_v2_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypa
 
     run = {
         "prompt": "看图",
-        "options": {"mode": "chat", "document_tools_version": version} if version == 2 else {"mode": "chat"},
+        "options": {"mode": "chat"},
         "input_files": [
             {
                 "filename": "deck.pptx",
@@ -537,4 +526,4 @@ def test_v2_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypa
     parts = asyncio.run(AgentLoop(platform=Platform())._user_content("run", run, "vision-inline"))
     labels = [part["text"] for part in parts if part.get("type") == "text" and "渲染第3页" in part["text"]]
     expected = '（region_ref={"page":3,"revision":"' + "d" * 64 + '"}）'
-    assert labels == (["附件《deck.pptx》渲染第3页" + expected] if version == 2 else ["附件《deck.pptx》渲染第3页"])
+    assert labels == ["附件《deck.pptx》渲染第3页" + expected]

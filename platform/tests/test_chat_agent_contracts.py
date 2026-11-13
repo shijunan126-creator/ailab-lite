@@ -110,7 +110,7 @@ def test_citation_sources_are_bounded_valid_and_deduplicated():
 def test_library_tool_modes():
     chat = {t["function"]["name"] for t in tools_for_chat()}
     work = {t["function"]["name"] for t in tools_for_turn()}
-    assert {"search_library", "read_library_file"} <= chat
+    assert {"search_library", "read_document", "search_document", "view_document"} <= chat
     assert "copy_library_file" in work and "copy_library_file" not in chat
 
 

@@ -25,7 +25,13 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
     with TestClient(app) as c:
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         chat = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "hi", "mode": "chat"}).json()
-        assert chat["options"] == {"mode": "chat", "capability_discovery": 1, "skills": [], "client": "portal", "document_tools_version": 2}
+        assert chat["options"] == {
+            "mode": "chat",
+            "capability_discovery": 1,
+            "skills": [],
+            "client": "portal",
+            "timezone": "Asia/Shanghai",
+        }
         c.post(f"/v1/runs/{chat['id']}/cancel", headers=AUTH)
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         deck = c.post(
@@ -42,8 +48,28 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
             "capability_discovery": 1,
             "skills": [],
             "client": "portal",
-            "document_tools_version": 2,
+            "timezone": "Asia/Shanghai",
         }
+
+
+def test_the_browser_timezone_is_frozen_on_the_run() -> None:
+    """current_time and a schedule the model creates answer in the sender's zone, not the server's."""
+    with TestClient(app) as c:
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
+        run = c.post(
+            f"/v1/conversations/{conv['id']}/messages",
+            headers=AUTH,
+            json={"prompt": "今天几号", "mode": "chat", "timezone": "America/New_York"},
+        ).json()
+        assert run["options"]["timezone"] == "America/New_York"
+        c.post(f"/v1/runs/{run['id']}/cancel", headers=AUTH)
+        # A zone this server cannot resolve (newer tz database in the browser) is a dropped hint, not a refused message.
+        unknown = c.post(
+            f"/v1/conversations/{conv['id']}/messages",
+            headers=AUTH,
+            json={"prompt": "x", "timezone": "Mars/Olympus"},
+        )
+        assert unknown.status_code == 201 and unknown.json()["options"]["timezone"] == "Asia/Shanghai"
 
 
 def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:
@@ -119,17 +145,17 @@ def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
     assert [[t["function"]["name"] for t in offered] for offered in llm.offered] == [
         [
             "search_capabilities",
-            "document_view",
             "memory",
             "recall_history",
             "schedule",
-            "extract_text",
+            "current_time",
             "resolve_attachment",
             "search_library",
-            "read_library_file",
-            "view_attachment",
             "load_skill",
             "save_skill",
+            "read_document",
+            "search_document",
+            "view_document",
         ]
     ] and broker.leases == 0
     system = llm.seen_messages[0][0]["content"]
@@ -175,8 +201,8 @@ def test_attachment_text_is_in_the_message() -> None:
     platform = _Platform(input_files=files, options={"mode": "chat"})
     _run(llm, platform)
     user = llm.seen_messages[0][-1]["content"]
-    assert "附件《notes.txt》：共 1200 字，以下是前 5 字" in user and "第一段内容" in user
-    assert "附件《photo.jpg》：没有可直接读取的文字" in user
+    assert "附件正文 file_id=f1" in user and "第一段内容" in user
+    assert "f2" not in user  # an image with no text is navigation, not an empty body
     event = next(p for t, p in platform.events if t == "agent.attachments")
     assert event["files"] == [{"filename": "notes.txt", "chars": 1200, "truncated": True}]
 
@@ -237,8 +263,8 @@ def test_chat_loading_document_skill_does_not_offer_work_sandbox_instructions():
     call = ToolCall(id="c1", name="load_skill", arguments={"name": "platform.document.read"})
     llm = _Recording([LLMResponse(tool_calls=[call]), LLMResponse(content="完成")])
     broker = _run(llm, _Platform(options={"mode": "chat"}))
-    tool_response = next(m["content"] for m in llm.seen_messages[1] if m["role"] == "tool" and "read_library_file" in m["content"])
-    assert "read_library_file" in tool_response
+    tool_response = next(m["content"] for m in llm.seen_messages[1] if m["role"] == "tool" and "read_document" in m["content"])
+    assert "read_document" in tool_response
     assert "office-read" not in tool_response
     assert "copy_library_file" not in tool_response
     assert broker.leases == 0

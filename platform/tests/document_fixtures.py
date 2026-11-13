@@ -37,6 +37,17 @@ def prepare_native(api, fid, *, full_pdf=False):
         return db.get(FileObject, fid).meta["representations"]["native_text"]
 
 
+def read_document(api, run_id, file_id, *, op="read_document", start=True, **body):
+    """The model's document reader on a Chat run: the run is set running and called with its owning attempt."""
+    from tests.run_claims import attempt_headers
+
+    if start:
+        from tests.test_conversations import _status
+
+        _status(api, run_id, "running")
+    return api.post(f"/internal/runs/{run_id}/documents/{op}", headers=attempt_headers(api, run_id), json={"file_id": file_id, **body})
+
+
 def legacy_run(run, *, mode=None):
     """An existing run keeps the tool catalog it was originally given."""
     from ailab_platform.db import SessionLocal
@@ -44,7 +55,7 @@ def legacy_run(run, *, mode=None):
 
     with SessionLocal() as db:
         row = db.get(Run, run["id"])
-        row.options = {**row.options, "document_tools_version": 1, **({"mode": mode} if mode else {})}
+        row.options = {**row.options, **({"mode": mode} if mode else {})}
         run["options"] = dict(row.options)
         db.commit()
     return run

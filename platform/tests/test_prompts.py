@@ -21,8 +21,10 @@ def test_the_system_prompt_lists_the_skills_but_does_not_inline_them() -> None:
     assert "build.py" not in text  # the full instructions come from load_skill
 
 
-def test_load_skill_returns_the_whole_skill() -> None:
-    assert "/opt/skills/platform.pptx/scripts/build.py" in prompts.load_skill("platform.pptx")
+def test_load_skill_returns_the_guide_and_its_resource_index() -> None:
+    text = prompts.load_skill("platform.pptx")
+    assert "/opt/skills/platform.pptx/" in text and "scripts/build.py" in text
+    assert "需要时再用load_skill读取下列资源" in text
     with pytest.raises(KeyError, match="unknown skill"):
         prompts.load_skill("nope")
 
@@ -67,6 +69,14 @@ def test_work_office_reader_is_discoverable_without_loading_a_library_skill():
     assert "LibreOffice/Poppler" in text
     assert "工作区读取结果不能作为平台file_id引用" in text
     assert "office-read" not in prompts.CHAT_MODE_NOTE
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_both_modes_learn_the_one_line_time_tool(mode):
+    """The tool's schema is visible, but the rules must say what to do when a date is implied."""
+    text = prompts.system_prompt_for(mode)
+    assert text.count("current_time") == 1
+    assert "不要按训练数据猜" in text
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])

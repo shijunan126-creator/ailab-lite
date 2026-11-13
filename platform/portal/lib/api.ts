@@ -47,13 +47,14 @@ export type Run = {
     skill_title?: string;
     skills?: SentSkill[];
     reasoning?: string;
+    timezone?: string; // the browser's IANA zone when this turn was sent; current_time answers in it
     // a turn the platform started at a scheduled time; `at` is that time in the task's timezone ("2026-11-12 09:00 周四")
     schedule?: { title: string; rule: string; at: string };
     schedule_id?: string;
   };
   template?: { name: string; source: "template" | "file" } | null;
   result?: {
-    file_wait?: { action: "extract-text" | "image-reference" };
+    file_wait?: { action: "native-text" | "document-ocr" | "native-scope" | "document-view" }; // mirrors FileDependencyIn.action
     previews?: Preview[];
     sources?: { title: string; url: string; site: string }[];
     pause?: { kind: "quota"; window: "daily_tokens" | "monthly_tokens"; resets_at: string }; // why an interrupted run rests

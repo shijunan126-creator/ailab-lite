@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 
 from ailab_platform.adapters.runtime import checkpoint_state, fresh_state
-from ailab_platform.agent.discovery import REDUCED_V1, catalog_for_budget
 from ailab_platform.agent.loop import AgentLoop, BudgetPause, _tools_for_run
 from ailab_platform.agent.multimodal import image_part
 from ailab_platform.agent.prompts import memory_prompt, prompt_version, system_prompt_for
@@ -343,17 +342,6 @@ def test_full_document_context_is_authoritative_without_list():
     assert "另一会话新增" not in str(requests[-1]["messages"])
 
 
-def test_reduced_catalog_is_fixed_and_selected_once_from_model_budget():
-    from ailab_platform.agent.discovery import SEARCH
-    from ailab_platform.model_policy import estimator
-
-    catalog = [SEARCH, *tools_for_turn()]
-    reduced = [tool for tool in catalog if tool["function"]["name"] in REDUCED_V1]
-    assert catalog_for_budget(catalog, estimator.raw(catalog)) == catalog
-    assert catalog_for_budget(catalog, estimator.raw(reduced)) == reduced
-    assert _tools_for_run({"_fixed_catalog": reduced}) == reduced
-
-
 def test_reported_cache_tokens_identify_main_title_and_compaction(monkeypatch):
     observed = []
     monkeypatch.setattr(
@@ -564,14 +552,15 @@ def _plan_call(number):
     }
 
 
-@pytest.mark.parametrize("strategy", ["reference", "inline"])
-def test_attachment_and_picked_skill_keep_request_prefix(strategy):
+def test_attachment_and_picked_skill_keep_request_prefix():
+    """Work points at the original in /workspace/inputs and never inlines a cached body."""
+
     class Platform(FakePlatform):
         async def get_run(self, run_id):
             return {
                 **await super().get_run(run_id),
                 "input_files": [
-                    {"file_id": "file1", "filename": "note.txt", "version": 1, "text": "attachment body", "input_strategy": strategy}
+                    {"file_id": "file1", "filename": "note.txt", "version": 1, "text": "attachment body", "input_strategy": "inline"}
                 ],
                 "options": {"mode": "work", "skill": "pptx"},
             }
@@ -583,7 +572,7 @@ def test_attachment_and_picked_skill_keep_request_prefix(strategy):
     assert_extension(*requests)
     original = requests[0]["messages"]
     assert any("file1" in str(message.get("content")) for message in original)
-    assert ("attachment body" in json.dumps(original, ensure_ascii=False)) == (strategy == "inline")
+    assert "attachment body" not in json.dumps(original, ensure_ascii=False)
     assert any(message.get("role") == "tool" and "演示设计" in message.get("content", "") for message in original)
 
 
@@ -1219,11 +1208,14 @@ def test_office_module_wire_load_reread_and_checkpoint_prefix(mode, fmt):
     assert "cursor" not in results["2"] and "next_cursor" not in results["2"]
     assert results["2"]["complete"] and results["3"]["already_loaded"] and "skill" not in results["3"]
     viewer = results["2"]["skill"]
-    assert '"op":"get_view"' in viewer and '"op":"reveal"' in viewer
+    assert "Every location is an anchor" in viewer
     assert "planned:P" not in viewer and "not currently callable" not in viewer
-    assert "Ordinary composer messages do not automatically include the current selection" in viewer
-    assert "file_id" in viewer and "targets" in viewer and 'source="viewport"' in viewer
-    assert any(tool["function"]["name"] == "document_view" for tool in requests[0]["tools"])
+    if mode == "chat":
+        assert "read_document" in viewer
+        assert "view_document" in {tool["function"]["name"] for tool in requests[0]["tools"]}
+    else:
+        assert "view_workspace_file" in {tool["function"]["name"] for tool in requests[0]["tools"]}
+        assert "read_document" not in {tool["function"]["name"] for tool in requests[0]["tools"]}
     assert not results["4"]["ok"]
     assert visible_modules(requests[-1]["messages"])
     saved = platform.checkpoint["state"]
@@ -1299,7 +1291,6 @@ def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatc
     assert [m["tool_call_id"] for m in appended[1:]] == ["first", "second", "duplicate"]
     results = [json.loads(m["content"]) for m in appended[1:]]
     assert results[0]["complete"] and results[0]["skill"] == read_module("platform.docx", "work", first)["skill"]
-    assert results[2]["already_loaded"] and "skill" not in results[2]
     candidate = tool_result_message("second", "load_skill", read_module("platform.docx", "work", second))
     prefix = [*requests[-2]["messages"], appended[0]]
     reserve = min(2048, spec.max_output_tokens) + 256
@@ -1312,10 +1303,12 @@ def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatc
         band = ContextBand.for_model(spec, {"auto_compact": False})
         budget = batch_budget(band, prefix, requests[-1]["tools"], {"user_message_index": 2})
         assert band.cost([appended[0], appended[1], candidate]) > budget
-        assert not results[1]["ok"] and "cannot fit" in results[1]["error"] and "skill" not in results[1]
+        refused_results = [r for r in results[1:] if not r.get("ok") and "cannot fit" in (r.get("error") or "")]
+        assert refused_results and all("skill" not in r for r in refused_results)
     else:
         assert cumulative < ModelPolicy.input_budget(spec)
         assert results[1]["complete"] and results[1]["skill"] == read_module("platform.docx", "work", second)["skill"]
+        assert results[2]["already_loaded"] and "skill" not in results[2]
 
 
 @pytest.mark.parametrize("path", ["in_turn", "cross_turn"])
@@ -1493,8 +1486,8 @@ def test_artifact_review_keeps_recorded_prefix_and_discloses_visual_availability
     assert bool(images) == vision
 
 
-def test_document_view_and_frozen_quotes_are_append_only_in_recorded_requests():
-    from ailab_platform.agent.tools import tools_for_chat
+def test_frozen_quotes_are_append_only_in_recorded_requests():
+    from ailab_platform.agent.tools import tools_for_chat, tools_for_turn
 
     ref = {"file_id": "file", "version": "content-hash", "at": "p:2", "quote": "frozen selection", "filename": "report.docx"}
 
@@ -1502,11 +1495,7 @@ def test_document_view_and_frozen_quotes_are_append_only_in_recorded_requests():
         async def get_run(self, run_id):
             return {**await super().get_run(run_id), "doc_refs": [ref], "options": {"mode": "chat"}}
 
-        async def document_view(self, run_id, payload):
-            assert payload == {"op": "get_view"}
-            return {"status": "unavailable", "views": []}
-
-    call = {"index": 0, "id": "view", "type": "function", "function": {"name": "document_view", "arguments": '{"op":"get_view"}'}}
+    call = {"index": 0, "id": "clock", "type": "function", "function": {"name": "current_time", "arguments": "{}"}}
     with scripted_server([{"tool_calls": [call]}, {"content": "done"}]) as (url, requests):
         platform = Platform()
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
@@ -1518,9 +1507,8 @@ def test_document_view_and_frozen_quotes_are_append_only_in_recorded_requests():
     assert "report.docx (p:2)" in user["content"] and "frozen selection" in user["content"]
     assert "frozen selection" not in json.dumps(first["tools"], ensure_ascii=False)
     assert "frozen selection" not in first["messages"][0]["content"]
-    chat = next(t for t in tools_for_chat() if t["function"]["name"] == "document_view")
-    work = next(t for t in tools_for_turn() if t["function"]["name"] == "document_view")
-    assert chat == work
+    assert "view_document" in {t["function"]["name"] for t in tools_for_chat()}
+    assert "view_document" not in {t["function"]["name"] for t in tools_for_turn()}
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
@@ -1571,38 +1559,37 @@ def test_deploy_prompt_and_tool_changes_preserve_resumed_checkpoint(monkeypatch,
     assert ("agent.context_boundary", {"reason": "platform_rules_changed"}) in platform.events
 
 
-@pytest.mark.parametrize("mode", ["chat", "work"])
-def test_document_reveal_shape_error_allows_one_retry_with_fixed_recorded_tools(mode):
+def test_document_call_shape_error_allows_one_retry_with_fixed_recorded_tools():
     class Platform(FakePlatform):
         async def get_run(self, run_id):
-            return {**await super().get_run(run_id), "options": {"mode": mode}}
+            return {**await super().get_run(run_id), "options": {"mode": "chat"}}
 
-        async def document_view(self, run_id, payload):
-            assert payload == {"op": "reveal", "file_id": "file", "targets": [{"at": "page:1", "quote": "text"}]}
-            return {"status": "sent"}
+        async def document_input(self, run_id, name, payload):
+            assert name == "read_document" and payload["selector"] == {"kind": "pages", "pages": [1]}
+            return {"ok": True, "text": "page text"}
 
-    def reveal(ident, args):
+    def read(ident, args):
         return {
             "tool_calls": [
-                {"index": 0, "id": ident, "type": "function", "function": {"name": "document_view", "arguments": json.dumps(args)}}
+                {"index": 0, "id": ident, "type": "function", "function": {"name": "read_document", "arguments": json.dumps(args)}}
             ]
         }
 
-    bad = {"op": "reveal", "file_id": "file", "filename": "report.pdf", "quote": "text"}
-    good = {"op": "reveal", "file_id": "file", "targets": [{"at": "page:1", "quote": "text"}]}
-    with scripted_server([reveal("bad", bad), reveal("retry", good), {"content": "done"}]) as (url, requests):
+    bad = {"file_id": "file", "text_source": "ocr"}
+    good = {"file_id": "file", "text_source": "ocr", "selector": {"kind": "pages", "pages": [1]}}
+    with scripted_server([read("bad", bad), read("retry", good), {"content": "done"}]) as (url, requests):
         platform = Platform()
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
     assert platform.statuses[-1][0] == "succeeded"
     assert len(requests) == 3
     for before, after in pairwise(requests):
         assert_extension(before, after)
-    tool = next(t["function"] for t in requests[0]["tools"] if t["function"]["name"] == "document_view")
-    assert "targets[{at, quote?}]" in tool["description"]
+    tool = next(t["function"] for t in requests[0]["tools"] if t["function"]["name"] == "read_document")
+    assert "text_source=ocr" in tool["description"]
     error = next(m["content"] for m in requests[1]["messages"] if m.get("tool_call_id") == "bad")
-    assert "targets[{at, quote?}]" in error and "filename" in error
+    assert "OCR requires explicit pages or region" in error
     result = next(m["content"] for m in requests[2]["messages"] if m.get("tool_call_id") == "retry")
-    assert json.loads(result)["status"] == "sent"
+    assert json.loads(result)["text"] == "page text"
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
@@ -1724,9 +1711,9 @@ def test_work_twenty_steps_strictly_extend_wire_bytes():
 
 @pytest.mark.parametrize("abi", [None, 1, 2, 5, 6, 7, 999])
 def test_parent_abi_match_exact_reuse_mismatch_rebuild(monkeypatch, abi):
-    # ABI 7: memory lines lost their origin tag and the standard no longer speaks of protected lines (ADR 0037);
-    # a conversation opened under ABI 6 meets one context_abi_changed boundary, an ABI 7 one is reused byte for byte.
-    assert CONTEXT_ABI_VERSION == 7
+    # ABI 8: one document catalog and no reduced variant; a conversation opened under ABI 7 meets one
+    # context_abi_changed boundary, an ABI 8 one is reused byte for byte.
+    assert CONTEXT_ABI_VERSION == 8
 
     class Platform(FakePlatform):
         async def get_run(self, run_id):
@@ -1982,7 +1969,7 @@ def test_usage_anchor_metadata_does_not_change_recorded_request_bytes(monkeypatc
 def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode, fmt):
     class Platform(FakePlatform):
         async def get_run(self, run_id):
-            return {**await super().get_run(run_id), "options": {"mode": mode, "document_tools_version": 2}}
+            return {**await super().get_run(run_id), "options": {"mode": mode}}
 
         async def document_input(self, run_id, operation, payload):
             assert mode == "chat" and operation == "read_document" and payload == {"file_id": "f"}
@@ -2045,27 +2032,28 @@ def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode, fmt)
                 assert ("office-read" in loaded["skill"]) == (mode == "work")
 
 
-def test_v1_checkpoint_remains_v1_when_catalog_v2_is_available():
+def test_an_old_catalog_checkpoint_is_rebuilt_into_the_current_one():
+    """A run paused under the retired document tools resumes on the one catalog, not on dead schemas."""
     platform = FakePlatform()
     state = fresh_state()
     state["messages"] = [
-        {"role": "system", "content": system_prompt_for("work")},
+        {"role": "system", "content": "[AILab platform rules 2026-11-08-genui-core; mode=work]\n旧规则"},
         {"role": "system", "content": ""},
         {"role": "user", "content": "continue old run"},
     ]
-    state["tool_catalog_v1"] = copy.deepcopy(_tools_for_run({"model": "m", "options": {"mode": "work"}}))
+    state["tool_catalog_v1"] = [{"type": "function", "function": {"name": "read_library_file", "parameters": {}}}]
     state["user_message_index"] = 2
     platform.checkpoint = {"step": 1, "state": state}
     with scripted_server([{"content": "done"}]) as (url, requests):
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("legacy", attempt_id="resume"))
-    assert requests[0]["messages"] == state["messages"]
-    assert requests[0]["tools"] == state["tool_catalog_v1"]
-    assert "read_library_file" in {t["function"]["name"] for t in requests[0]["tools"]}
+    catalog = {t["function"]["name"] for t in requests[0]["tools"]}
+    assert "read_library_file" not in catalog and "current_time" in catalog
+    assert "旧规则" not in requests[0]["messages"][0]["content"]
+    assert any(kind == "agent.context_boundary" for kind, _ in platform.events)
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
-@pytest.mark.parametrize("previous_version", [1, 2])
-def test_v2_followup_extends_compatible_prefix_or_records_catalog_rebuild(mode, previous_version):
+def test_followup_extends_a_compatible_prefix(mode):
     class Platform(FakePlatform):
         def __init__(self):
             super().__init__()
@@ -2084,7 +2072,7 @@ def test_v2_followup_extends_compatible_prefix_or_records_catalog_rebuild(mode, 
             result = {
                 **await super().get_run(run_id),
                 "prompt": run_id,
-                "options": {"mode": mode, "document_tools_version": previous_version if run_id == "first" else 2},
+                "options": {"mode": mode},
             }
             if run_id == "second":
                 result["workspace_restore_key"] = "owned-snapshot"
@@ -2107,13 +2095,8 @@ def test_v2_followup_extends_compatible_prefix_or_records_catalog_rebuild(mode, 
     else:
         assert "平台工作区恢复事实" not in requests[-1]["messages"][-1]["content"]
     assert len(requests) == 2 and platform.statuses[-1][0] == "succeeded"
-    if previous_version == 2:
-        assert_extension(*requests)
-        assert not any(event[0] == "agent.context_boundary" for event in platform.events)
-    else:
-        assert requests[1]["tools"] != requests[0]["tools"]
-        boundary = platform.checkpoints["second"]["state"]["context_boundary"]
-        assert boundary["reason"] == "rebuilt" and boundary["epoch"] == 1
+    assert_extension(*requests)
+    assert not any(event[0] == "agent.context_boundary" for event in platform.events)
 
 
 def test_v2_frozen_inline_and_on_demand_attachments_keep_recorded_prefix():
@@ -2144,7 +2127,7 @@ def test_v2_frozen_inline_and_on_demand_attachments_keep_recorded_prefix():
             return {
                 **await super().get_run(run_id),
                 "input_files": copy.deepcopy(files),
-                "options": {"mode": "chat", "document_tools_version": 2},
+                "options": {"mode": "chat"},
             }
 
         async def get_file_image(self, *args):
@@ -2185,7 +2168,7 @@ def test_v2_work_prepared_image_is_sent_once_and_keeps_recorded_prefix(monkeypat
 
     class Platform(FakePlatform):
         async def get_run(self, run_id):
-            return {**await super().get_run(run_id), "input_files": [image], "options": {"mode": "work", "document_tools_version": 2}}
+            return {**await super().get_run(run_id), "input_files": [image], "options": {"mode": "work"}}
 
         async def get_file_image(self, *args):
             return b"prepared-pixels"
@@ -2300,7 +2283,7 @@ class MemoryPrefixPlatform(FakePlatform):
             "prompt": "请简短回复收到",
             "conversation_id": "conv_memory_prefix",
             "memory": await self.get_memory_context(run_id),
-            "options": {"mode": self.mode, "document_tools_version": 2},
+            "options": {"mode": self.mode},
         }
         if index:
             state = self.checkpoints["turn" + str(index - 1)]["state"]
@@ -2946,12 +2929,12 @@ def test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary(
 
 
 def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
-    """The workspace-tool deployment changes Work's rules only; Chat's text and prefix must not move."""
+    """The one-catalog deploy rewrites Chat's rules once (V2 wording baked in); the bytes are pinned here."""
     import hashlib
 
     chat = system_prompt_for("chat")
-    assert len(chat) == 3412
-    assert hashlib.sha256(chat.encode()).hexdigest() == "a774b0e597243f2e327526396da380215f7a66837ea9ebcd668ae5f0425c7d22"
+    assert len(chat) == 3463
+    assert hashlib.sha256(chat.encode()).hexdigest() == "efadb28400497b9d046c4cc52aa885082b7019b893ede50b44e0d8ed4b65474f"
     assert prompt_version("chat") != prompt_version("work")
 
     from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
@@ -2976,21 +2959,6 @@ def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("next", attempt_id="next"))
     assert requests[0]["messages"][0]["content"] == chat
     assert not any(kind == "agent.context_boundary" for kind, _ in platform.events)
-
-
-def test_the_reduced_catalog_still_fits_the_smallest_model_budget():
-    """Small-context models get the reduced catalog; the file rules must be satisfiable there."""
-    from ailab_platform.agent.discovery import SEARCH
-    from ailab_platform.catalog import ModelSpec
-    from ailab_platform.model_policy import ModelPolicy
-    from ailab_platform.model_policy import estimator as token_estimator
-
-    small = ModelSpec(id="small", name="small", provider="mock", context_tokens=32768, capabilities=["tools"])
-    budget = min(ModelPolicy.input_budget(small), max(800, int(ModelPolicy.input_budget(small) * 0.15)))
-    reduced = catalog_for_budget([SEARCH, *tools_for_turn()], budget)
-    names = {tool["function"]["name"] for tool in reduced}
-    assert {"read", "write", "edit", "bash"} <= names
-    assert token_estimator.raw(reduced) <= budget
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])

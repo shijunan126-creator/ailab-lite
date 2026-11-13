@@ -532,9 +532,6 @@ class AsyncPlatformClient(_PlatformApi):
             raise ValueError("unknown document operation")
         return (await self._send(self._req("POST", f"/internal/runs/{run_id}/documents/{operation}", timeout=30, json=payload))).json()
 
-    async def document_view(self, run_id: str, payload: dict) -> dict:
-        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/document-view", timeout=100, json=payload))).json()
-
     async def get_capture_image(self, run_id: str, capture_id: str) -> bytes:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/captures/{capture_id}", timeout=10))).content
 

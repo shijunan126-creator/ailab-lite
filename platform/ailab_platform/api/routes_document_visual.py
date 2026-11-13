@@ -23,12 +23,10 @@ router = APIRouter()
 
 @router.post("/internal/runs/{run_id}/documents/view_document", dependencies=[Depends(require_scope("files:read_for_run"))])
 def view_document(run_id: str, body: ViewDocument, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)):
-    from ..domain.document_tools import catalog_version
-
     run = db.get(Run, run_id)
     if not run:
         raise HTTPException(404, "run_unavailable")
-    if catalog_version(run.options) != 2 or (run.options or {}).get("mode") != "chat":
+    if (run.options or {}).get("mode") != "chat":
         raise HTTPException(422, "document_tool_not_available_for_catalog")
     from ..catalog import get_catalog
 

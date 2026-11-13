@@ -1,4 +1,4 @@
-"""V2 transport/mode fences without rewriting legacy catalogs or model history."""
+"""The one document catalog: mode fences, latest transport, and the frozen per-run copy."""
 
 import asyncio
 import copy
@@ -12,8 +12,8 @@ from ailab_platform.agent.subtasks import ALLOWED, allowed
 from ailab_platform.agent.tools import ToolContext, ToolError, execute_tool, tools_for_chat, tools_for_turn
 from ailab_platform.db import SessionLocal
 from ailab_platform.domain.document_reading import CursorError, Position, decode_cursor, encode_cursor
-from ailab_platform.domain.document_tools import CHAT_DOCUMENT_TOOLS, LEGACY_DOCUMENT_TOOLS
-from ailab_platform.models import DocumentBlock, FileDerivation, FileObject, MessageFileRef, OutboxMessage, Run, new_id
+from ailab_platform.domain.document_tools import CHAT_DOCUMENT_TOOLS
+from ailab_platform.models import DocumentBlock, FileDerivation, FileObject, OutboxMessage, Run, new_id
 from ailab_platform.storage import get_storage
 from tests.test_ledger_protocol import SERVICE, api  # noqa: F401
 from tests.test_runtime_protocol import owned
@@ -23,11 +23,11 @@ def names(tools):
     return {t["function"]["name"] for t in tools}
 
 
-def configure(api, *, mode="chat", version=2, ready=True):  # noqa: F811
+def configure(api, *, mode="chat", ready=True):  # noqa: F811
     rid, _, headers = owned(api)
     with SessionLocal() as db:
         run = db.get(Run, rid)
-        run.options = {**(run.options or {}), "mode": mode, "document_tools_version": version}
+        run.options = {**(run.options or {}), "mode": mode}
         file = FileObject(
             id=new_id("fil"),
             user_id=run.user_id,
@@ -79,23 +79,21 @@ def configure(api, *, mode="chat", version=2, ready=True):  # noqa: F811
         return rid, file.id, headers
 
 
-def test_catalog_selection_leaves_legacy_objects_and_fixed_checkpoint_exact():
+def test_each_mode_has_one_catalog_and_a_run_keeps_its_frozen_copy():
     work, chat = copy.deepcopy(tools_for_turn()), copy.deepcopy(tools_for_chat())
-    v2_work, v2_chat = tools_for_turn(2), tools_for_chat(2)
-    assert not names(v2_work) & (LEGACY_DOCUMENT_TOOLS | CHAT_DOCUMENT_TOOLS)
-    assert CHAT_DOCUMENT_TOOLS <= names(v2_chat) and not names(v2_chat) & LEGACY_DOCUMENT_TOOLS
-    assert {"bash", "copy_library_file", "resolve_attachment", "view_workspace_file"} <= names(v2_work)
+    assert not CHAT_DOCUMENT_TOOLS & names(work)
+    assert CHAT_DOCUMENT_TOOLS <= names(chat)
+    assert {"bash", "copy_library_file", "resolve_attachment", "view_workspace_file"} <= names(work)
     assert tools_for_turn() == work and tools_for_chat() == chat
-    assert _tools_for_run({"options": {"mode": "work", "document_tools_version": 2}, "_fixed_catalog": work}) is work
-    assert allowed() == ALLOWED and "read_library_file" in ALLOWED
-    assert "read_library_file" not in allowed(2)
-    assert {"copy_library_file", "resolve_attachment", "view_workspace_file"} <= allowed(2)
+    assert _tools_for_run({"options": {"mode": "work"}, "_fixed_catalog": work}) is work
+    assert {"copy_library_file", "resolve_attachment", "view_workspace_file"} <= allowed()
+    assert "read_library_file" not in ALLOWED
 
 
-@pytest.mark.parametrize("name", sorted(LEGACY_DOCUMENT_TOOLS | CHAT_DOCUMENT_TOOLS))
-def test_work_execution_rejects_platform_document_calls_before_clients(name):
-    ctx = ToolContext(mode="work", document_tools_version=2)
-    with pytest.raises(ToolError, match="mode/catalog"):
+@pytest.mark.parametrize("name", sorted(CHAT_DOCUMENT_TOOLS))
+def test_work_execution_rejects_chat_document_calls_before_clients(name):
+    ctx = ToolContext(mode="work")
+    with pytest.raises(ToolError, match="not available in this mode"):
         asyncio.run(execute_tool(name, {"file_id": "forged"}, "lease", None, ctx))
 
 
@@ -142,9 +140,8 @@ def test_native_routes_require_current_attempt_mode_and_source_and_page_without_
     assert api.post(url + "read_document", headers=headers, json={"file_id": fid}).status_code == 404
 
 
-@pytest.mark.parametrize("mode,version", [("work", 2), ("chat", 1)])
-def test_new_endpoints_cannot_bypass_mode_or_legacy_catalog(api, mode, version):  # noqa: F811
-    rid, fid, headers = configure(api, mode=mode, version=version)
+def test_new_endpoints_cannot_bypass_the_mode_fence(api):  # noqa: F811
+    rid, fid, headers = configure(api, mode="work")
     for operation in ("read_document", "search_document"):
         result = api.post(
             f"/internal/runs/{rid}/documents/{operation}",
@@ -154,16 +151,12 @@ def test_new_endpoints_cannot_bypass_mode_or_legacy_catalog(api, mode, version):
         assert result.status_code == 422 and result.json()["detail"] == "document_tool_not_available_for_catalog"
 
 
-@pytest.mark.parametrize("mode", ["chat", "work"])
-def test_v2_rejects_legacy_document_endpoints_before_source_binding(api, mode):  # noqa: F811
-    rid, fid, headers = configure(api, mode=mode)
+def test_retired_tool_routes_are_gone(api):  # noqa: F811
+    """The retired document catalog has no internal routes left for anything to call."""
+    rid, fid, headers = configure(api, mode="work")
     for action in ("read", "extract-text", "image-reference"):
-        result = api.post(f"/internal/runs/{rid}/library/{action}", headers=headers, json={"file_id": fid})
-        assert result.status_code == 422 and result.json()["detail"] == "document_tool_not_available_for_catalog"
-    result = api.post(f"/internal/runs/{rid}/document-view", headers=headers, json={"op": "get_view"})
-    assert result.status_code == 422
-    with SessionLocal() as db:
-        assert not db.scalar(select(MessageFileRef.id).where(MessageFileRef.run_id == rid))
+        assert api.post(f"/internal/runs/{rid}/library/{action}", headers=headers, json={"file_id": fid}).status_code in {404, 405}
+    assert api.post(f"/internal/runs/{rid}/document-view", headers=headers, json={"op": "get_view"}).status_code in {404, 405}
 
 
 def test_new_text_route_stages_one_lazy_native_job_and_waits_without_changing_original(api):  # noqa: F811
@@ -180,16 +173,15 @@ def test_new_text_route_stages_one_lazy_native_job_and_waits_without_changing_or
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
 @pytest.mark.parametrize("name", ["platform.pdf", "platform.docx", "platform.xlsx", "platform.pptx"])
-def test_generated_v2_guides_preserve_locators_and_use_mode_operations(name, mode):
+def test_generated_guides_preserve_locators_and_use_mode_operations(name, mode):
     from ailab_platform.agent.skill_modules import read_module
 
-    legacy = read_module(name, mode)
-    result = read_module(name, mode, document_tools_version=2)
-    viewer = read_module(name, mode, "viewer/SKILL.md", document_tools_version=2)
-    assert "read_library_file" in legacy["skill"]
-    assert read_module(name, mode) == legacy
+    result = read_module(name, mode)
+    viewer = read_module(name, mode, "viewer/SKILL.md")
+    assert read_module(name, mode) == result
+    retired = ("read_library_file", "view_attachment", "extract_text", "document_view")
     for guide in (result, viewer):
-        assert not any(op in guide["skill"] for op in LEGACY_DOCUMENT_TOOLS)
+        assert not any(op in guide["skill"] for op in retired)
         assert hashlib.sha256(guide["skill"].encode()).hexdigest() == guide["hash"]
         assert ("office-read" in guide["skill"]) == (mode == "work")
     assert ("read_document" in result["skill"]) == (mode == "chat")
@@ -202,7 +194,7 @@ def test_v2_attachment_guidance_never_rewrites_user_prompt_or_source_text():
     from ailab_platform.agent.prompts import user_prompt
 
     original = "read_library_file 与 view_attachment 是源码中的旧函数名；原文件在 /workspace/inputs/original.txt"
-    result = user_prompt(original, [{"file_id": "f", "filename": "source.txt", "text": original}], mode="chat", document_tools_version=2)
+    result = user_prompt(original, [{"file_id": "f", "filename": "source.txt", "text": original}], mode="chat")
     assert result.startswith(original)
     assert result.split("<!-- AILAB_ATTACHMENT_START -->\n\n```\n\n")[1].split("\n\n```\n\n")[0] == original
 
@@ -263,8 +255,8 @@ def test_v2_guides_state_each_rule_once_and_only_their_own_format_facts():
     from ailab_platform.agent.skill_modules import read_module
 
     for fmt in ("pdf", "docx", "xlsx", "pptx"):
-        navigation = read_module(f"platform.{fmt}", "chat", document_tools_version=2)["skill"]
-        viewer = read_module(f"platform.{fmt}", "chat", "viewer/SKILL.md", document_tools_version=2)["skill"]
+        navigation = read_module(f"platform.{fmt}", "chat")["skill"]
+        viewer = read_module(f"platform.{fmt}", "chat", "viewer/SKILL.md")["skill"]
         # Attachments already carry file_id/navigation; the guide must not demand extra round trips.
         assert "resolve_attachment" not in navigation and "直接读取或查看该范围" in navigation
         # The operating workflow lives in the navigation guide, never repeated inside the viewer resource.
@@ -293,9 +285,8 @@ def test_copy_outside_inputs_returns_the_destination_rule_not_a_generic_failure(
         async def copy_library_file(self, lease_id, file_id, path):
             raise ClientError("POST", "/library-file", 422, '{"detail":"path must stay under /workspace/inputs"}')
 
-    ctx = ToolContext("r", Platform(), mode="work", document_tools_version=2)
+    ctx = ToolContext("r", Platform(), mode="work")
     result = asyncio.run(execute_tool("copy_library_file", {"file_id": "f", "path": "/workspace/work/a.docx"}, "lease", Broker(), ctx))
     assert result["ok"] is False and "/workspace/inputs/" in result["error"]
-    copy = next(t for t in tools_for_turn(2) if t["function"]["name"] == "copy_library_file")
+    copy = next(t for t in tools_for_turn() if t["function"]["name"] == "copy_library_file")
     assert "/workspace/inputs/" in copy["function"]["description"]
-    assert next(t for t in tools_for_turn() if t["function"]["name"] == "copy_library_file")["function"]["description"] == "复制到工作区"

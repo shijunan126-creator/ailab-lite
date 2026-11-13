@@ -5,14 +5,17 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from datetime import UTC, datetime
 
 import pytest
 
 from ailab_platform.agent.tools import (
     READ_WINDOW_BYTES,
     SANDBOX_TOOLS,
+    ToolContext,
     ToolError,
     execute_tool,
+    local_time,
     tools_for_chat,
     tools_for_turn,
 )
@@ -48,12 +51,45 @@ def call(name: str, args: dict, broker: FakeBroker) -> dict:
 
 
 def test_the_catalog_offers_the_pi_names():
-    work = {tool["function"]["name"] for tool in tools_for_turn(2)}
+    work = {tool["function"]["name"] for tool in tools_for_turn()}
     assert {"read", "write", "edit", "ls", "bash", "bash_wait", "bash_kill", "grep", "find"} <= work
     assert not work & {"read_file", "write_file", "list_files", "exec", "exec_wait", "exec_kill"}
     # Chat has no sandbox, so it gets none of them.
-    assert not {tool["function"]["name"] for tool in tools_for_chat(2)} & {"read", "write", "edit", "ls", "grep", "find", "bash"}
+    assert not {tool["function"]["name"] for tool in tools_for_chat()} & {"read", "write", "edit", "ls", "grep", "find", "bash"}
     assert {"read", "write", "edit", "ls", "grep", "find", "bash"} <= SANDBOX_TOOLS
+
+
+def test_current_time_answers_in_the_runs_zone():
+    """The tool must not start a sandbox: the browser's zone arrives frozen on the run."""
+    moment = datetime(2026, 11, 13, 6, 30, tzinfo=UTC)
+    assert local_time("Asia/Shanghai", moment) == {
+        "ok": True,
+        "date": "2026-11-13",
+        "weekday": "周五",
+        "time": "14:30",
+        "timezone": "Asia/Shanghai",
+    }
+    # An old run without a zone answers in UTC and names it, instead of implying a local day.
+    assert local_time("", moment) == {"ok": True, "date": "2026-11-13", "weekday": "周五", "time": "06:30", "timezone": "UTC"}
+    assert local_time("Mars/Olympus", moment)["timezone"] == "UTC"
+    from zoneinfo import ZoneInfo
+
+    ctx = ToolContext(timezone="America/New_York")
+    answer = asyncio.run(execute_tool("current_time", {}, "", FakeBroker(), ctx))
+    local = datetime.now(UTC).astimezone(ZoneInfo("America/New_York"))
+    assert answer == {
+        "ok": True,
+        "date": local.date().isoformat(),
+        "weekday": "周" + "一二三四五六日"[local.weekday()],
+        "time": local.strftime("%H:%M"),
+        "timezone": "America/New_York",
+    }
+
+
+def test_current_time_is_offered_in_both_modes_with_no_arguments():
+    for catalog in (tools_for_turn(), tools_for_turn(), tools_for_chat(), tools_for_chat()):
+        tool = next(t for t in catalog if t["function"]["name"] == "current_time")
+        assert tool["function"]["parameters"] == {"type": "object", "properties": {}}
 
 
 def test_write_then_read_round_trip():
@@ -190,7 +226,7 @@ def test_a_sandbox_query_failure_becomes_a_tool_error():
 
 @pytest.mark.parametrize(
     "catalog",
-    [lambda: tools_for_turn(1), lambda: tools_for_turn(2), lambda: tools_for_chat(1), lambda: tools_for_chat(2)],
+    [lambda: tools_for_turn(), lambda: tools_for_turn(), lambda: tools_for_chat(), lambda: tools_for_chat()],
 )
 def test_the_catalog_never_offers_the_same_tool_twice(catalog):
     # A duplicate schema is a request the provider may reject; one tool, one name.
@@ -199,7 +235,7 @@ def test_the_catalog_never_offers_the_same_tool_twice(catalog):
 
 
 def test_the_wait_tool_asks_for_one_wait_parameter_name():
-    wait = next(tool for tool in tools_for_turn(2) if tool["function"]["name"] == "bash_wait")
+    wait = next(tool for tool in tools_for_turn() if tool["function"]["name"] == "bash_wait")
     assert set(wait["function"]["parameters"]["properties"]) == {"handle", "wait_seconds", "offset"}
 
 

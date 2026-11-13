@@ -10,7 +10,7 @@ from ailab_platform.db import SessionLocal
 from ailab_platform.internal_skills import load
 from ailab_platform.models import DocumentBlock, FileDerivation, MessageFileRef, Run
 from ailab_platform.worker.pipeline import process_file
-from tests.document_fixtures import legacy_run
+from tests.document_fixtures import legacy_run, read_document
 from tests.memory_fixtures import make_dream
 from tests.memory_fixtures import snapshot as delta_snapshot
 from tests.test_file_previews import AUTH, SERVICE, ApiClient
@@ -39,30 +39,20 @@ def test_pdf_tail_and_persistent_blocks_across_modes():
     with TestClient(app) as c:
         fid = upload(c, "native.pdf", text_pdf(120), "application/pdf")
         run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "读取85页", "file_ids": [fid]}).json())
-        assert c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()["input_files"][0]["text"] == ""
-        url = f"/internal/runs/{run['id']}/library/read"
-        result = c.post(url, headers=SERVICE, json={"file_id": fid, "pages": [85]}).json()
-        assert "native text page 85" in result["text"]
-        assert result["coverage"][0]["anchor"] == "page:85" and result["status"] == "ready"
-        assert c.post(url, headers=SERVICE, json={"file_id": fid, "derivation_id": "wrong"}).status_code == 409
-        with SessionLocal() as db:
-            assert len(db.scalars(select(DocumentBlock).join(FileDerivation).where(FileDerivation.file_id == fid)).all()) == 120
-            query = select(DocumentBlock.id).where(DocumentBlock.derivation_id == result["derivation_id"], DocumentBlock.unit_number == 85)
-            sql = str(query.compile(db.bind, compile_kwargs={"literal_binds": True}))
-            assert db.execute(text(("EXPLAIN QUERY PLAN " if db.bind.dialect.name == "sqlite" else "EXPLAIN ") + sql)).all()
+        assert not c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()["input_files"][0].get("text")
         chat = c.post("/v1/runs", headers=AUTH, json={"prompt": "全文", "mode": "chat", "file_ids": [fid]})
         assert chat.status_code == 201
         prepared = c.get(f"/internal/runs/{chat.json()['id']}/model-input", headers=SERVICE).json()
         assert prepared["input_files"][0]["input_strategy"] == "reference"
-        from tests.run_claims import attempt_headers
-        from tests.test_conversations import _status
-
-        _status(c, chat.json()["id"], "running")
-        tail = c.post(
-            f"/internal/runs/{chat.json()['id']}/documents/read_document",
-            headers=attempt_headers(c, chat.json()["id"]),
-            json={"file_id": fid, "selector": {"kind": "pages", "pages": [120]}},
-        )
+        page = read_document(c, chat.json()["id"], fid, selector={"kind": "pages", "pages": [85]})
+        assert page.status_code == 200 and "native text page 85" in page.json()["text"]
+        with SessionLocal() as db:
+            derivation = db.scalar(select(FileDerivation.id).where(FileDerivation.file_id == fid))
+            assert len(db.scalars(select(DocumentBlock).where(DocumentBlock.derivation_id == derivation)).all()) == 120
+            query = select(DocumentBlock.id).where(DocumentBlock.derivation_id == derivation, DocumentBlock.unit_number == 85)
+            sql = str(query.compile(db.bind, compile_kwargs={"literal_binds": True}))
+            assert db.execute(text(("EXPLAIN QUERY PLAN " if db.bind.dialect.name == "sqlite" else "EXPLAIN ") + sql)).all()
+        tail = read_document(c, chat.json()["id"], fid, start=False, selector={"kind": "pages", "pages": [120]})
         assert tail.status_code == 200 and "native text page 120" in tail.json()["text"]
 
 
@@ -97,7 +87,6 @@ def test_delete_fences_active_context():
         with SessionLocal() as db:
             row = db.get(Run, run["id"])
             assert row.status == "canceled" and row.runtime_meta["source_invalidated"]
-        assert c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid}).status_code == 404
 
 
 def test_internal_skills_are_discoverable():
@@ -105,7 +94,7 @@ def test_internal_skills_are_discoverable():
 
     hit = discovery.search("pdf", 3, list(skills().values()))[0]
     assert hit["name"] == "platform.pdf"
-    assert "next_cursor" in load("platform.pdf.read")
+    assert "read_document" in load("platform.pdf.read", mode="chat")
     for name in ("platform.document.read", "platform.spreadsheet.read", "platform.presentation.read", "platform.pdf.read"):
         assert "office-read" not in load(name, mode="chat")
         assert "office-read" in load(name, mode="work")
@@ -144,9 +133,9 @@ def test_skill_search_does_not_change_tool_availability():
 def test_file_backed_reads_register_deletion_dependency():
     with TestClient(app) as c:
         fid = upload(c, "not-in-prompt.txt", b"original", "text/plain")
-        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "search"}).json())
-        response = c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid})
-        assert response.status_code == 200
+        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "search", "mode": "chat"}).json()
+        response = read_document(c, run["id"], fid)
+        assert response.status_code == 200, response.text
         with SessionLocal() as db:
             assert db.scalar(
                 select(MessageFileRef).where(
