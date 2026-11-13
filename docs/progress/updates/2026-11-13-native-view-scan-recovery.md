@@ -105,3 +105,11 @@
 无新依赖、迁移、配置或镜像内容；Broker 额外注入一个小的内存 helper。smaps 检查按流逐行读取；Work 沿用原每秒健康检查，缓存索引正常最多 4 项，输入 hash 流式读至多 20 MiB。每个活跃 Work Run 增加最多 64 MiB PDF 缓存，临时转换沿用既有受限沙箱；实际样本约 263 KiB。缓存命中仍需栅格化和 JPEG/base64，不承诺零成本。未测长期多 Run 并发峰值或周期检查 CPU 的独立占比。
 
 全部临时容器、运行输出及 runtime 构建产物本轮清理；主工作区并发修改保留。最终 CI 以推送后新 head 为准；未做浏览器、PostgreSQL 本地重跑、全模型场景、NPU/OpenSandbox、长期压力或部署验收。原来的 7.390 秒余页延迟仍未复现，本轮修复不宣称已经精确解释该单次延迟。
+
+## CI 加载边界修正
+
+`5a61d7c2` 的 SQLite 全套失败于 `test_sandbox_paths.py::test_mock_sandbox_keeps_tmp_private`，本地原样复现。该测试仅注入健康脚本，通过 `runpy.run_path` 检查 mock 工作区和 TMPDIR 隔离；新增的顶层 sibling import 在此入口不可解析，导致子进程没有 stdout。之前的 92 项范围未包含该路径模块。
+
+将 Linux 内存探针导入移到 `listener_memory()` 内：baseline 和 mock 清理不依赖 Linux 探针，真正隔离健康检查仍强制加载，缺失依赖依然失败。保留原路径断言，补 exec 退出码/stderr 和真实 mock CLI 清理校验，没有跳过或放宽测试。
+
+`pytest tests/test_sandbox_paths.py tests/test_sandbox_memory.py tests/test_render_sandbox_health.py tests/test_work_view_listener.py -q -o addopts=''`：**22 passed**，0.89 秒；相关 Ruff/格式检查通过。此修正未改变真实隔离内存计量与渲染路径，不重跑此前真实渲染对照；最终全套以新 head CI 为准，未合并或部署。

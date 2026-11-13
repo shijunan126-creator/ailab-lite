@@ -7,7 +7,8 @@
 - 本地验证：原生恢复 Python 111 项、Portal 原生查看 62 项通过，Portal webpack 生产构建通过；新增性能改动相关 Python 98 passed / 15 skipped（PostgreSQL 未配置），Ruff/格式检查通过。旧 head `434e9177` 11 项 CI 全绿，新增优化最终 head CI 待确认；未做浏览器或部署前后端到端性能验收。详见[本轮记录](updates/2026-11-13-native-view-scan-recovery.md)。
 - 用户随后授权全部分析修复：Library/Work 统一按匿名、脏页及换出页检查保留内存，避免 gVisor 文件映射 RSS 误触发回收，容器硬限额与检查阈值不变；Work 首次 profile 返回 81 时按初始化协议最多重启一次，消除等待 UNO 超时后冷转换。增加 Run 内内容摘要 PDF 缓存（4 项/64 MiB、单项 32 MiB、闲置 120 秒），编辑与转换代码变动失效；补归档/下载/解包及 Work 缓存计时。
 - 本轮验证：相关模块 92 passed，Ruff/格式通过；真实 runsc 同一 PPT 连续 8 次健康复用、页图摘要一致；Work 首次 4 页 12.844→3.100 秒，随后 3 次中位数 2.284→0.357 秒，编辑失效、review、XLSX 页映射及真实闲置清理通过。这是沙箱脚本对照，未包含模型、队列、Broker HTTP 或容器获取，不推导生产分位数；完整证据见[本轮记录](updates/2026-11-13-native-view-scan-recovery.md#沙箱复用与-work-pdf-缓存修复)。
-- [PR #193](https://github.com/shijunan126-creator/ailab-lite/pull/193)，分支 `fix/native-view-scan-recovery`，基线 `main@910f1525`；历史产品 head `2ea4bcb9` 11 项 CI 全绿，本次新增修复须以新 head CI 为准。主工作区并发 UI 修改保持不变；没有合并或部署。下一步：推送新增修复并确认最终 CI；浏览器及完整模型/队列链路未验，合并/部署等待用户指示。
+- CI 后续：`5a61d7c2` SQLite 全套发现 mock 路径隔离测试加载健康脚本失败；Linux 内存探针改为实际检查时导入，补真实 mock CLI 清理验证，相关 22 项通过。完整失败原因与复核见[记录](updates/2026-11-13-native-view-scan-recovery.md#ci-加载边界修正)。
+- [PR #193](https://github.com/shijunan126-creator/ailab-lite/pull/193)，分支 `fix/native-view-scan-recovery`，基线 `main@910f1525`；历史产品 head `2ea4bcb9` 11 项 CI 全绿，本次新增修复须以新 head CI 为准。主工作区并发 UI 修改保持不变；没有合并或部署。下一步：推送 CI 修正并确认最终 CI；浏览器及完整模型/队列链路未验，合并/部署等待用户指示。
 
 ---
 

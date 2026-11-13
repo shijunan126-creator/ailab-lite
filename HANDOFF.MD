@@ -1,5 +1,6 @@
 ## 2026-11-13 历史交付件扫描记录与预览
 
+- 共享健康脚本的 Linux 内存探针必须在隔离健康检查时才导入；mock 的 baseline/清理以及 `runpy.run_path` 路径探针无需该依赖，runpy 也不会自动把脚本目录加入模块搜索路径。改注入依赖时同时回归 `test_sandbox_paths.py`，并断言 exec 的退出码和 stderr，避免空 stdout 掩盖真实加载错误。
 - 不要把 gVisor `/proc/*/status` 的 RSS 总和当作不可回收内存：同一 PPT 连续 8 次原 RSS 为 563–576 MiB，但匿名/脏页/换出页保留占用仅 236–249 MiB。Library 与 Work 现在共用流式 smaps 检查，仍保留容器硬限额、健康阈值和 tmpfs 清理；读取失败不得跳过检查。新增 helper 必须同时注入 Library 预热、Work 预热和实际查看，Library 清理白名单也必须保留。
 - Work 直接启动 `soffice.bin` 时，首次 profile 初始化会以 **81** 退出，需要按初始化协议最多重启一次；不处理会白等 UNO 10 秒，随后每次冷转换。不要对任意失败增加通用重试。PDF 缓存在 Run 沙箱 `/tmp`，按源内容/格式/转换代码摘要复用，4 项/64 MiB、单项 32 MiB、闲置 120 秒；不能进入工作区快照或资料库，也不能跳过 review 原文件结构检查。真实编辑、XLSX 页映射与 idle 清理证据见[本轮记录](docs/progress/updates/2026-11-13-native-view-scan-recovery.md#沙箱复用与-work-pdf-缓存修复)。
 - 请求数下降不能当作端到端提速证据：同文件隔离实测 24→10 次 API 后余页中位数仅 1.8565→1.6970 秒，未复现原来的 7.390 秒。统计需区分 cold/warm。Work 模型查看只共享栅格化脚本，不共享资料库页图账本/缓存；不要把用户预览、Chat 页图、Work 模型查看混为一条链路。归档解包的 generator 在 yield 期间会执行调用方写入/发布，计时必须只累加解包自身，不能把整个 generator 墙钟当成解包时间。

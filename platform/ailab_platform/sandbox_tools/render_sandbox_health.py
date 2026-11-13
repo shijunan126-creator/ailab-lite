@@ -6,11 +6,6 @@ import shutil
 import sys
 from pathlib import Path
 
-try:
-    from .sandbox_memory import retained_bytes
-except ImportError:
-    from sandbox_memory import retained_bytes
-
 # Resolved from the script's own place (/workspace/.ailab) and TMPDIR so a provider that maps the sandbox
 # into a host directory never makes this clean the host's /workspace or /tmp.
 WORK = Path(__file__).resolve().parents[1]
@@ -40,6 +35,11 @@ def clear(path, keep):
 
 
 def listener_memory():
+    try:
+        from .sandbox_memory import retained_bytes
+    except ImportError:
+        from sandbox_memory import retained_bytes
+
     total, found = 0, False
     for proc in Path("/proc").iterdir():
         if not proc.name.isdigit():
