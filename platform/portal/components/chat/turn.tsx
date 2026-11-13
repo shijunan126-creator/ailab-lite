@@ -214,12 +214,9 @@ export default memo(function Turn({
   onSources?: (run: Run, sources: Source[], answer: string) => void;
   onOpenLink?: (url: string, title: string) => void;
 }) {
-  const [thoughtsExpanded, setThoughtsExpanded] = useState<Set<number>>(new Set());
-  const toggleThought = (step: number) => setThoughtsExpanded((previous) => {
-    const next = new Set(previous);
-    if (next.has(step)) next.delete(step); else next.add(step);
-    return next;
-  });
+  // kept here so a choice survives the process box folding or virtualising its rows away
+  const [thoughts, setThoughts] = useState<Map<number, boolean>>(new Map());
+  const chooseThought = (step: number, open: boolean) => setThoughts((previous) => new Map(previous).set(step, open));
   const [processExpanded, setProcessExpanded] = useState<boolean | null>(null);
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -348,7 +345,7 @@ export default memo(function Turn({
       <div className="msg assistant">
         <div className="avatar-ai">A</div>
         <div className="assistant-body">
-          {showProcess ? <WorkProcess thoughtsExpanded={thoughtsExpanded} onToggleThought={toggleThought} expanded={processExpanded} onExpanded={setProcessExpanded} run={run} items={shown == null ? null : process} live={live}
+          {showProcess ? <WorkProcess thoughts={thoughts} onThought={chooseThought} expanded={processExpanded} onExpanded={setProcessExpanded} run={run} items={shown == null ? null : process} live={live}
             loading={loadingHistory} error={historyError} more={moreHistory} onLoad={loadHistory} renderAsk={(item) => <Ask item={item}
               live={(!terminal || run.status === "interrupted") && !!onAnswer}
               onAnswer={(value) => onAnswer!(run, item.id, value)} />} /> : null}

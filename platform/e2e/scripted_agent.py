@@ -20,6 +20,9 @@ OPTIONS = ["标准版", "精简版"]
 STREAM_TRIGGER = "验证流式衔接"
 STREAM_TEXT = "环境已就绪：python-docx 和中文字体可用。下面开始编写文档生成脚本。"
 stream_release = asyncio.Event()
+COLLAPSE_TRIGGER = "验证回答折叠"
+ANSWER_TEXT = "折叠后的正式回答。"
+answer_release = asyncio.Event()
 FEATURE_STREAM = "集成思考与早标题"
 FEATURE_ANSWER = "这是过程框外的流式最终回答。"
 FEATURE_TITLE = "集成测试生成标题"
@@ -59,6 +62,12 @@ async def release_stream():
     return {"ok": True}
 
 
+@app.post("/e2e/release-answer")
+async def release_answer():
+    answer_release.set()
+    return {"ok": True}
+
+
 def _last_user_text(messages: list[dict]) -> str:
     return next((m["content"] for m in reversed(messages) if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
 
@@ -76,6 +85,16 @@ class QuestionThenAnswer(LLMClient):
                 await on_text(FEATURE_ANSWER)
             await asyncio.wait_for(stream_release.wait(), timeout=30)
             return LLMResponse(content=FEATURE_ANSWER, usage={"prompt_tokens": 20, "completion_tokens": 30})
+        if _last_user_text(messages) == COLLAPSE_TRIGGER:
+            stream_release.clear()
+            answer_release.clear()
+            if on_reasoning:
+                await on_reasoning("\n\n".join(f"**检查第 {i} 项**\n核对第 {i} 项布局与滚动位置。" for i in range(1, 41)))
+            await asyncio.wait_for(answer_release.wait(), timeout=30)
+            if on_text:
+                await on_text(ANSWER_TEXT)
+            await asyncio.wait_for(stream_release.wait(), timeout=30)
+            return LLMResponse(content=ANSWER_TEXT, usage={"prompt_tokens": 20, "completion_tokens": 30})
         if STREAM_TRIGGER != _last_user_text(messages):
             return await super().chat_stream(messages, tools, model, user_id, on_text, on_reasoning)
         stream_release.clear()

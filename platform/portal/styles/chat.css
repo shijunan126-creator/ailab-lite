@@ -202,6 +202,7 @@ label.field .hint { display: block; font-weight: 400; margin-top: 4px; }
 }
 /* ---------- the process: reasoning and steps, a bounded box above the answer ---------- */
 .work-process { border: 1px solid var(--border); overflow: hidden; transition: border-color var(--t), box-shadow var(--t); animation: rise-in var(--t) var(--ease); }
+.work-process .collapse { transition-timing-function: var(--ease-in-out); }
 .steps-head { width: 100%; display: flex; align-items: center; justify-content: flex-start; text-align: left; background: none; border: 0; min-width: 0; }
 .steps-head:active { transform: none; }
 .steps-head > span:nth-child(2) { flex: none; }
