@@ -1,7 +1,7 @@
 # 提示词瘦身与按需工具：实施与真实模型对比（2026-11-13）
 
 - 用户要求：在效果不变的前提下，压缩提示词和工具说明，减少整体 token；低频工具做成按需加载（Tool Search 思路），常用工具和常用 GenUI 组件直接常驻。必须用真实模型量化首请求和整个任务的消耗，并对比质量。
-- 分支 `perf/prompt-diet`，base `main@e7737c2f`。设计见[提示词瘦身设计](../../architecture/design/2026-11-13-prompt-diet.md)，决定见 [ADR 0043](../../architecture/adr/0043-on-demand-tools.md)。
+- PR #197，base `main@e7737c2f`，合并为 `main@6930d3d1`。设计见[提示词瘦身设计](../../architecture/design/2026-11-13-prompt-diet.md)，决定见 [ADR 0043](../../architecture/adr/0043-on-demand-tools.md)。
 
 ## 做了什么
 
