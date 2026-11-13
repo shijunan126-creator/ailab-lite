@@ -38,7 +38,7 @@ def test_today_comes_from_the_clock(api):
     contracts(turn)
     assert "current_time" in turn.tools(), turn.tools()
     today = datetime.now(ZoneInfo("Asia/Shanghai"))
-    assert f"{today.day}日" in turn.reply or f"{today.day}号" in turn.reply or today.strftime("%Y-%m-%d") in turn.reply, turn.reply
+    assert re.search(rf"{today.month}\s*月\s*{today.day}\s*[日号]|{today:%Y-%m-%d}", turn.reply), turn.reply
 
 
 def test_recurring_reminder_becomes_a_schedule(api):
