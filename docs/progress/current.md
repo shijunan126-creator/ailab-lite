@@ -3,7 +3,7 @@
 - 用户要求：V1 文档工具彻底退役，全部走 V2（含旧 Run 恢复）；精简目录也去掉，只留全量目录，降低维护成本。设计见 [ADR 0042](../architecture/adr/0042-single-tool-catalog.md)，实施与验证见[本轮记录](updates/2026-11-13-single-catalog.md)。
 - 已完成：删除四个 V1 工具及其 handler、`document_tools_version` 参数链与 `catalog_version`；删除 `REDUCED_V1/V2` 与 `catalog_for_budget`；V2 文案直接写进提示词与技能指南；`RETIRED_TOOLS` 收旧工具名、`CONTEXT_ABI_VERSION` 7→8，旧 Run 恢复时重建到新目录并记边界。
 - 验证：ruff 通过；本机全量 SQLite 3368 项 0 失败 0 错误 257 跳过（需 GNU coreutils/findutils 在 PATH）。PostgreSQL、E2E、真模型、浏览器未在本机跑，按仓库约定由 CI 与部署后验证承担。
-- 分支 `feat/current-time-tool`（含前一条 `current_time` 工具），未推送、未部署。下一步：按用户授权推送/提 PR；部署需当次明确要求。
+- 分支 `feat/current-time-tool`（含前一条 `current_time` 工具），已推送，[PR #196](https://github.com/shijunan126-creator/ailab-lite/pull/196)，base `main@84f0b442`；未合并、未部署。下一步：等 CI；合并与部署按用户当次授权。
 
 ---
 
