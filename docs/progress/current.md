@@ -3,8 +3,8 @@
 - 用户要求：修复旧交付文件缺少扫描记录导致的 `render_failed`，随后授权提交、提 PR 并部署本机，再要求观察 CI、通过后合并。分支 `fix/legacy-artifact-preview`，base `main@ef76d55a`。
 - 已实施：旧 sandbox 交付件首次请求预览时，复用持久扫描队列；实际扫描、校验原内容摘要和大小后，在同一事务保存结果并排预览。兼容已失败的预览缓存，并发打开复用任务；扫描失败、耗尽、超时不开始渲染。
 - 验证：ruff 与格式检查通过；相关模块和事务故障回归 `147 passed / 16 skipped`，含 7 个新增恢复用例；基线、命令与未测边界见[修复记录](updates/2026-11-13-legacy-artifact-preview.md)。未修改运行环境数据。
-- PR：[#192](https://github.com/shijunan126-creator/ailab-lite/pull/192)，产品提交 `1927ad78`；`6e077a49` 的 PostgreSQL CI 中既有 Broker 用例因 0.2 秒队列票据提前过期失败，其他所选套件通过，详见[记录](updates/2026-11-13-legacy-artifact-preview.md)。现将该用例改为受控时钟、直接占位与推进期限，断言保持严格。
-- 下一步：推送测试修复，等待最终 head 的完整 CI 全绿后合并；本机部署不重复执行，运行代码未改。主工作区另有 UI 开发，本轮不切换或覆盖它。
+- CI 与合并：[#192](https://github.com/shijunan126-creator/ailab-lite/pull/192) 最终 head `ba70461e` 全部 11 项检查通过，无评审阻塞；squash 合并为 `871fa114`，合并树与 CI 树一致。首轮 PostgreSQL 用例的票据时钟竞态已修复，详见[记录](updates/2026-11-13-legacy-artifact-preview.md)。
+- 下一步：无待实现项，后续按实际使用反馈；本轮仅合并与更新记录，没有再次部署。主工作区另有 UI 开发，保持其分支与修改不变。
 
 ---
 

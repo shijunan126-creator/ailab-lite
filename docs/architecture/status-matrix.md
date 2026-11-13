@@ -1,4 +1,4 @@
-2026-11-13 历史交付件缺失扫描记录的预览恢复已本地实现，验证边界见[记录](../progress/updates/2026-11-13-legacy-artifact-preview.md)，PR/CI 状态见[current](../progress/current.md)；本机部署不作为能力验收。
+2026-11-13 历史交付件缺失扫描记录的预览恢复随 [PR #192](https://github.com/shijunan126-creator/ailab-lite/pull/192) 合并为 `871fa114`，最终 head `ba70461e` 全部 11 项 CI 通过且合并树一致；验证边界见[记录](../progress/updates/2026-11-13-legacy-artifact-preview.md)，当前状态见[current](../progress/current.md)；本机部署不作为能力验收。
 
 2026-11-12 同模式分叉沿用被分叉轮次的 checkpoint 与血缘根会话头（`feat/fork-reuse-checkpoint`，base `main@cf758dd1`）：分支第一次调用真模型命中 Work 98.4%、Chat 97.9%（改前 0）；跨模式仍重建。[PR #190](https://github.com/shijunan126-creator/ailab-lite/pull/190) CI 全绿并合并为 `main@adb0ecf8`，见 [ADR 0041](adr/0041-fork-reuses-checkpoint.md) 与[记录](../progress/updates/2026-11-12-fork-checkpoint.md)。
 
