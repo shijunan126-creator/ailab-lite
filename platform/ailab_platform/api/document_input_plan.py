@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from ..config import settings
 from ..domain.document_input_plan import choose_inline
@@ -222,9 +223,7 @@ def prepare(db, user, files, spec, prompt, *, send_id=None):
             item["image_revision"] = (file.meta or {}).get("display_key")
             item["image_digest"] = get_storage().info(item["image_revision"]).etag
         elif item["pages"]:
-            from .routes_library_tools import document_images
-
-            binding = document_images(db, file, item["pages"], prepare=False)
+            binding = _rendered_pages(db, file, item["pages"])
             if binding.get("pending"):
                 from .routes_ocr import request_page_render
 
@@ -232,7 +231,7 @@ def prepare(db, user, files, spec, prompt, *, send_id=None):
                 request_page_render(db, file, item["pages"], preparation=preparation)
                 bounded_job(db, preparation, (file.meta or {}).get("preview_job_id"))
                 processing()
-            if binding.get("error") or binding.get("truncated"):
+            if binding.get("error"):
                 raise HTTPException(422, "attachment_image_unavailable")
             item["visual_pages"] = binding["files"]
     plan = {
@@ -251,6 +250,36 @@ def prepare(db, user, files, spec, prompt, *, send_id=None):
     preparation.plan = plan
     db.commit()
     return plan
+
+
+def _rendered_pages(db, file, pages):
+    """Canonical renders of the frozen inline pages, or pending until every one of them exists."""
+    if ((file.meta or {}).get("ocr_preview") or {}).get("status") == "failed":
+        return {"error": "render_failed"}
+    rows = {
+        row.page: row
+        for row in db.scalars(
+            select(RenderedPage).where(
+                RenderedPage.file_id == file.id, RenderedPage.version == "poppler-1280-v1", RenderedPage.page.in_(pages)
+            )
+        )
+    }
+    if any(page not in rows for page in pages):
+        return {"pending": True}
+    return {
+        "files": [
+            {
+                "id": file.id,
+                "file_id": file.id,
+                "filename": file.filename,
+                "content_type": "image/png" if rows[page].key.endswith(".png") else "image/jpeg",
+                "version": file.version,
+                "page": page,
+                "digest": rows[page].digest,
+            }
+            for page in pages
+        ]
+    }
 
 
 def validate_frozen(db, files, plan, model):
