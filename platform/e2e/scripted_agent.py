@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from ailab_platform.agent import loop
+from ailab_platform.agent import deferred, loop
 from ailab_platform.agent.main import app
 from ailab_platform.llm import LLMClient, LLMError, LLMResponse, MockLLM, ToolCall
 
@@ -108,12 +108,27 @@ class QuestionThenAnswer(LLMClient):
     async def chat(self, messages, tools, model, user_id=None):
         response = await self._chat(messages, tools, model, user_id)
         offered = {t["function"]["name"] for t in tools or []}
+        on_demand = deferred.names(tools)
+        if any(c.name in on_demand for c in response.tool_calls):
+            calls = [self._through_call_tool(c, on_demand, messages) for c in response.tool_calls]
+            return LLMResponse(content=response.content, tool_calls=calls)
         missing = next((c.name for c in response.tool_calls if c.name not in offered), None)
         if missing and "search_capabilities" in offered:
             return LLMResponse(
                 tool_calls=[ToolCall("discover_" + missing, "search_capabilities", {"query": missing, "kind": "tool", "limit": 1})]
             )
         return response
+
+    @staticmethod
+    def _through_call_tool(call: ToolCall, on_demand: frozenset[str], messages: list[dict]) -> ToolCall:
+        """An on-demand tool is reached the way a real model must: read its description once, then call it."""
+        if call.name not in on_demand:
+            return call
+        docs = [json.loads(m.get("content") or "{}") for m in messages if m.get("role") == "tool" and m.get("name") == deferred.CALL]
+        documented = any(doc.get(deferred.DOC_KEY) == call.name for doc in docs)
+        if not documented:
+            return ToolCall("doc_" + call.id, deferred.CALL, {"name": call.name})
+        return ToolCall(call.id, deferred.CALL, {"name": call.name, "arguments": call.arguments})
 
     async def _chat(self, messages, tools, model, user_id=None):
         prompt = _last_user_text(messages)
