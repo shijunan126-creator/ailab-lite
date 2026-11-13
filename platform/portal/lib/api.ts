@@ -54,7 +54,7 @@ export type Run = {
   };
   template?: { name: string; source: "template" | "file" } | null;
   result?: {
-    file_wait?: { action: "extract-text" | "image-reference" };
+    file_wait?: { action: "native-text" | "document-ocr" | "native-scope" | "document-view" }; // mirrors FileDependencyIn.action
     previews?: Preview[];
     sources?: { title: string; url: string; site: string }[];
     pause?: { kind: "quota"; window: "daily_tokens" | "monthly_tokens"; resets_at: string }; // why an interrupted run rests

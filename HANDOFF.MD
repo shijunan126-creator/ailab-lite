@@ -4,7 +4,8 @@
 - `CONTEXT_ABI_VERSION` 8 是一次性升级边界：旧会话的暂停/中断 Run 恢复时各重建一次，之后恢复逐字节前缀。改它之前先确认没有依赖旧 ABI 的缓存/摘要。
 - 精简目录已删除，`_tools_for_run` 不再按模型预算裁剪；测试里不要再引用 `REDUCED_V1/V2` 或 `catalog_for_budget`。小上下文模型多付全量 schema，但不会再因预算抛错。
 - `load_skill` 对基础技能返回的是指南导航（不是整份 SKILL.md）；要读正文按导航里的资源名继续 `load_skill(resource=...)`。相关断言已改为“资源根目录 + 脚本名”。
-- 旧内部端点 `/internal/runs/{id}/document-view`、`/library/read|extract-text|image-reference` 仍开放给部署中的旧 Agent；它们不按目录版本拒绝。删除前先确认没有旧 Agent 在跑。
+- 旧内部端点 `/internal/runs/{id}/document-view`、`/library/read|extract-text|image-reference` 已删除（强制过渡）。从目录摘掉工具时要连同 Agent handler、内部端点、`file_dependency` 动作一起删；只摘目录会留下大片走不到的代码。
+- 附件图像契约：已准备的图片和文档渲染页都必须真的带上 `image_url`，取不到就本轮报错；不要降级成文字说明，模型会当成自己看过图来回答。
 - 本机跑全量 Python 套件要按 AGENTS §9 把 `coreutils`/`findutils` 的 gnubin 加进 `PATH`，否则 sandbox/preview 用例在 setup 就报 GNU `realpath` 缺失，看起来像产品失败。
 
 ## 2026-11-13 当前日期工具
@@ -13,6 +14,7 @@
 - `test_a_chat_conversation_keeps_its_prefix_across_this_deploy` 钉住 Chat 提示词的长度和 SHA256。改 Chat 提示词要连同这两个数字一起更新，确认变化就是自己那一行，而不是把闸门删掉。
 - `user_timezone` 只是回退口径（最近一次定时任务的时区 → 记忆整理时区 → Asia-Shanghai），不是“用户此刻的时区”。跨时区用户必须在发送时带上浏览器时区；会话内 `schedule` 的 `now` 和新建任务时区也要用这个 Run 时区，否则“今天/明天 9 点”会按错误的一天算。
 - 工具目录按 Run 冻结：暂停中的旧 Run 恢复后不会出现新工具；新工具只对部署后启动的 Run 生效。
+- 浏览器时区只是提示：服务器时区库解析不了（浏览器的库更新）就当没带，回退账号时区；不要为它拒收消息。
 
 ## 2026-11-13 思考来源兼容
 

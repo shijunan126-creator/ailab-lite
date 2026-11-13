@@ -151,13 +151,12 @@ def test_new_endpoints_cannot_bypass_the_mode_fence(api):  # noqa: F811
         assert result.status_code == 422 and result.json()["detail"] == "document_tool_not_available_for_catalog"
 
 
-def test_retired_tool_routes_stay_available_to_deployed_agents(api):  # noqa: F811
-    """Old Agents still deploy against these internal routes; the model never sees their tool names any more."""
+def test_retired_tool_routes_are_gone(api):  # noqa: F811
+    """The retired document catalog has no internal routes left for anything to call."""
     rid, fid, headers = configure(api, mode="work")
     for action in ("read", "extract-text", "image-reference"):
-        result = api.post(f"/internal/runs/{rid}/library/{action}", headers=headers, json={"file_id": fid})
-        assert result.status_code in {200, 422, 503}, result.text
-    assert api.post(f"/internal/runs/{rid}/document-view", headers=headers, json={"op": "get_view"}).status_code == 200
+        assert api.post(f"/internal/runs/{rid}/library/{action}", headers=headers, json={"file_id": fid}).status_code in {404, 405}
+    assert api.post(f"/internal/runs/{rid}/document-view", headers=headers, json={"op": "get_view"}).status_code in {404, 405}
 
 
 def test_new_text_route_stages_one_lazy_native_job_and_waits_without_changing_original(api):  # noqa: F811

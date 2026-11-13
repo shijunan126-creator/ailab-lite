@@ -87,7 +87,7 @@ class RunCreate(PromptRequest):
     mode: Literal["chat", "work"] = "work"  # chat: answer in words only, no tools, never a sandbox
     skill: str | None = Field(default=None, max_length=64)
     skills: list[SkillSelection] | None = None
-    timezone: Timezone | None = Field(default=None, max_length=64)  # the browser's zone; the tool answers in it
+    timezone: Timezone = None  # the browser's zone; the tool answers in it
 
 
 class RunVersions(BaseModel):
@@ -232,7 +232,7 @@ class MessageCreate(PromptRequest):
     mode: Literal["chat", "work"] = "work"
     skill: str | None = Field(default=None, max_length=64)
     skills: list[SkillSelection] | None = None
-    timezone: Timezone | None = Field(default=None, max_length=64)  # the browser's zone; the tool answers in it
+    timezone: Timezone = None  # the browser's zone; the tool answers in it
 
 
 class ConversationStart(MessageCreate):

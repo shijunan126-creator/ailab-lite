@@ -319,7 +319,6 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
           if (event.type === "run.status" || event.type === "artifact.created") refreshRun(run.id);
           // the model asked this page to run a small program: claim it, run it in a worker, report back
           if (event.type === "client.call" && event.payload?.call_id) void handleClientCall(run.id, event.payload as ClientCall);
-          if (event.type === "document.reveal") revealRef.current(run.id, event.payload);
           if (["run.completed", "run.failed", "run.canceled"].includes(event.type)) {
             batch.flush();
             loadDetail();

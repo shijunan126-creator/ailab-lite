@@ -13,7 +13,7 @@
 1. **只保留 V2 文档工具**。删除 V1 的 `read_library_file`/`extract_text`/`view_attachment`/`document_view` 工具、`document_tools_version` 参数链与 `catalog_version`，以及提示词/技能模块里的版本分支。Chat 读资料库用 `read_document`/`search_document`/`view_document`；Work 只从 `/workspace/inputs` 读原件。
 2. **删除精简目录**。每个模式只有一份目录；小上下文模型也拿全量 schema，不再按预算裁剪，不再因此失败。前缀稳定性不变：目录仍在 Run 开始冻结，运行中不增删工具。
 3. **旧 Run 在恢复时升级**：四个退役工具名加入 `RETIRED_TOOLS`，`CONTEXT_ABI_VERSION` 升到 8。恢复旧 checkpoint 时重建 `messages[0]` 与工具目录，记 `context_boundary`（`context_abi_changed` / `tool_catalog_changed`），历史消息保留。
-4. **旧的内部读取端点保留**（`/internal/runs/{id}/library/read|extract-text|image-reference`、`/document-view`）：它们不是模型可见的工具，部署中的旧 Agent 仍可能调用；权限与 Run 围栏不变。
+4. **强制过渡，不留兼容层**：测试平台没有旧 Agent 在跑，旧内部端点（`/internal/runs/{id}/library/read|extract-text|image-reference`、`/document-view`）及只服务它们的代码一并删除；API 不再写 `document_tools_version`。等待旧工具的 `file_dependency`（`extract-text`/`image-reference`）在对账时直接恢复，Run 按当前目录继续。
 
 ## 后果
 

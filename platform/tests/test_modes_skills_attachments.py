@@ -63,12 +63,13 @@ def test_the_browser_timezone_is_frozen_on_the_run() -> None:
         ).json()
         assert run["options"]["timezone"] == "America/New_York"
         c.post(f"/v1/runs/{run['id']}/cancel", headers=AUTH)
-        bad = c.post(
+        # A zone this server cannot resolve (newer tz database in the browser) is a dropped hint, not a refused message.
+        unknown = c.post(
             f"/v1/conversations/{conv['id']}/messages",
             headers=AUTH,
             json={"prompt": "x", "timezone": "Mars/Olympus"},
         )
-        assert bad.status_code == 422
+        assert unknown.status_code == 201 and unknown.json()["options"]["timezone"] == "Asia/Shanghai"
 
 
 def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:

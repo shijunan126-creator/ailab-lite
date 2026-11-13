@@ -183,10 +183,11 @@ def test_chat_native_manifest_keeps_cell_count_and_geometry_independent(tmp_path
 
 
 def test_packed_native_index_and_read_keep_source_identity_and_unicode(tmp_path, monkeypatch):
+    from ailab_platform.api.document_content import visual_info
+    from ailab_platform.api.document_input_plan import text
     from ailab_platform.api.document_sources import index_document
-    from ailab_platform.api.routes_library_tools import Read, read_document_blocks
     from ailab_platform.db import SessionLocal, init_db
-    from ailab_platform.models import FileObject, User, new_id
+    from ailab_platform.models import DocumentBlock, FileDerivation, FileObject, User, new_id
     from ailab_platform.storage import get_storage
 
     init_db()
@@ -235,11 +236,11 @@ def test_packed_native_index_and_read_keep_source_identity_and_unicode(tmp_path,
         file.meta = {"document_manifest_key": key, "extract": {"kind": "docx", "parser": manifest["parser"]}}
         index_document(db, file, key)
         db.commit()
-        result = read_document_blocks(db, file, Read(file_id=file.id))
-        assert result["text"] == "".join(parts)
-        assert len(result["coverage"]) == 2
-        assert all(item["method"] == "native" for item in result["coverage"])
-        assert result["visual"]["status"] == "present"
+        blocks = db.query(DocumentBlock).join(FileDerivation).filter(FileDerivation.file_id == file.id).order_by(DocumentBlock.ordinal)
+        assert [(b.unit_number, b.digest, b.chars) for b in blocks] == [(u["unit_number"], u["sha256"], u["chars"]) for u in units]
+        # The Chat inline body reads each unit's own bytes out of the packed text: no unit bleeds into the next.
+        assert text(file, manifest) == "\n\n".join(parts)
+        assert visual_info(file)["status"] == "present"
 
 
 def test_native_representation_stages_two_assets_then_publishes_atomically(tmp_path, monkeypatch):

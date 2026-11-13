@@ -6,7 +6,7 @@
 
 - 新增零参数工具 `current_time`，Chat 和 Work 的目录都带，小上下文的精简目录也带。实现完全在 Agent 进程内（`tools.local_time`），不碰沙箱、不发 HTTP，Work 里也不触发租约。
 - 返回 `{date, weekday, time, timezone}`，星期用中文（`周五`），时区名一并返回，模型不会把 UTC 当成用户本地时间。
-- 时区来源：Portal 每次发送带 `Intl.DateTimeFormat().resolvedOptions().timeZone`，API 校验 IANA 名后写进 `run.options.timezone`，Run 内冻结。没有客户端时区的调用（直连 API、定时触发、重试）按账号既有口径回退：最近一次定时任务的时区 → 记忆整理时区 → `memory_dream_default_timezone`。没有该字段的老 Run 用 UTC 并在结果里写明。
+- 时区来源：Portal 每次发送带 `Intl.DateTimeFormat().resolvedOptions().timeZone`，API 用服务器时区库能解析的才写进 `run.options.timezone`，Run 内冻结；解析不了的（浏览器时区库比服务器新）当作没带，不拒收消息。没有客户端时区的调用（直连 API、定时触发、重试）按账号既有口径回退：最近一次定时任务的时区 → 记忆整理时区 → `memory_dream_default_timezone`。没有该字段的老 Run 用 UTC 并在结果里写明。
 - 同一个 `run.options.timezone` 也用于会话内 `schedule` 工具：`now` 和新建任务的时区都按它算。此前这里用 `user_timezone`（账号最近一次任务/整理设置/Asia-Shanghai），用户在其他时区第一次用会话内定时任务时会拿到错的“今天”和错的时区。
 - 提示词只在两个模式各加一行：`需要今天日期、星期或当前时间时用 current_time 查（用户本地时间），不要按训练数据猜。` 两个模式的版本号分别升级。
 - `run_subtasks` 的子任务也能用 `current_time`（`subtasks.ALLOWED`）。
@@ -21,7 +21,7 @@
 
 - `ruff check` / `ruff format --check`：通过。
 - 定向 Python：`test_workspace_tools test_prompts test_schedule_conversation test_modes_skills_attachments test_prefix_cache test_web test_net_tools test_document_catalog_v2 test_images test_context_band test_client_send_id test_queue test_conversations test_schedules_citations test_api test_conversation_mode_fixed` → **478 项，0 失败，7 跳过**。
-- 新增用例覆盖：工具在两个模式四个目录里存在且无参数；上海/纽约/UTC 的日期与星期换算；无时区与非法时区回退到 UTC 并标明；API 存下浏览器时区、非法时区 422；会话内 `schedule` 用发送时的时区（纽约 09:00 的下次时间仍是本地 09:00）；发送体带浏览器时区（Portal）。
+- 新增用例覆盖：工具在两个模式四个目录里存在且无参数；上海/纽约/UTC 的日期与星期换算；无时区与非法时区回退到 UTC 并标明；API 存下浏览器时区、未知时区回退账号口径（评审后由 422 改为回退）；会话内 `schedule` 用发送时的时区（纽约 09:00 的下次时间仍是本地 09:00）；发送体带浏览器时区（Portal）。
 - Portal `npm test`：50 个文件 **302 项通过**；`npm run build` 通过。
 - 定时任务时间口径复核（未改逻辑）：`next_run_at` 以 UTC 存，按任务时区计算墙钟；`<scheduled_task>` 头的 `at` 用 `local_text(occurrence, task.timezone)`；一次性任务落在 DST 空档时顺延到第一个有效分钟（`test_once_in_a_dst_gap_runs_at_the_first_valid_minute`）；结束日期按任务时区的日期比较；调度循环 30 秒一轮，最多晚约 `schedules_interval_seconds`。
 

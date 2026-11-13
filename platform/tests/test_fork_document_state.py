@@ -18,7 +18,8 @@ from ailab_platform.models import (
     Run,
 )
 from tests.document_fixtures import legacy_run
-from tests.test_conversations import _finish
+from tests.run_claims import attempt_headers
+from tests.test_conversations import _finish, _status
 from tests.test_document_context import AUTH, SERVICE, upload
 
 
@@ -26,7 +27,10 @@ def seed(c):
     fid = upload(c, "original.txt", b"original file evidence", "text/plain")
     conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
     run = legacy_run(c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "read", "mode": "work"}).json())
-    assert c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid}).status_code == 200
+    # The Work tool read that registers a file the prompt did not attach: copying it into the workspace.
+    _status(c, run["id"], "running")
+    copied = c.post(f"/internal/runs/{run['id']}/library/authorize-copy", headers=attempt_headers(c, run["id"]), json={"file_id": fid})
+    assert copied.status_code == 200, copied.text
     with SessionLocal() as db:
         owner = db.get(Run, run["id"]).user_id
         q = QueuedMessage(
@@ -60,7 +64,7 @@ def seed(c):
         )
         db.add(AppliedMessagePosition(run_id=run["id"], message_kind="queued_message", message_id=qid, application_seq=1))
         db.commit()
-    _finish(c, run["id"], "file evidence used")
+    _status(c, run["id"], "succeeded", summary="file evidence used", result={})
     return conv, run, fid
 
 
@@ -174,4 +178,4 @@ def test_picked_skill_keeps_mode_for_attachment_admission():
         assert run["options"]["mode"] == "work"
         prepared = c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()
         assert prepared["input_files"][0]["input_strategy"] == "reference"
-        assert prepared["input_files"][0]["text"] == ""
+        assert not prepared["input_files"][0].get("text")

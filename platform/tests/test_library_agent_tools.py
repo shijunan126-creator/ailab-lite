@@ -1,4 +1,4 @@
-"""Owned READY library access, bounded Unicode pages and real indexed query plans."""
+"""Owned READY library access and real indexed query plans."""
 
 import uuid
 
@@ -10,12 +10,12 @@ from ailab_platform.api.routes_library_tools import Search, library_query
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject, Run
 from ailab_platform.storage import get_storage
-from tests.document_fixtures import legacy_run
+from tests.document_fixtures import legacy_run, read_document
 from tests.run_claims import SERVICE, attempt_headers
 from tests.test_conversations import AUTH, _status
 
 
-def test_library_search_and_text_pages_are_owned_ready_and_project_first():
+def test_library_search_and_reads_are_owned_ready_and_project_first():
     with TestClient(app) as c:
         project = c.post("/v1/projects", headers=AUTH, json={"name": "lib" + uuid.uuid4().hex[:8]}).json()
         conv = c.post("/v1/conversations", headers=AUTH, json={"project_id": project["id"]}).json()
@@ -45,28 +45,24 @@ def test_library_search_and_text_pages_are_owned_ready_and_project_first():
             db.commit()
             ids = [f.id for f in files]
             key = files[0].meta["text_key"]
-        text_ = "中文🍎" * 12000
-        get_storage().put_bytes(key, text_.encode())
+        get_storage().put_bytes(key, "中文🍎".encode())
         url = f"/internal/runs/{run['id']}/library"
         found = c.post(url + "/search", headers=SERVICE, json={"query": "libtool-"}).json()["files"]
         assert found[0]["file_id"] == ids[0]
         assert set(ids[:2]) <= {f["file_id"] for f in found} and not set(ids[2:]) & {f["file_id"] for f in found}
         assert set(found[0]) == {"file_id", "filename", "content_type", "size", "project", "updated_at", "summary"}
         assert c.post(url + "/search", headers=SERVICE, json={"query": "", "limit": 21}).status_code == 422
-        first = c.post(url + "/read", headers=SERVICE, json={"file_id": ids[0]}).json()
-        assert first["text"] == text_[:30000] and first["next_offset"] == 30000 and first["truncated"]
-        last = c.post(url + "/read", headers=SERVICE, json={"file_id": ids[0], "offset": 30000}).json()
-        assert first["text"] + last["text"] == text_ and last["next_offset"] is None
-        for id_ in ids[2:]:
-            assert c.post(url + "/read", headers=SERVICE, json={"file_id": id_}).status_code == 404
-        assert c.post(url + "/read", headers=AUTH, json={"file_id": ids[0]}).status_code == 403
         _status(c, run["id"], "running")
+        # Skill files and files still processing are not library documents a run may read.
+        for id_ in ids[2:]:
+            assert read_document(c, run["id"], id_, start=False).status_code == 404
+        assert c.post(f"/internal/runs/{run['id']}/documents/read_document", headers=AUTH, json={"file_id": ids[0]}).status_code == 403
         assert c.post(url + "/authorize-copy", headers=attempt_headers(c, run["id"]), json={"file_id": ids[0]}).status_code == 422
         # A foreign run cannot use the first user's file, even knowing its id.
         from tests.test_conversations import _other_user
 
-        other = legacy_run(c.post("/v1/runs", headers=_other_user(c), json={"prompt": "foreign"}).json())
-        assert c.post(f"/internal/runs/{other['id']}/library/read", headers=SERVICE, json={"file_id": ids[0]}).status_code == 404
+        other = c.post("/v1/runs", headers=_other_user(c), json={"prompt": "foreign", "mode": "chat"}).json()
+        assert read_document(c, other["id"], ids[0]).status_code == 404
 
 
 def test_library_search_query_uses_user_index():
