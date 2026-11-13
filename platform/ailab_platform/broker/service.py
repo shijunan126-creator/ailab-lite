@@ -621,6 +621,7 @@ class LeaseManager:
             self.put_input(lease, "/workspace/.ailab/uno_convert.py", uno_client.read_bytes())
             health = uno_client.with_name("render_sandbox_health.py")
             self.put_input(lease, "/workspace/.ailab/render_sandbox_health.py", health.read_bytes())
+            self.put_input(lease, "/workspace/.ailab/sandbox_memory.py", health.with_name("sandbox_memory.py").read_bytes())
             if self.provider.office_listener:
                 result = self._provider_call(
                     "exec",

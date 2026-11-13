@@ -4,6 +4,7 @@ import hashlib
 import io
 import shutil
 import tarfile
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -39,7 +40,7 @@ def setup_renderer(tmp_path, content, filename):
             root = manager.provider.root / ref / "workspace"
             for directory in (root / "inputs", root / ".ailab"):
                 for path in directory.iterdir():
-                    if path.name in {"uno_convert.py", "render_sandbox_health.py"}:
+                    if path.name in {"uno_convert.py", "render_sandbox_health.py", "sandbox_memory.py"}:
                         continue
                     if path.is_dir():
                         shutil.rmtree(path)
@@ -206,10 +207,118 @@ def test_render_batches_remaining_pages_into_one_transfer(tmp_path, caplog):
     assert downloads == ["/workspace/.ailab/first/p-1.png", "/workspace/.ailab/rest.tar"]
     assert len(result["assets"]) == 3
     assert "convert_seconds" in caplog.text and "raster_seconds" in caplog.text
+    assert all("remaining_" + phase + "_seconds" in caplog.text for phase in ("archive", "download", "extract"))
     assert all(storage.get_bytes(asset["key"]).startswith(b"\x89PNG\r\n\x1a\n") for asset in result["assets"].values())
     published(manager, result)
     manager.release(result["render_lease_id"])
     assert manager.active_leases() == []
+
+
+def test_bundle_extraction_timing_excludes_time_spent_publishing(tmp_path, monkeypatch):
+    from ailab_platform.broker import render
+
+    archive = tmp_path / "source.tar"
+    with tarfile.open(archive, "w") as bundle:
+        for name in ("p-2.png", "p-3.png"):
+            info = tarfile.TarInfo(name)
+            info.size = 4
+            bundle.addfile(info, io.BytesIO(b"page"))
+    clock = [0.0]
+    monkeypatch.setattr(render.time, "monotonic", lambda: clock[0])
+
+    @contextmanager
+    def transfer():
+        import tempfile
+
+        with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
+            yield Path(directory) / "file"
+
+    def download(lease, path, local, limit):
+        clock[0] += 3
+        shutil.copyfile(archive, local)
+
+    def execute(*args):
+        clock[0] += 2
+        return SimpleNamespace(exit_code=0)
+
+    manager = SimpleNamespace(transfer_file=transfer, _download=download, get=lambda handle: {})
+    renderer = LibraryRenderer(manager)
+    monkeypatch.setattr(renderer, "_exec", execute)
+    phases = {}
+    for _, local, _ in renderer._bundle(SimpleNamespace(lease_id="lease"), "/pages", ["p-2.png", "p-3.png"], 200, phases=phases):
+        assert local.read_bytes() == b"page"
+        clock[0] += 50
+    assert phases == {"archive_seconds": 2, "download_seconds": 3, "extract_seconds": 0}
+
+
+@pytest.mark.skipif(not all(shutil.which(tool) for tool in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
+@pytest.mark.parametrize("failure", [None, "write", "publish"])
+def test_remaining_pages_batch_capacity_before_publication_and_release_temporary_files(tmp_path, monkeypatch, caplog, failure):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    for _ in range(10):
+        writer.add_blank_page(width=72, height=72)
+    content = io.BytesIO()
+    writer.write(content)
+    manager, renderer, storage = setup_renderer(tmp_path, content.getvalue(), "pages.pdf")
+    batches = []
+    reserve = manager.platform.reserve_derived_batch
+    temporary = []
+    transfer = manager.transfer_file
+
+    def reserve_batch(items):
+        batches.append(len(items))
+        return reserve(items)
+
+    def checked_publish(file_id, job_id, name, count, asset):
+        assert manager.platform.assets[asset["key"]]["state"] == "staged"
+        assert storage.get_bytes(asset["key"]).startswith(b"\x89PNG\r\n\x1a\n")
+        if failure == "publish" and int(name[2:-4]) == 3:
+            raise OSError("publication failed")
+        manager.platform.assets[asset["key"]]["state"] = "ready"
+
+    put_file = storage.put_file
+
+    def checked_write(key, path, content_type):
+        if failure == "write" and int(Path(key).name[2:-4]) == 3:
+            raise OSError("write failed")
+        return put_file(key, path, content_type)
+
+    def abandon_writer(job_id):
+        return {"deletable": [grant for grant in manager.platform.assets.values() if grant["state"] != "ready"]}
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def recorded_transfer():
+        with transfer() as local:
+            temporary.append(local)
+            yield local
+
+    monkeypatch.setattr(manager.platform, "reserve_derived_batch", reserve_batch)
+    monkeypatch.setattr(manager.platform, "publish_preview_page", checked_publish)
+    monkeypatch.setattr(manager.platform, "abandon_derived_writer", abandon_writer, raising=False)
+    monkeypatch.setattr(manager, "transfer_file", recorded_transfer)
+    monkeypatch.setattr(storage, "put_file", checked_write)
+    with caplog.at_level("INFO", logger="ailab.broker.render"):
+        if failure:
+            with pytest.raises(OSError, match=f"{'publication' if failure == 'publish' else 'write'} failed"):
+                renderer.render("file", "job")
+        else:
+            result = renderer.render("file", "job")
+    assert all(not path.exists() for path in temporary)
+    if failure:
+        assert batches == [8]
+        assert manager.active_leases() == []
+        assert all(grant["state"] == "ready" and storage.exists(key) for key, grant in manager.platform.assets.items())
+        assert len(storage.list_prefix("derived/").items) == (2 if failure == "publish" else 1)
+        return
+    assert batches == [8, 1]
+    assert len(result["assets"]) == 10
+    assert "remaining_raster_seconds" in caplog.text and "remaining_write_seconds" in caplog.text
+    published(manager, result)
+    manager.release(result["render_lease_id"])
 
 
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")

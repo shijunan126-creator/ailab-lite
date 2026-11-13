@@ -35,6 +35,23 @@ class AccountedWrites:
 
         return self._write(key, Path(path).stat().st_size, lambda: self.storage.put_file(key, path, content_type))
 
+    def put_cache_files(self, files):
+        from pathlib import Path
+
+        if not 1 <= len(files) <= 32 or any(not key.startswith("derived/") for key, _, _ in files):
+            raise ValueError("invalid derived cache batch")
+        grants = self.platform.reserve_derived_batch(
+            [
+                {"key": key, "version": self.version, "max_bytes": Path(path).stat().st_size, "kind": "cache", "job_id": self.job_id}
+                for key, path, _ in files
+            ]
+        )["items"]
+        if [grant["key"] for grant in grants] != [key for key, _, _ in files]:
+            raise ValueError("invalid derived cache grants")
+        for key, path, content_type in files:
+            self.storage.put_file(key, path, content_type)
+        self.platform.finish_derived_batch([{"key": grant["key"], "token": grant["token"]} for grant in grants])
+
     def put_stream(self, key, stream, content_type="application/octet-stream", *, max_bytes):
         return self._write(key, max_bytes, lambda: self.storage.put_stream(key, stream, content_type, max_bytes=max_bytes))
 

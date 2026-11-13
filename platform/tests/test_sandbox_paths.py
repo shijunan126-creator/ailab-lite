@@ -101,7 +101,13 @@ def test_mock_sandbox_keeps_tmp_private(tmp_path) -> None:
         "import os, runpy; m = runpy.run_path('/workspace/.ailab/render_sandbox_health.py'); "
         "print(m['WORK'].samefile(os.getcwd()), str(m['TEMP']) == os.environ['TMPDIR'])"
     )
-    assert provider.exec(sandbox_id, f'python -c "{probe}"', 10).stdout.split() == ["True", "True"]
+    result = provider.exec(sandbox_id, f'python -c "{probe}"', 10)
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.split() == ["True", "True"]
+    result = provider.exec(sandbox_id, "python /workspace/.ailab/render_sandbox_health.py 0 100 0", 10)
+    assert result.exit_code == 0, result.stderr
+    assert not (root / "tmp" / Path(marker).name).exists()
+    assert not Path(marker).exists()
     provider.release(sandbox_id)
 
 

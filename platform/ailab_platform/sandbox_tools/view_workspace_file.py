@@ -1,6 +1,7 @@
 """Bounded visual rendering inside the current run sandbox."""
 
 import base64
+import hashlib
 import importlib.util
 import io
 import json
@@ -9,6 +10,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -75,6 +77,8 @@ def normalize(path: Path) -> bytes:
 
 
 def main() -> None:
+    started = time.monotonic()
+    phases = {}
     root, path, output, selection = sys.argv[1:5]
     review = sys.argv[5:] == ["review"]
     selected = json.loads(selection)
@@ -104,6 +108,7 @@ def main() -> None:
             rendered.mkdir()
             listener = None
             if suffix != ".pdf":
+                listener_started = time.monotonic()
                 listener_spec = importlib.util.spec_from_file_location(
                     "work_view_listener", Path(__file__).with_name("work_view_listener.py")
                 )
@@ -116,16 +121,28 @@ def main() -> None:
                 else:
                     os.environ["AILAB_LO_LISTENER"] = "1"
                     os.environ["AILAB_LO_PIPE"] = listener.PIPE
+                phases["listener_seconds"] = time.monotonic() - listener_started
             try:
-                result = render_preview.pages(source, rendered, selected, sheets=suffix == ".xlsx")
+                if listener:
+                    revision = hashlib.sha256(
+                        Path(__file__).with_name("render_preview.py").read_bytes() + Path(__file__).with_name("uno_convert.py").read_bytes()
+                    ).digest()
+                    convert_started = time.monotonic()
+                    with listener.pdf_source(source, render_preview.soffice, revision) as (pdf, hit):
+                        phases.update(pdf_cache_hit=hit, pdf_seconds=time.monotonic() - convert_started)
+                        result = render_preview.pages(pdf, rendered, selected, sheets=suffix == ".xlsx")
+                else:
+                    result = render_preview.pages(source, rendered, selected, sheets=suffix == ".xlsx")
             finally:
                 if listener:
                     listener.touch()
             names = [rendered / name for name in result["pages"]]
+            phases.update(result.get("phases", {}))
         images = [normalize(name) for name in names]
         if sum(map(len, images)) > MAX_TOTAL:
             raise ValueError("output_limit")
         payload = {"pages": selected, "images": [base64.b64encode(image).decode("ascii") for image in images]}
+        payload["phases"] = {**phases, "total_seconds": time.monotonic() - started}
         if suffix == ".xlsx":
             payload.update(page_count=result["page_count"], sheet_pages=result.get("sheet_pages"))
         if review:

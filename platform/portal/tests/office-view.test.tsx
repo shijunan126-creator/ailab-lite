@@ -217,9 +217,28 @@ test.each([{ ...ready, native: false }, { ...ready, bytes: 64 * 1024 * 1024 + 1 
   request.mockResolvedValue(value); mount();
   expect(await screen.findByText("fallback")).toBeTruthy();
 });
-test("index request failure falls back", async () => {
-  request.mockRejectedValue(new Error("offline")); mount();
-  expect(await screen.findByText("fallback")).toBeTruthy();
+test.each([
+  ["offline", "文件加载失败，请检查网络后重试"],
+  ['409 {"detail":"document_not_safe"}', "文件未通过安全检查，无法预览"],
+  ['409 {"detail":"document_scan_failed"}', "文件扫描失败，请稍后重试"],
+  ["403 forbidden", "文件不存在或无权访问"],
+  ["404 missing", "文件不存在或无权访问"],
+  ["503 unavailable", "文件加载失败（503）"],
+])("index request failure %s never starts a server render", async (message, expected) => {
+  request.mockRejectedValue(new Error(message)); mount();
+  expect((await screen.findByRole("alert")).textContent).toBe(expected);
+  expect(screen.queryByText("fallback")).toBeNull();
+});
+test("pending scan has a deadline without falling back to server rendering", async () => {
+  vi.useFakeTimers();
+  request.mockResolvedValue({ status: "pending" });
+  mount();
+  await act(async () => { await vi.advanceTimersByTimeAsync(300_000); });
+  expect(screen.getByRole("alert").textContent).toBe("文档准备超时，请重新打开");
+  const calls = request.mock.calls.length;
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  expect(request).toHaveBeenCalledTimes(calls);
+  expect(screen.queryByText("fallback")).toBeNull();
 });
 test("pending index polls then opens native; unmount cancels polling", async () => {
   vi.useFakeTimers();

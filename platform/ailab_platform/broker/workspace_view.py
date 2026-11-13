@@ -3,6 +3,7 @@
 import base64
 import binascii
 import json
+import logging
 import shlex
 import time
 from pathlib import Path
@@ -19,6 +20,7 @@ LISTENER = HELPER.with_name("work_view_listener.py")
 UNO_CLIENT = HELPER.with_name("uno_convert.py")
 MAX_RESULT = 1700 * 1024
 MAX_TOTAL = 1200 * 1024
+log = logging.getLogger("ailab.broker.workspace_view")
 
 
 def jpeg_dimensions(data: bytes) -> tuple[int, int]:
@@ -87,6 +89,7 @@ def view(manager, lease_id: str, path: str, selected, *, review: bool = False, t
         manager.put_file(lease_id, helper, HELPER.read_bytes())
         manager.put_file(lease_id, renderer, RENDER_SCRIPT.read_bytes())
         manager.put_file(lease_id, f"{directory}/work_view_listener.py", LISTENER.read_bytes())
+        manager.put_file(lease_id, f"{directory}/sandbox_memory.py", HELPER.with_name("sandbox_memory.py").read_bytes())
         manager.put_file(lease_id, f"{directory}/uno_convert.py", UNO_CLIENT.read_bytes())
         if review:
             manager.put_file(lease_id, f"{directory}/artifact_checks.py", HELPER.with_name("artifact_checks.py").read_bytes())
@@ -112,6 +115,16 @@ def view(manager, lease_id: str, path: str, selected, *, review: bool = False, t
             payload = json.loads(local.read_bytes())
         if not isinstance(payload, dict) or payload.get("pages") != selected or not isinstance(payload.get("images"), list):
             raise ValueError("invalid_view_output")
+        phases = payload.pop("phases", {})
+        if isinstance(phases, dict):
+            timings = {
+                key: value
+                for key, value in phases.items()
+                if key in {"listener_seconds", "pdf_seconds", "convert_seconds", "raster_seconds", "total_seconds"}
+                and type(value) in (int, float)
+                and 0 <= value <= 60
+            }
+            log.info("workspace view pdf_cache_hit=%s phases=%s", phases.get("pdf_cache_hit") is True, timings)
         if len(payload["images"]) != len(selected):
             raise ValueError("invalid_view_output")
         total = 0
@@ -157,6 +170,7 @@ def warm(manager, lease_id: str) -> dict:
     try:
         manager.register_scratch(lease_id, directory, time.time() + 15)
         manager.put_file(lease_id, script, LISTENER.read_bytes())
+        manager.put_file(lease_id, f"{directory}/sandbox_memory.py", HELPER.with_name("sandbox_memory.py").read_bytes())
         result = manager.exec(lease_id, f"timeout -k 2 8s python {script} --ensure {settings.render_work_listener_rss_bytes}", 12)
         return {"ok": result.exit_code == 0}
     finally:

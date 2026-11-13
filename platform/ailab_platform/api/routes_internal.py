@@ -1247,6 +1247,8 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
         if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
             raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
         file.status = body.status
+    if (file.meta or {}).get("document_rescan") and file.status == FileStatus.READY:
+        file.meta = {key: value for key, value in file.meta.items() if key != "document_rescan"}
     if (file.meta or {}).get("preview_rescan"):
         if file.status == FileStatus.READY and (file.meta.get("scan") or {}).get("verdict") == "clean":
             from .preview_requests import request_preview

@@ -25,6 +25,15 @@ class Authority:
         self.rows[key]["state"] = "staged"
         self.events.append(("staged", key))
 
+    def reserve_derived_batch(self, items):
+        self.events.append(("reserve_batch", len(items)))
+        return {"items": [self.reserve_derived(**item) for item in items]}
+
+    def finish_derived_batch(self, items):
+        self.events.append(("finish_batch", len(items)))
+        for item in items:
+            self.finish_derived(item["key"], item["token"])
+
     def abandon_derived_writer(self, job_id):
         result = []
         for key, row in self.rows.items():
@@ -95,6 +104,48 @@ def test_failed_put_keeps_capacity_liability_until_physical_delete_succeeds(tmp_
     with pytest.raises(OSError, match="storage down"):
         writer.cleanup()
     assert authority.rows[key]["state"] == "deleting"
+    storage.close()
+
+
+@pytest.mark.parametrize("failure", [None, "write", "finish"])
+def test_cache_batch_keeps_grants_and_compensation_on_failure(tmp_path, monkeypatch, failure):
+    storage = LocalStorage(tmp_path / "objects")
+    authority = Authority(storage)
+    writer = AccountedWrites(storage, authority, "source", "job")
+    files = []
+    for number in range(8):
+        source = tmp_path / f"page-{number}.png"
+        source.write_bytes(b"image")
+        files.append((f"derived/file/preview/page-{number}.png", source, "image/png"))
+    original = storage.put_file
+
+    def checked_write(key, path, content_type):
+        assert len(authority.rows) == 8
+        assert authority.rows[key]["state"] == "writing"
+        if failure == "write" and key == files[3][0]:
+            raise OSError("disk full")
+        original(key, path, content_type)
+
+    monkeypatch.setattr(storage, "put_file", checked_write)
+    if failure == "finish":
+        finish = authority.finish_derived_batch
+
+        def failed_finish(items):
+            finish(items)
+            authority.rows[files[0][0]]["state"] = "ready"
+            raise OSError("response lost")
+
+        monkeypatch.setattr(authority, "finish_derived_batch", failed_finish)
+    if failure:
+        with pytest.raises(OSError):
+            writer.put_cache_files(files)
+    else:
+        writer.put_cache_files(files)
+        assert [event for event in authority.events if event[0].endswith("batch")] == [("reserve_batch", 8), ("finish_batch", 8)]
+        assert all(row["state"] == "staged" for row in authority.rows.values())
+    writer.cleanup()
+    assert set(authority.rows) == ({files[0][0]} if failure == "finish" else set())
+    assert all(not storage.exists(key) or authority.rows[key]["state"] == "ready" for key, _, _ in files)
     storage.close()
 
 
