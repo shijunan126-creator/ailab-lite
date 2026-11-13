@@ -903,11 +903,24 @@ def empty_trash(user: User = Depends(current_user), db: Session = Depends(get_db
 def get_document(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db), structure: bool = False):
     from ..contracts.document_view import PARSER_REVISION
     from .document_view import index
+    from .preview_requests import legacy_preview_scan_required, request_legacy_scan
 
     file = _owned_file(db, file_id, user)
     if file.deleted_at or file.purged_at or file.purpose != "library":
         raise HTTPException(404, "document unavailable")
+    if legacy_preview_scan_required(file):
+        with user_critical_section(db, user.id):
+            file = _owned_file(db, file_id, user)
+            if file.deleted_at or file.purged_at or file.purpose != "library":
+                raise HTTPException(404, "document unavailable")
+            if legacy_preview_scan_required(file):
+                request_legacy_scan(db, file)
+                db.commit()
+    if (file.meta or {}).get("scan_exhausted"):
+        raise HTTPException(409, "document_scan_failed")
     if file.status != FileStatus.READY:
+        if file.status == FileStatus.REJECTED:
+            raise HTTPException(409, "document_not_safe")
         return {"status": "pending" if file.status == FileStatus.PENDING else "failed", "file_id": file.id, "native": False}
     if not structure:
         from ..contracts.document_view import opening_metadata

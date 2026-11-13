@@ -1,3 +1,12 @@
+# 原生查看扫描恢复与错误分流（2026-11-13）
+
+- 用户要求：修复旧 PPT 原生入口返回安全错误后错误进入渲染沙箱的问题，随后授权提交并提 PR；未授权本轮合并或部署。
+- 已实施：原生入口复用持久扫描队列并发去重；真实扫描和摘要/大小校验成功后继续浏览器查看，不排分页作业或预热。前端接口错误明确展示，pending 最长等候 5 分钟；格式/准入/renderer 兼容性回退保留。
+- 本地验证：Python 111 项、Portal 原生查看 62 项通过，Ruff/格式检查通过，Portal webpack 生产构建通过；未进行浏览器、PostgreSQL 或 CI 验收。详见[本轮记录](updates/2026-11-13-native-view-scan-recovery.md)。
+- 分支 `fix/native-view-scan-recovery`，基线 `main@910f1525`；主工作区的并发 UI 修改保持不变。下一步：以 PR 最终 head CI 为准；浏览器实测仍待完成。
+
+---
+
 # 历史交付件预览恢复（2026-11-13）
 
 - 用户要求：修复旧交付文件缺少扫描记录导致的 `render_failed`，随后授权提交、提 PR 并部署本机，再要求观察 CI、通过后合并。分支 `fix/legacy-artifact-preview`，base `main@ef76d55a`。

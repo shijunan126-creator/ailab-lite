@@ -147,6 +147,7 @@ def _process_file_impl(file_id: str, platform: PlatformClient, storage: Storage 
         not thumbnail_only
         and not safety_only
         and not flags.get("preview_rescan")
+        and not flags.get("document_rescan")
         and PurePath(meta["filename"]).suffix.lower() in {".pdf", ".docx", ".pptx", ".xlsx"}
     ):
         hint = getattr(platform, "prewarm_render", None)
@@ -189,7 +190,7 @@ def _process_file_impl(file_id: str, platform: PlatformClient, storage: Storage 
         if scan["verdict"] == "infected":
             platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan}, status="rejected")
             return {"file_id": file_id, "rejected": scan}
-        if flags.get("preview_rescan"):
+        if flags.get("preview_rescan") or flags.get("document_rescan"):
             with source.open("rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
             if digest != meta["sha256"] or source.stat().st_size != meta["size"]:

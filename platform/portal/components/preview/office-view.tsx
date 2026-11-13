@@ -120,8 +120,9 @@ function useDark() {
 }
 
 /** The viewer index of a document, polled while it is being made; null until known, "fallback" when not native. */
-function useDocumentIndex(doc: OfficeDoc, revision?: number): DocumentIndex | "fallback" | null {
+function useDocumentIndex(doc: OfficeDoc, revision?: number) {
   const [index, setIndex] = useState<DocumentIndex | "fallback" | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const key = JSON.stringify(doc.source);
   const previousKey = useRef<string | null>(null);
   useEffect(() => {
@@ -130,16 +131,31 @@ function useDocumentIndex(doc: OfficeDoc, revision?: number): DocumentIndex | "f
     // A rendered-preview revision can change without the native file changing. Recheck in place;
     // only a different document identity blanks the viewer while its index is loading.
     if (previousKey.current !== key) setIndex(null);
+    setError(null);
     previousKey.current = key;
+    const deadline = Date.now() + 300_000;
     const ask = () =>
       api<DocumentIndex>(indexUrl(doc.source), { signal: controller.signal })
         .then((value) => {
           if (controller.signal.aborted) return;
-          if (value.status === "pending") timer = setTimeout(ask, POLL_MS);
+          if (value.status === "pending") {
+            if (Date.now() >= deadline) {
+              setIndex(null);
+              setError("文档准备超时，请重新打开");
+            } else timer = setTimeout(ask, POLL_MS);
+          }
           else if (value.status !== "ready" || !value.native || !value.version || (value.bytes ?? 0) > MAX_NATIVE_BYTES) setIndex("fallback");
           else setIndex(value);
         })
-        .catch(() => !controller.signal.aborted && setIndex("fallback"));
+        .catch((failure) => {
+          if (controller.signal.aborted) return;
+          const message = failure instanceof Error ? failure.message : "";
+          const status = message.match(/^(\d{3})\b/);
+          setIndex(null);
+          if (message.includes("document_scan_failed")) setError("文件扫描失败，请稍后重试");
+          else if (message.includes("document_not_safe")) setError("文件未通过安全检查，无法预览");
+          else setError(sourceError(status ? Number(status[1]) : null));
+        });
     ask();
     return () => {
       controller.abort();
@@ -147,7 +163,7 @@ function useDocumentIndex(doc: OfficeDoc, revision?: number): DocumentIndex | "f
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, revision]);
-  return index;
+  return { index, error };
 }
 
 type Props = {
@@ -171,7 +187,7 @@ type Props = {
 export default function OfficeView({ doc, revision, docs: given, conversationId, reveal, onOpen, onReference, onAsk, fallback }: Props) {
   const docs = given ?? [doc];
   const chat = !!(onReference && onAsk);
-  const loaded = useDocumentIndex(doc, revision);
+  const { index: loaded, error: indexError } = useDocumentIndex(doc, revision);
   const indexedVersion = loaded && loaded !== "fallback" ? loaded.version : null;
   // The viewer gave up on this version: its bundle did not start or the renderer failed (the paged preview takes
   // over, once per version), or the source itself could not be read (an error, no expensive preview).
@@ -571,11 +587,11 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
   };
   const shown = ready && framed === contentVersion && tools?.version === contentVersion ? tools.tools : null;
 
-  if (stop?.error)
+  if (indexError || stop?.error)
     return (
       <div className="office-stage">
         <div className="alert error" role="alert">
-          {stop.error}
+          {indexError || stop?.error}
         </div>
       </div>
     );

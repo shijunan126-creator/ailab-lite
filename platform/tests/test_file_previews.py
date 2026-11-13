@@ -277,6 +277,81 @@ def rescan_client(api, fid):
     return worker
 
 
+def test_legacy_native_open_rescans_once_without_requesting_render(api):
+    from unittest.mock import Mock
+
+    from sqlalchemy import select
+
+    from ailab_platform.models import OutboxMessage
+
+    fid = legacy_artifact(api, "legacy.pptx")
+    with SessionLocal() as db:
+        previous_jobs = set(db.scalars(select(OutboxMessage.id).where(OutboxMessage.payload["file_id"].as_string() == fid)))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _: api.get(f"/v1/files/{fid}/document", headers=AUTH), range(2)))
+    assert all(response.status_code == 200 and response.json()["status"] == "pending" for response in responses)
+    worker = rescan_client(api, fid)
+    worker.prewarm_render = Mock()
+    assert process_file(fid, platform=worker)["scan_ready"]
+    worker.prewarm_render.assert_not_called()
+    assert worker.renders == 0
+    for _ in range(2):
+        response = api.get(f"/v1/files/{fid}/document", headers=AUTH)
+        assert response.status_code == 200 and response.json()["native"]
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert "document_rescan" not in file.meta
+        assert "preview_job_id" not in file.meta
+        jobs = db.scalars(select(OutboxMessage).where(OutboxMessage.payload["file_id"].as_string() == fid)).all()
+        assert sum(job.payload["kind"] == "file" and job.id not in previous_jobs for job in jobs) == 1
+        assert not any(job.payload["kind"] in {"preview", "viewer"} for job in jobs)
+
+
+@pytest.mark.parametrize("failure", ["infected", "unavailable", "integrity", "expired"])
+def test_legacy_native_scan_failure_is_terminal_without_render(api, monkeypatch, failure):
+    from datetime import timedelta
+
+    from ailab_platform.models import OutboxMessage
+    from ailab_platform.ports.scanner import ScanResult
+    from ailab_platform.worker.pipeline import ScanUnavailable
+
+    fid = legacy_artifact(api, "legacy.pptx")
+    assert api.get(f"/v1/files/{fid}/document", headers=AUTH).json()["status"] == "pending"
+    if failure == "expired":
+        with SessionLocal() as db:
+            job_id = db.get(FileObject, fid).meta["processing_job_id"]
+            job = db.get(OutboxMessage, job_id)
+            job.payload = {**job.payload, "deadline": (datetime.now(UTC) - timedelta(seconds=1)).isoformat()}
+            db.commit()
+        assert ApiClient(api)._post(f"/internal/jobs/{job_id}/claim", {"consumer": "expired-native-scan"})["state"] == "done"
+    else:
+        if failure == "integrity":
+            with SessionLocal() as db:
+                file = db.get(FileObject, fid)
+                file.sha256 = "0" * 64
+                db.commit()
+        else:
+
+            class Scanner:
+                def scan(self, stream):
+                    return ScanResult(failure, "test")
+
+            monkeypatch.setattr("ailab_platform.worker.pipeline.get_scanner", lambda: Scanner())
+        worker = rescan_client(api, fid)
+        if failure == "unavailable":
+            monkeypatch.setattr(settings, "file_max_attempts", 1)
+            with pytest.raises(ScanUnavailable):
+                process_file(fid, platform=worker)
+        else:
+            assert "rejected" in process_file(fid, platform=worker)
+        assert worker.renders == 0
+    response = api.get(f"/v1/files/{fid}/document", headers=AUTH)
+    assert response.status_code == 409
+    assert response.json()["detail"] == ("document_scan_failed" if failure in {"unavailable", "expired"} else "document_not_safe")
+    with SessionLocal() as db:
+        assert "preview_job_id" not in db.get(FileObject, fid).meta
+
+
 @pytest.mark.parametrize("name", ["legacy.pptx", "legacy.md"])
 def test_legacy_artifact_rescans_before_retrying_failed_preview(api, name):
     from sqlalchemy import select
