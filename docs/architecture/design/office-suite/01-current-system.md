@@ -7,7 +7,7 @@
 | 环节 | 当前源码 | 当前行为与迁移影响 |
 | --- | --- | --- |
 | 模式及提示词 | `platform/ailab_platform/agent/prompts.py`：`system_prompt_for`、`load_skill` | Chat/Work 有不同规则；当前用 `<!-- work -->` 剥离基础技能制作部分。直接替换上游大文件后不能依赖这个旧正则获得安全的 Chat 版本。 |
-| 请求目录 | `agent/loop.py:_tools_for_run`、`agent/discovery.py:catalog_for_budget` | 首次选择完整或 REDUCED_V1 目录，保存 `tool_catalog_v1`，后续固定；search 只找技能，不动态增加 schema。小目录不含全部文件/视觉工具，接入前要定义可支持的模型档位。 |
+| 请求目录 | `agent/loop.py:_tools_for_run` | 每个模式只有一份目录，Run 开始冻结到 `tool_catalog_v1`，后续固定；search 只找技能，不动态增加 schema。2026-11-13 起不再按模型预算裁剪（[ADR 0042](../../adr/0042-single-tool-catalog.md)）。 |
 | 基础技能 | `skill_registry.py`、`skill_index.py`、`agent/skill_verification.py` | 四基础身份 `platform.docx/xlsx/pptx/pdf`；文件树 hash 与沙箱镜像需一致。用户不能关闭基础技能；新模块也须进入校验闭包。 |
 | 自动加载与去重 | `agent/loop.py:_ensure_skill`、`_carried_skills`、`_register_carried_skills`、`_run_tool` | 附件 MIME/后缀、Work 用户关键词可预加载基础正文；跨轮从配对成功结果识别正文，身份为 version+mode 或 file_id+mode。现无 route/reference 级读取身份。 |
 | 实际工具结果 | `agent/tools.py:tool_result_message`、`loop.py:_run_tool` | 完整 result JSON 进入模型消息；事件仅展示约 2000 字符。事件日志变短不是上下文受限，不能靠 UI 截断控制大技能。 |

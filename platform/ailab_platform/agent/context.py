@@ -716,7 +716,6 @@ class ContextManager:
                 deferred=options.get("capability_discovery") == 1,
                 genui=bool(self.catalog().get(model) and self.catalog().get(model).supports({"genui"})),
                 genui_tools=bool(self.catalog().get(model) and self.catalog().get(model).supports({"tools"})),
-                **({"document_tools_version": 2} if options.get("document_tools_version") == 2 else {}),
             ),
         }
 
@@ -866,8 +865,6 @@ class ContextManager:
                     prompt_changed = previous.get("messages", [{}])[0] != messages[0]
                     if previous.get("model") not in (None, model):
                         reason = "model_changed"
-                    elif options.get("document_tools_version") == 2 and tools_changed:
-                        reason = "rebuilt"
                     elif tools_changed and not prompt_changed:
                         # Same rules, same model, different tool list: the catalog is what changed.
                         reason = "tool_catalog_changed"

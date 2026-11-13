@@ -442,18 +442,12 @@ def test_invalidated_file_source_removes_the_branch_snapshot(api):  # noqa: F811
     assert "previous_model_context" not in model_input and "PRIVATE" not in json.dumps(model_input)
 
 
-@pytest.mark.parametrize("copyable", [True, False])
-def test_capture_references_move_to_the_branch_copies(api, copyable):  # noqa: F811
+def test_capture_references_move_to_the_branch_copies(api):  # noqa: F811
     from ailab_platform.models import ViewerCapture
     from tests.run_claims import attempt_headers
     from tests.test_document_view import capture_setup
 
     rid, cid, _fid, _version, token, value = capture_setup(api)
-    if copyable:  # catalog v2 keeps captures with their message; v1 captures are 10-minute temporaries
-        with SessionLocal() as db:
-            run = db.get(Run, rid)
-            run.options = {**run.options, "document_tools_version": 2}
-            db.commit()
     result = api.post(f"/v1/runs/{rid}/client-calls/capture/result", headers=AUTH, json={"claim_token": token, "ok": True, "value": value})
     assert result.status_code == 200, result.text
     capture = api.get(f"/internal/runs/{rid}/client-calls/capture", headers=SERVICE).json()["result"]["value"]["capture_id"]
@@ -470,11 +464,8 @@ def test_capture_references_move_to_the_branch_copies(api, copyable):  # noqa: F
     assert save(api, rid, headers, state=finished(messages)).status_code == 200
     assert api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "succeeded"}).status_code == 200
     with SessionLocal() as db:
-        assert (db.get(ViewerCapture, capture).expires_at is None) == copyable
+        assert db.get(ViewerCapture, capture).expires_at is None
     branch, leaf = fork(api, cid, rid)
-    if not copyable:
-        assert checkpoint_keys(leaf) == []
-        return
     copied = stored_state(leaf)[1]["messages"][2]["content"][1]
     moved = copied["file"]["capture_id"]
     assert moved != capture and {**copied, "file": {**copied["file"], "capture_id": capture}} == image

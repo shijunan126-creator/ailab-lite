@@ -90,7 +90,7 @@ def test_v2_children_copy_original_and_view_in_parent_lease_without_platform_doc
 
     class Platform(FakePlatform):
         async def get_run(self, run_id):
-            return {**await super().get_run(run_id), "options": {"mode": "work", "document_tools_version": 2}}
+            return {**await super().get_run(run_id), "options": {"mode": "work"}}
 
         async def library(self, run_id, action, arguments):
             assert action == "authorize-copy" and arguments == {"file_id": "original"}

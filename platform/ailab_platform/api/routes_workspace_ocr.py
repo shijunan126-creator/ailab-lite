@@ -14,7 +14,6 @@ from ..contracts.workspace_ocr import PreparedImage
 from ..db import SessionLocal
 from ..deps import get_db
 from ..domain.document_reading import CursorError, Position, decode_cursor, encode_cursor
-from ..domain.document_tools import catalog_version
 from ..locks import user_critical_section
 from ..models import DocumentOperation, RunStatus
 from ..ocr_backend import recognize
@@ -30,7 +29,7 @@ router = APIRouter(prefix="/internal/runs", dependencies=[Depends(require_scope(
 
 
 def admit(run):
-    if (run.options or {}).get("mode", "work") != "work" or catalog_version(run.options) != 2:
+    if (run.options or {}).get("mode", "work") != "work":
         raise HTTPException(422, "workspace_ocr_not_available")
     if run.status != RunStatus.RUNNING:
         raise HTTPException(409, "run_unavailable")

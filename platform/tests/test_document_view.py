@@ -361,7 +361,8 @@ def test_viewport_capture_png_version_and_claim(api):  # noqa: F811
     body["value"] = value
     result = api.post(path, headers=AUTH, json=body)
     assert result.status_code == 200, result.text
-    assert api.post(path, headers=AUTH, json=body).status_code == 409
+    # A repeated result for the same claim is idempotent; the tool call closes once.
+    assert api.post(path, headers=AUTH, json=body).json() == {"status": "completed"}
     state = api.get(f"/internal/runs/{rid}/client-calls/capture", headers=SERVICE).json()
     capture_id = state["result"]["value"]["capture_id"]
     image = api.get(f"/internal/runs/{rid}/captures/{capture_id}", headers=SERVICE)

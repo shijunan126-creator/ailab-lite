@@ -16,7 +16,6 @@ def trigger_request(model, memory, prompt):
     spec = get_catalog().get(model)
     system = system_prompt_for(
         mode="chat",
-        document_tools_version=2,
         genui=bool(spec and spec.supports({"genui"})),
         genui_tools=bool(spec and spec.supports({"tools"})),
     )
@@ -24,7 +23,7 @@ def trigger_request(model, memory, prompt):
         {"role": "system", "content": system},
         {"role": "system", "content": memory_prompt(memory)},
         {"role": "user", "content": prompt},
-    ], _tools_for_run({"model": model, "options": {"mode": "chat", "document_tools_version": 2}})
+    ], _tools_for_run({"model": model, "options": {"mode": "chat"}})
 
 
 async def evaluate(model):

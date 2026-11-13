@@ -67,16 +67,15 @@ def validate_png(value):
 def save(db, run, identity, target, data, mime="image/png", *, validate=None, bind=None):
     """Publish one canonical object and its receipt in the same transaction.
 
-    Browser pixels cannot be reconstructed deterministically. V2 retains them
-    with the originating message; legacy calls keep their frozen expiry contract.
+    Browser pixels cannot be reconstructed deterministically; they are retained with
+    the originating message.
     """
-    from ..domain.document_tools import catalog_version
     from . import derived_assets as assets
     from .owned_assets import publish
     from .routes_document_view import authorize_state
 
     run_id, owner = run.id, run.user_id
-    canonical = catalog_version(run.options) == 2
+    canonical = True
     capture_id = hashlib.sha256((run_id + ":" + identity).encode()).hexdigest()
     file_id = target.get("file_id")
     prefix = f"derived/{file_id}" if file_id else f"viewer/{run_id}"

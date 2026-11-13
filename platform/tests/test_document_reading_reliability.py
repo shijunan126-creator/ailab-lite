@@ -130,9 +130,10 @@ def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeh
             assert result["content"]["coverage"][0]["method"] == "ocr"
         with SessionLocal() as db:
             assert not [j for j in db.scalars(select(OutboxMessage)) if j.payload.get("file_id") == fid and j.payload.get("kind") == "ocr"]
-        chat = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid], "mode": "work"}).json(), mode="chat")
-        model_input = c.get(f"/internal/runs/{chat['id']}/model-input", headers=SERVICE).json()
-        assert model_input["input_files"][0]["text"] == "Invoice amount 123"
+        # Work points at the original and never inlines a cached body; Chat reads text through read_document.
+        model_input = c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()
+        assert model_input["input_files"][0]["text"] == ""
+        assert model_input["input_files"][0]["input_strategy"] == "reference"
 
 
 def test_pdf_inflight_selection_is_not_replaced_and_failure_is_terminal(monkeypatch):
@@ -249,13 +250,24 @@ def test_pending_ocr_suspends_paid_tool_and_resumes_without_model_poll_or_sandbo
     class Platform(FakePlatform):
         done = False
 
-        async def library(self, run_id, action, payload):
-            return {"ocr": "done", "content": {"text": "cached words"}} if self.done else {"ocr": "pending"}
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": "chat"}}
+
+        async def document_input(self, run_id, name, payload):
+            if self.done:
+                return {"ok": True, "ocr": "done", "text": "cached words"}
+            return {
+                "ok": True,
+                "pending": True,
+                "action": "document-ocr",
+                "file_id": payload["file_id"],
+                "deadline": 0,
+                "operation_id": "op",
+            }
 
     platform, broker = Platform(), FakeBroker()
-    model = ScriptedLLM(
-        [LLMResponse(tool_calls=[ToolCall("ocr", "extract_text", {"file_id": "file", "pages": [1]})]), LLMResponse(content="概述")]
-    )
+    call = {"file_id": "file", "text_source": "ocr", "selector": {"kind": "pages", "pages": [1]}}
+    model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("ocr", "read_document", call)]), LLMResponse(content="概述")])
     asyncio.run(AgentLoop(platform, broker, model).process("run_1", attempt_id="a"))
     assert platform.paused["file_dependency"]["file_id"] == "file"
     assert len(model.seen_messages) == 1 and broker.leases == 0
@@ -440,14 +452,13 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
             assert file.meta["ocr_copied_pages"] == 1
             record = db.scalar(select(OcrPageResult).where(OcrPageResult.file_id == target))
             assert record.text_key.startswith(f"derived/{target}/") and record.seconds == 0
-        run = legacy_run(
-            c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [target], "mode": "work"}).json(), mode="chat"
-        )
+        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [target], "mode": "work"}).json()
         model_input = c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()
-        assert model_input["input_files"][0]["text"] == "cached legacy invoice"
+        assert model_input["input_files"][0]["text"] == ""
     from ailab_platform.internal_skills import load
 
-    assert "不要启动沙箱sleep" in load("platform.pdf.read", "zcode-3c5b227-ailab1")
+    # A checkpoint pinned to the former internal reader now loads the current guide.
+    assert "office-read" in load("platform.pdf.read", "zcode-3c5b227-ailab1")
 
 
 def test_document_upload_fixture_keeps_identical_pdfs_and_ocr_state_independent(monkeypatch):
@@ -511,8 +522,7 @@ def test_unknown_page_count_and_explicit_subset_do_not_claim_whole_file():
             assert subset["files"][0]["content_type"] == "image/jpeg"
 
 
-@pytest.mark.parametrize("version", [1, 2])
-def test_v2_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypatch, version):
+def test_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypatch):
     from ailab_platform.agent.loop import AgentLoop
 
     monkeypatch.setitem(
@@ -525,7 +535,7 @@ def test_v2_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypa
 
     run = {
         "prompt": "看图",
-        "options": {"mode": "chat", "document_tools_version": version} if version == 2 else {"mode": "chat"},
+        "options": {"mode": "chat"},
         "input_files": [
             {
                 "filename": "deck.pptx",
@@ -537,4 +547,4 @@ def test_v2_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypa
     parts = asyncio.run(AgentLoop(platform=Platform())._user_content("run", run, "vision-inline"))
     labels = [part["text"] for part in parts if part.get("type") == "text" and "渲染第3页" in part["text"]]
     expected = '（region_ref={"page":3,"revision":"' + "d" * 64 + '"}）'
-    assert labels == (["附件《deck.pptx》渲染第3页" + expected] if version == 2 else ["附件《deck.pptx》渲染第3页"])
+    assert labels == ["附件《deck.pptx》渲染第3页" + expected]

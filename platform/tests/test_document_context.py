@@ -105,7 +105,7 @@ def test_internal_skills_are_discoverable():
 
     hit = discovery.search("pdf", 3, list(skills().values()))[0]
     assert hit["name"] == "platform.pdf"
-    assert "next_cursor" in load("platform.pdf.read")
+    assert "read_document" in load("platform.pdf.read", mode="chat")
     for name in ("platform.document.read", "platform.spreadsheet.read", "platform.presentation.read", "platform.pdf.read"):
         assert "office-read" not in load(name, mode="chat")
         assert "office-read" in load(name, mode="work")

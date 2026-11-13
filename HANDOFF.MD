@@ -1,3 +1,12 @@
+## 2026-11-13 单一工具目录
+
+- 旧文档工具名（`read_library_file`/`extract_text`/`view_attachment`/`document_view`）已在 `RETIRED_TOOLS`。恢复旧 checkpoint 会重建 `messages[0]` 与工具目录并记 `context_boundary`；**不要**再把它们加回目录，`permitted` 不再有版本参数。
+- `CONTEXT_ABI_VERSION` 8 是一次性升级边界：旧会话的暂停/中断 Run 恢复时各重建一次，之后恢复逐字节前缀。改它之前先确认没有依赖旧 ABI 的缓存/摘要。
+- 精简目录已删除，`_tools_for_run` 不再按模型预算裁剪；测试里不要再引用 `REDUCED_V1/V2` 或 `catalog_for_budget`。小上下文模型多付全量 schema，但不会再因预算抛错。
+- `load_skill` 对基础技能返回的是指南导航（不是整份 SKILL.md）；要读正文按导航里的资源名继续 `load_skill(resource=...)`。相关断言已改为“资源根目录 + 脚本名”。
+- 旧内部端点 `/internal/runs/{id}/document-view`、`/library/read|extract-text|image-reference` 仍开放给部署中的旧 Agent；它们不按目录版本拒绝。删除前先确认没有旧 Agent 在跑。
+- 本机跑全量 Python 套件要按 AGENTS §9 把 `coreutils`/`findutils` 的 gnubin 加进 `PATH`，否则 sandbox/preview 用例在 setup 就报 GNU `realpath` 缺失，看起来像产品失败。
+
 ## 2026-11-13 当前日期工具
 
 - 新增工具会改变 `tool_catalog_v1` 和 `messages[0]`：每个已有会话的下一个新 Run 会有一次预期的重建，之后才恢复前缀。不要为了“每轮告诉模型今天几号”去改 system 消息；那会每轮破坏前缀。

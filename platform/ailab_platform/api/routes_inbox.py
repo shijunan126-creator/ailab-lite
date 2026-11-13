@@ -149,7 +149,6 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             selections=body.skills,
             conversation=conv,
             turn_mode=(leaf.options or {}).get("mode", "work") if body.steer else None,
-            document_tools_version=(leaf.options or {}).get("document_tools_version", 1) if body.steer else None,
             preparation_send_id=body.client_send_id,
             reasoning=(leaf.options or {}).get("reasoning") if body.steer else body.reasoning,
             timezone=(leaf.options or {}).get("timezone") if body.steer else body.timezone,
@@ -221,7 +220,6 @@ def patch_queue(conversation_id: str, qid: str, body: QueuePatch, user: User = D
             row.options.get("mode", "work"),
             skill,
             selections=selections,
-            document_tools_version=row.options.get("document_tools_version", 1),
             preparation_send_id=row.client_send_id,
             reasoning=row.options.get("reasoning"),
             timezone=row.options.get("timezone"),
@@ -295,7 +293,7 @@ def claim_steers(run_id: str, x_run_attempt: str | None = Header(default=None), 
             )
             item = queue_output(row)
             plan = row.options.get("document_input_plan")
-            if plan and (run.options or {}).get("document_tools_version") == 2:
+            if plan:
                 from .document_preparation import bind as bind_preparation
                 from .native_ranges import charge_consumption
 

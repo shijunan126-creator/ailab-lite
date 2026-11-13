@@ -123,14 +123,6 @@ def _ready(db, run_id, file_id):
     return run, file
 
 
-def legacy_document_entry(db, run_id, name):
-    from ..domain.document_tools import catalog_version, permitted
-
-    run = _run_or_404(db, run_id)
-    if not permitted(name, mode=(run.options or {}).get("mode", "work"), version=catalog_version(run.options)):
-        raise HTTPException(422, "document_tool_not_available_for_catalog")
-
-
 def library_query(user_id, project_id, body, isolated=False):
     """Own project first. Inside an isolated project only its files; elsewhere never an isolated project's files."""
     q = (
@@ -183,7 +175,6 @@ def search_library(run_id: str, body: Search, db: Session = Depends(get_db)):
 
 @router.post("/{run_id}/library/read", dependencies=[Depends(require_scope("files:read_for_run"))])
 def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
-    legacy_document_entry(db, run_id, "read_library_file")
     run, file = _ready(db, run_id, body.file_id)
     meta = file.meta or {}
     if meta.get("input_lifecycle") == 2 and not meta.get("document_manifest_key") and not file.content_type.startswith("image/"):
@@ -482,7 +473,6 @@ def resolve_attachment(run_id: str, body: Resolve, db: Session = Depends(get_db)
 
 @router.post("/{run_id}/library/image-reference", dependencies=[Depends(require_scope("files:read_for_run"))])
 def image_reference(run_id: str, body: Read, db: Session = Depends(get_db)):
-    legacy_document_entry(db, run_id, "view_attachment")
     _run, file = _ready(db, run_id, body.file_id)
     if file.content_type.startswith("image/"):
         return {
@@ -554,7 +544,6 @@ def document_images(db, file, selected, *, prepare=True):
 
 @router.post("/{run_id}/library/extract-text", dependencies=[Depends(require_scope("files:read_for_run"))])
 def extract_for_run(run_id: str, body: Read, db: Session = Depends(get_db)):
-    legacy_document_entry(db, run_id, "extract_text")
     run, file = _ready(db, run_id, body.file_id)
     from .routes_ocr import request_extraction
 

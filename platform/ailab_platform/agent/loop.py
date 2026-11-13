@@ -30,7 +30,7 @@ from ..contracts.jobs import RunStatus
 from ..contracts.usage import UsageStatus
 from ..domain.answer_parts import for_history
 from ..domain.answer_parts import inspect as inspect_answer
-from ..domain.document_tools import catalog_version, permitted
+from ..domain.document_tools import permitted
 from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMError, ModelCall, ToolCall, llm_for, model_call
 from ..model_policy import ModelPolicy, estimator
 from ..paths import OUTPUTS
@@ -107,10 +107,9 @@ SKILL_PACKAGE_UPDATED = "技能包已更新：上文更早读到的本技能导�
 def _tools_for_run(run):
     if "_fixed_catalog" in run:
         return run["_fixed_catalog"]
-    version = catalog_version(run.get("options"))
     catalog = [
         discovery.SEARCH,
-        *(tools_for_chat(version) if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn(version)),
+        *(tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn()),
     ]
     if not settings.client_js_enabled or (run.get("options") or {}).get("client") != "portal":
         catalog = [t for t in catalog if t["function"]["name"] != "run_js"]
@@ -118,16 +117,9 @@ def _tools_for_run(run):
     if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
         catalog = [t for t in catalog if t["function"]["name"] != "ui_components"]
     if spec and not spec.supports({"vision"}):
-        catalog = [t for t in catalog if t["function"]["name"] not in {"view_attachment", "view_workspace_file", "view_document"}]
+        catalog = [t for t in catalog if t["function"]["name"] not in {"view_workspace_file", "view_document"}]
     if spec and not spec.supports({"tools"}):
         return []
-    if spec:
-        input_budget = ModelPolicy.input_budget(spec)
-        budget = min(input_budget, max(800, int(input_budget * 0.15)))
-        try:
-            return discovery.catalog_for_budget(catalog, budget, version)
-        except ValueError as exc:
-            raise LLMError(str(exc)) from exc
     return catalog
 
 
@@ -1176,10 +1168,7 @@ class AgentLoop:
                 break
             child_images = []
             for ordinal, c in enumerate(response.tool_calls):
-                version = catalog_version(run.get("options"))
-                available = c.name in subtasks.allowed(version)
-                if version == 2:
-                    available = available and c.name in {t["function"]["name"] for t in offered}
+                available = c.name in subtasks.allowed() and c.name in {t["function"]["name"] for t in offered}
                 if available:
                     # The parent call is part of the invocation: the same command in the same slot of a
                     # second run_subtasks is a different execution, not a retry of the first one.
@@ -1202,7 +1191,6 @@ class AgentLoop:
             messages,
             turn.net_budget,
             mode=(turn.run.get("options") or {}).get("mode", "work"),
-            document_tools_version=catalog_version(turn.run.get("options")),
             timezone=(turn.run.get("options") or {}).get("timezone") or "",
         )
         ctx.run_aliases = self._states[run_id].get("run_aliases") or {}
@@ -1212,7 +1200,7 @@ class AgentLoop:
         if call.name == "bash":
             ctx.command_handle = command_handle(run_id, invocation, command_text(call.arguments))
         try:
-            if call.name == "view_workspace_file" and ctx.document_tools_version == 2:
+            if call.name == "view_workspace_file":
                 import base64
 
                 from .checkpoint_budget import encoded_size
@@ -1264,13 +1252,9 @@ class AgentLoop:
     async def _user_content(self, run_id, run, model):
         options = run.get("options") or {}
         prompt = user_text(run["prompt"], skills=options.get("skills"), refs=run.get("doc_refs"), schedule=options.get("schedule"))
-        prompt_options = (
-            {"mode": (run.get("options") or {}).get("mode", "work"), "document_tools_version": 2}
-            if catalog_version(run.get("options")) == 2
-            else {}
-        )
+        mode = options.get("mode", "work")
         files = run.get("input_files") or []
-        if prompt_options.get("mode") == "work" and run.get("workspace_restore_key"):
+        if mode == "work" and run.get("workspace_restore_key"):
             injected = "本轮inputs为空" if not files else "本轮inputs仅含本消息附件清单中的原件"
             prompt += (
                 "\n\n平台工作区恢复事实：已保存的work/assets/outputs可恢复，但历史inputs不会由快照恢复；"
@@ -1279,36 +1263,22 @@ class AgentLoop:
                 "不要先执行并等待FileNotFoundError后再补文件。"
             )
         images = [
-            file
+            file for file in files if (file.get("content_type") or "").startswith("image/") and file.get("input_strategy") != "reference"
+        ]
+        # Inline pages are canonical renders: their digest is the region revision.
+        document_pages = [
+            {**page, "region_ref": {"page": page["page"], "revision": page["digest"]}} if page.get("digest") else page
             for file in files
-            if (file.get("content_type") or "").startswith("image/")
-            and not (prompt_options.get("document_tools_version") == 2 and file.get("input_strategy") == "reference")
+            for page in file.get("visual_pages", [])
         ]
-        document_pages = [page for file in files for page in file.get("visual_pages", [])]
-        if prompt_options.get("document_tools_version") == 2:
-            # Inline pages are canonical renders: their digest is the region revision.
-            document_pages = [
-                {**page, "region_ref": {"page": page["page"], "revision": page["digest"]}} if page.get("digest") else page
-                for page in document_pages
-            ]
         if not images and not document_pages:
-            return user_prompt(prompt, files, **prompt_options)
-        parts = [
-            {
-                "type": "text",
-                "text": user_prompt(
-                    prompt,
-                    files if prompt_options.get("document_tools_version") == 2 else [file for file in files if file not in images],
-                    **prompt_options,
-                ),
-            }
-        ]
+            return user_prompt(prompt, files, mode=mode)
+        parts = [{"type": "text", "text": user_prompt(prompt, files, mode=mode)}]
         spec = get_catalog().get(model)
         for file in [*images, *document_pages]:
             image_parts = await self._image_content(run_id, run, file, spec)
-            if (file in document_pages or prompt_options.get("document_tools_version") == 2) and not any(
-                part.get("type") == "image_url" for part in image_parts
-            ):
+            # A missing document render would silently answer from partial text; a missing image degrades to its note.
+            if file in document_pages and not any(part.get("type") == "image_url" for part in image_parts):
                 raise ToolError("附件视觉页面不可读取，请重新准备；本轮未向模型发送不完整文档")
             parts.extend(image_parts)
         from ..memory_recall.guard import escape_memory_tags
@@ -1338,7 +1308,7 @@ class AgentLoop:
         if name in BASE_SKILLS:
             mode = (turn.run.get("options") or {}).get("mode", "work")
             visible = self._module_views.setdefault(run_id, ModuleVisibility()).read(state["messages"])
-            if module_identity(read_module(name, mode, document_tools_version=catalog_version(turn.run.get("options")))) in visible:
+            if module_identity(read_module(name, mode)) in visible:
                 return
         call_id = "skill_" + uuid4().hex
         call = ToolCall(call_id, "load_skill", {"name": name})
@@ -1429,9 +1399,7 @@ class AgentLoop:
                 spec = get_catalog().get(turn.run.get("model"))
                 if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
                     raise ToolError("ui_components is not available for this model")
-            if not permitted(
-                call.name, mode=(turn.run.get("options") or {}).get("mode", "work"), version=catalog_version(turn.run.get("options"))
-            ):
+            if not permitted(call.name, mode=(turn.run.get("options") or {}).get("mode", "work")):
                 raise ToolError("document tool is not available for this run mode/catalog")
             if turn.allowed_tools is not None and call.name not in turn.allowed_tools:
                 raise ToolError("tool is not available in the current model catalog")
@@ -1461,9 +1429,7 @@ class AgentLoop:
                 if call.arguments.get("version") not in (None, current):
                     raise ToolError(f"技能 {wanted} 只提供当前版本 {current}；不传 version 即可读取")
                 try:
-                    result = read_module(
-                        wanted, mode, call.arguments.get("resource"), document_tools_version=catalog_version(turn.run.get("options"))
-                    )
+                    result = read_module(wanted, mode, call.arguments.get("resource"))
                 except (ValueError, OSError) as exc:
                     raise ToolError(str(exc)) from exc
                 # Only the installed package can be read; the one this conversation read earlier is gone after a
@@ -1647,7 +1613,6 @@ class AgentLoop:
                     turn.messages,
                     turn.net_budget,
                     mode=(turn.run.get("options") or {}).get("mode", "work"),
-                    document_tools_version=catalog_version(turn.run.get("options")),
                     timezone=(turn.run.get("options") or {}).get("timezone") or "",
                 )
                 ctx.run_aliases = self._states[run_id].get("run_aliases") or {}

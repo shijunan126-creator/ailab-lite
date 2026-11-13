@@ -31,7 +31,7 @@ def test_steer_claim_charges_cumulative_files_before_input_assembly(monkeypatch,
             prompt="read",
             model="m",
             status="running",
-            options={"mode": "chat", "document_tools_version": 2},
+            options={"mode": "chat"},
             runtime_meta={},
         )
         db.add(run)

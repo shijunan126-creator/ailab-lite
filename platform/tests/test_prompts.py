@@ -21,8 +21,10 @@ def test_the_system_prompt_lists_the_skills_but_does_not_inline_them() -> None:
     assert "build.py" not in text  # the full instructions come from load_skill
 
 
-def test_load_skill_returns_the_whole_skill() -> None:
-    assert "/opt/skills/platform.pptx/scripts/build.py" in prompts.load_skill("platform.pptx")
+def test_load_skill_returns_the_guide_and_its_resource_index() -> None:
+    text = prompts.load_skill("platform.pptx")
+    assert "/opt/skills/platform.pptx/" in text and "scripts/build.py" in text
+    assert "需要时再用load_skill读取下列资源" in text
     with pytest.raises(KeyError, match="unknown skill"):
         prompts.load_skill("nope")
 

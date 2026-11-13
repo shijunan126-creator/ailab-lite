@@ -423,7 +423,21 @@ READ_URL = {
 # Tools that need a sandbox: the first call to one of them starts it.
 # Names the Agent used to execute and no longer does. A checkpoint recorded before the rename still
 # lists them; offering them would make every remaining call in that run an unknown tool.
-RETIRED_TOOLS = frozenset({"exec", "exec_wait", "exec_kill", "read_file", "write_file", "list_files"})
+RETIRED_TOOLS = frozenset(
+    {
+        "exec",
+        "exec_wait",
+        "exec_kill",
+        "read_file",
+        "write_file",
+        "list_files",
+        # the retired document catalog: a paused run resumes on the one catalog
+        "read_library_file",
+        "extract_text",
+        "view_attachment",
+        "document_view",
+    }
+)
 
 
 def has_retired_tools(catalog) -> bool:
@@ -563,22 +577,7 @@ def _library_tool(name, description, properties, required):
     }
 
 
-VIEW_ATTACHMENT = _library_tool(
-    "view_attachment",
-    "视觉模型查看图片、PDF、Word、PPT或Excel渲染页；图表/架构图/照片用本工具，OCR不提供图形语义。pages可选；平台自动等待，不要sleep。",
-    {"file_id": {"type": "string"}, "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 20}},
-    ["file_id"],
-)
-
-EXTRACT_TEXT = _library_tool(
-    "extract_text",
-    "只提取图片或选定PDF页里的文字；不理解图形、架构关系或照片。复用缓存，平台自动等待并返回正文；失败即停止，不要sleep或反复请求。",
-    {"file_id": {"type": "string"}, "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "maxItems": 20}},
-    ["file_id"],
-)
-
 LIBRARY_TOOLS = [
-    EXTRACT_TEXT,
     _library_tool(
         "resolve_attachment",
         "定位当前或历史消息附件；歧义返回候选，不猜文件。",
@@ -596,22 +595,6 @@ LIBRARY_TOOLS = [
         "搜索资料库",
         {"query": {"type": "string"}, "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 20}},
         ["query"],
-    ),
-    _library_tool(
-        "read_library_file",
-        "阅读资料。输入 pages=[1,2] 可选物理页；返回 pages=[{page,offset}] 标出 text 中的页起点（Unicode字符偏移）；"
-        "首项 offset=0 表示窗口延续该页。空数组表示页码未知，不可猜测。",
-        {
-            "file_id": {"type": "string"},
-            "offset": {"type": "integer", "default": 0, "minimum": 0},
-            "block_offset": {"type": "integer", "minimum": 0},
-            "derivation_id": {"type": "string"},
-            "content_revision": {"type": "string"},
-            "anchor": {"type": "string"},
-            "query": {"type": "string"},
-            "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 20},
-        },
-        ["file_id"],
     ),
 ]
 COPY_LIBRARY = _library_tool(
@@ -641,44 +624,6 @@ RUN_JS = {
 }
 
 
-DOCUMENT_VIEW = {
-    "type": "function",
-    "function": {
-        "name": "document_view",
-        "description": (
-            "open: file_id或path；reveal: file_id或path + targets[{at, quote?}]；get_view: view_id可选；"
-            "capture: file_id或path + view_id/at/source。sent仅表示发送；不可用返回unavailable。"
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "op": {"type": "string", "enum": ["open", "reveal", "get_view", "capture"]},
-                "file_id": {"type": "string"},
-                "path": {"type": "string"},
-                "version": {"type": "string"},
-                "view_id": {"type": "string"},
-                "at": {"type": "string"},
-                "source": {"type": "string", "enum": ["viewport", "render"]},
-                "max_width": {"type": "integer", "minimum": 320, "maximum": 2400},
-                "note": {"type": "string", "maxLength": 1000},
-                "targets": {
-                    "type": "array",
-                    "maxItems": 8,
-                    "items": {
-                        "type": "object",
-                        "properties": {"at": {"type": "string"}, "quote": {"type": "string", "maxLength": 4000}},
-                        "required": ["at"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["op"],
-            "additionalProperties": False,
-        },
-    },
-}
-
-
 WORKSPACE_OCR = {
     "type": "function",
     "function": {
@@ -691,16 +636,15 @@ WORKSPACE_OCR = {
 }
 
 
-def tools_for_turn(document_tools_version=1) -> list[dict]:
+def tools_for_turn() -> list[dict]:
+    """Work: the sandbox tools plus the shared readers. Chat's document readers stay out."""
     catalog = [
-        DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
         RECALL,
         SCHEDULE,
         CURRENT_TIME,
         *LIBRARY_TOOLS,
-        VIEW_ATTACHMENT,
         COPY_LIBRARY,
         ASK_USER,
         UPDATE_PLAN,
@@ -711,20 +655,17 @@ def tools_for_turn(document_tools_version=1) -> list[dict]:
         *([SEARCH_IMAGES] if images.enabled() else []),
         *([*WEB_TOOLS, *net_tools.TOOLS] if web.enabled() else []),
         subtasks.TOOL,
+        WORKSPACE_OCR,
     ]
-
-    if document_tools_version == 2:
-        catalog = [t for t in catalog if permitted(t["function"]["name"], mode="work", version=2)]
-        catalog.append(WORKSPACE_OCR)
-        catalog = _current_recall(catalog, "copy_library_file")
-        for tool in catalog:
-            if tool["function"]["name"] == "copy_library_file":
-                tool["function"]["description"] = "把资料库文件原件复制到/workspace/inputs/（只读）；path可省略，默认使用原文件名"
+    catalog = _current_recall(catalog, "copy_library_file")
+    for tool in catalog:
+        if tool["function"]["name"] == "copy_library_file":
+            tool["function"]["description"] = "把资料库文件原件复制到/workspace/inputs/（只读）；path可省略，默认使用原文件名"
     return catalog
 
 
 def _current_recall(catalog, reader):
-    # Descriptions are request bytes too: clone rather than editing frozen V1.
+    # Descriptions are request bytes too: clone rather than editing the shared tool objects.
     from copy import deepcopy
 
     catalog = deepcopy(catalog)
@@ -735,28 +676,22 @@ def _current_recall(catalog, reader):
     return catalog
 
 
-def tools_for_chat(document_tools_version=1) -> list[dict]:
+def tools_for_chat() -> list[dict]:
     """Chat mode starts no sandbox: the read-only web tools, and saving a skill written as text."""
     catalog = [
-        DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
         RECALL,
         SCHEDULE,
         CURRENT_TIME,
         *LIBRARY_TOOLS,
-        VIEW_ATTACHMENT,
         LOAD_SKILL,
         UI_COMPONENTS,
         *(WEB_TOOLS if web.enabled() else []),
         net_tools.SAVE_SKILL,
+        *DOCUMENT_TOOLS,
     ]
-
-    if document_tools_version == 2:
-        catalog = [t for t in catalog if permitted(t["function"]["name"], mode="chat", version=2)]
-        catalog.extend(DOCUMENT_TOOLS)
-        catalog = _current_recall(catalog, "read_document")
-    return catalog
+    return _current_recall(catalog, "read_document")
 
 
 class ToolContext:
@@ -770,11 +705,10 @@ class ToolContext:
         budget: net_tools.Budget | None = None,
         *,
         mode="work",
-        document_tools_version=1,
         command_handle="",
         timezone="",
     ):
-        self.mode, self.document_tools_version = mode, document_tools_version
+        self.mode = mode
         # Stable per tool call, so a resumed run waits on the command it already started.
         self.command_handle = command_handle
         self.timezone = timezone  # the browser's zone, frozen on the run; "" when the run never had one
@@ -888,13 +822,13 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
     if INVALID_ARGUMENTS_KEY in args:
         raise ToolError("tool arguments were not valid JSON; resend the call with a well-formed JSON object")
     ctx = ctx or ToolContext()
-    if not permitted(name, mode=ctx.mode, version=ctx.document_tools_version):
-        raise ToolError("document tool is not available for this run mode/catalog")
+    if not permitted(name, mode=ctx.mode):
+        raise ToolError("document tool is not available in this mode")
     if name in CHAT_DOCUMENT_TOOLS:
         return {"ok": True, **await ctx.platform.document_input(ctx.run_id, name, args)}
     if name == "ocr_workspace_image":
-        if ctx.mode != "work" or ctx.document_tools_version != 2:
-            raise ToolError("workspace OCR is unavailable for this run")
+        if ctx.mode != "work":
+            raise ToolError("workspace OCR is only available in Work")
         try:
             return await broker.ocr_workspace_image(lease_id, args)
         except ClientError as exc:
@@ -925,12 +859,8 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             return {"ok": False, "error": reason if isinstance(reason, str) and reason in allowed else "workspace_ocr_unavailable"}
     if name == "search_library":
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "search", args)}
-    if name == "extract_text":
-        return {"ok": True, **await ctx.platform.library(ctx.run_id, "extract-text", args)}
     if name == "resolve_attachment":
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "resolve", args)}
-    if name == "read_library_file":
-        return {"ok": True, **await ctx.platform.library(ctx.run_id, "read", args)}
     if name == "copy_library_file":
         file = await ctx.platform.library(ctx.run_id, "authorize-copy", {"file_id": args.get("file_id")})
         try:

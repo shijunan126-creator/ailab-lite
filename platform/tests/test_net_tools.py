@@ -282,7 +282,6 @@ def test_tools_offered_per_mode(monkeypatch) -> None:
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
     chat = {t["function"]["name"] for t in tools.tools_for_chat()}
     assert chat == {
-        "document_view",
         "run_js",
         "web_search",
         "read_url",
@@ -294,10 +293,10 @@ def test_tools_offered_per_mode(monkeypatch) -> None:
         "schedule",
         "current_time",
         "search_library",
-        "read_library_file",
-        "extract_text",
         "resolve_attachment",
-        "view_attachment",
+        "read_document",
+        "search_document",
+        "view_document",
     }
     work = {t["function"]["name"] for t in tools.tools_for_turn()}
     assert {"download_url", "fetch_repo", "fetch_packages", "save_skill"} <= work

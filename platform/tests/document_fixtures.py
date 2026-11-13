@@ -44,7 +44,7 @@ def legacy_run(run, *, mode=None):
 
     with SessionLocal() as db:
         row = db.get(Run, run["id"])
-        row.options = {**row.options, "document_tools_version": 1, **({"mode": mode} if mode else {})}
+        row.options = {**row.options, **({"mode": mode} if mode else {})}
         run["options"] = dict(row.options)
         db.commit()
     return run

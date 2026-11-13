@@ -25,7 +25,7 @@ def setup_capture(factory, storage, monkeypatch):
         file.status = "ready"
         file.content_type = "application/pdf"
         run = db.get(Run, "r")
-        run.status, run.options = "running", {"document_tools_version": 2, "mode": "chat"}
+        run.status, run.options = "running", {"mode": "chat"}
     return {"file_id": "f", "version": "source", "source": "browser", "at": "page:1"}
 
 
@@ -76,10 +76,12 @@ def test_failed_legacy_expiry_delete_retains_durable_intent_and_capacity(ledger,
     target = setup_capture(factory, storage, monkeypatch)
     with factory() as db:
         run = db.get(Run, "r")
-        run.options = {}
-        db.commit()
         result = captures.save(db, run, "legacy", target, b"legacy-pixels")
-        key = db.get(ViewerCapture, result["capture_id"]).storage_key
+        # A row written before captures were kept with their message still carries the 10-minute expiry.
+        row = db.get(ViewerCapture, result["capture_id"])
+        row.expires_at = datetime.now(UTC) + timedelta(minutes=10)
+        db.commit()
+        key = row.storage_key
         assert captures.purge(db, storage, datetime.now(UTC) + timedelta(minutes=11)) == 1
         delete = storage.delete
         monkeypatch.setattr(storage, "delete", lambda key: (_ for _ in ()).throw(OSError("storage unavailable")))
@@ -100,7 +102,7 @@ def test_fork_capture_shares_bytes_and_survives_original_run_release(ledger, mon
         saved = captures.save(db, db.get(Run, "r"), "fork-capture", target, b"shared-pixels")
         source = db.get(ViewerCapture, saved["capture_id"])
         key = source.storage_key
-        fork = Run(id="branch", user_id="u", prompt="fork", model="test", options={"document_tools_version": 2})
+        fork = Run(id="branch", user_id="u", prompt="fork", model="test", options={})
         db.add(fork)
         db.flush()
         copied = copy_captures(db, db.get(Run, "r"), fork)

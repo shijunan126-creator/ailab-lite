@@ -51,11 +51,11 @@ def call(name: str, args: dict, broker: FakeBroker) -> dict:
 
 
 def test_the_catalog_offers_the_pi_names():
-    work = {tool["function"]["name"] for tool in tools_for_turn(2)}
+    work = {tool["function"]["name"] for tool in tools_for_turn()}
     assert {"read", "write", "edit", "ls", "bash", "bash_wait", "bash_kill", "grep", "find"} <= work
     assert not work & {"read_file", "write_file", "list_files", "exec", "exec_wait", "exec_kill"}
     # Chat has no sandbox, so it gets none of them.
-    assert not {tool["function"]["name"] for tool in tools_for_chat(2)} & {"read", "write", "edit", "ls", "grep", "find", "bash"}
+    assert not {tool["function"]["name"] for tool in tools_for_chat()} & {"read", "write", "edit", "ls", "grep", "find", "bash"}
     assert {"read", "write", "edit", "ls", "grep", "find", "bash"} <= SANDBOX_TOOLS
 
 
@@ -87,7 +87,7 @@ def test_current_time_answers_in_the_runs_zone():
 
 
 def test_current_time_is_offered_in_both_modes_with_no_arguments():
-    for catalog in (tools_for_turn(1), tools_for_turn(2), tools_for_chat(1), tools_for_chat(2)):
+    for catalog in (tools_for_turn(), tools_for_turn(), tools_for_chat(), tools_for_chat()):
         tool = next(t for t in catalog if t["function"]["name"] == "current_time")
         assert tool["function"]["parameters"] == {"type": "object", "properties": {}}
 
@@ -226,7 +226,7 @@ def test_a_sandbox_query_failure_becomes_a_tool_error():
 
 @pytest.mark.parametrize(
     "catalog",
-    [lambda: tools_for_turn(1), lambda: tools_for_turn(2), lambda: tools_for_chat(1), lambda: tools_for_chat(2)],
+    [lambda: tools_for_turn(), lambda: tools_for_turn(), lambda: tools_for_chat(), lambda: tools_for_chat()],
 )
 def test_the_catalog_never_offers_the_same_tool_twice(catalog):
     # A duplicate schema is a request the provider may reject; one tool, one name.
@@ -235,7 +235,7 @@ def test_the_catalog_never_offers_the_same_tool_twice(catalog):
 
 
 def test_the_wait_tool_asks_for_one_wait_parameter_name():
-    wait = next(tool for tool in tools_for_turn(2) if tool["function"]["name"] == "bash_wait")
+    wait = next(tool for tool in tools_for_turn() if tool["function"]["name"] == "bash_wait")
     assert set(wait["function"]["parameters"]["properties"]) == {"handle", "wait_seconds", "offset"}
 
 

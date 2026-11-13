@@ -8,7 +8,14 @@ import json
 import pytest
 
 from ailab_platform.agent.loop import AgentLoop, _Turn
-from ailab_platform.agent.skill_modules import ModuleVisibility, annotate_summary, identity, read_module, visible_modules
+from ailab_platform.agent.skill_modules import (
+    ModuleVisibility,
+    annotate_summary,
+    document_guides,
+    identity,
+    read_module,
+    visible_modules,
+)
 from ailab_platform.agent.tools import LOAD_SKILL, tool_result_message, tools_for_chat, tools_for_turn
 from ailab_platform.catalog import Catalog, ModelSpec
 from ailab_platform.contracts.context_summary import ContextSummary
@@ -43,8 +50,11 @@ def test_navigation_and_whole_file_reads(name, mode):
         result = read_module(name, mode, module["path"])
         assert result["complete"] and estimator.raw(result["skill"]) == result["estimated_tokens"]
         assert hashlib.sha256(result["skill"].encode()).hexdigest() == result["hash"]
-        assert result["skill"] == (root / module["path"]).read_text()
         assert "cursor" not in result and "next_cursor" not in result
+        # The guide may restate a resource; the bytes must still be exactly what the model is served.
+        overlay = document_guides()["formats"][name.removeprefix("platform.")][mode]
+        adapted = {"text": overlay["viewer"]} if module["path"] == "viewer/SKILL.md" else overlay.get("resources", {}).get(module["path"])
+        assert result["skill"] == (adapted["text"] if adapted is not None else (root / module["path"]).read_text())
 
 
 @pytest.mark.parametrize("resource", ["/etc/passwd", "../SKILL.md", "absent"])
@@ -211,8 +221,7 @@ def test_chat_cannot_read_work_review_role_with_shell_setup():
 
 
 @pytest.mark.parametrize("old_version", [None, "1.1.0"])
-@pytest.mark.parametrize("version", [1, 2])
-def test_conversation_loaded_before_a_package_update_switches_to_the_installed_package(version, old_version):
+def test_conversation_loaded_before_a_package_update_switches_to_the_installed_package(old_version):
     """A deploy replaces the package; the earlier text stays in history and the next read says it is superseded."""
 
     async def exercise():
@@ -220,15 +229,11 @@ def test_conversation_loaded_before_a_package_update_switches_to_the_installed_p
         from ailab_platform.agent.loop import SKILL_PACKAGE_UPDATED
 
         loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker())
-        turn = _Turn({"options": {"mode": "work", "document_tools_version": version}, "_fixed_catalog": [LOAD_SKILL]})
-        earlier = {
-            **read_module("platform.docx", "work", "routes/edit.md", document_tools_version=version),
-            "package_hash": "0" * 64,
-        }
+        turn = _Turn({"options": {"mode": "work"}, "_fixed_catalog": [LOAD_SKILL]})
+        earlier = {**read_module("platform.docx", "work", "routes/edit.md"), "package_hash": "0" * 64}
         if old_version:
             earlier["version"] = old_version
-        if version == 2:
-            earlier["guide_revision"] = "1" * 64
+        earlier["guide_revision"] = "1" * 64
         turn.messages = [{"role": "system", "content": "rules"}, *paired(earlier, "earlier")]
         prefix = copy.deepcopy(turn.messages)
         loop._states["r"] = {**fresh_state(), "messages": turn.messages}
