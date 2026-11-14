@@ -1,8 +1,7 @@
 # ADR 0001 · Single-node scope and defaults
+状态：已采纳（2026-10-23），沙箱额度部分被 [ADR 0020](0020-elastic-sandbox-allowance-and-idle-reclaim.md) 修改。
 
-Status: accepted (2026-10-23). Revisit when the open questions in the gap review §7.1 get an owner's answer.
-
-Context: [gap review](../../reviews/2026-10-23-single-node-architecture-gap.md) §7.1 lists questions that change acceptance gates. Development proceeds on the defaults below; each is a configuration value or a documented contract, so changing it later doesn't require a redesign.
+开发按下列默认值推进；每一行都是配置值或明确的合同，改动其中一项不需要重新设计。
 
 | Question | Decision | Where it lives |
 |---|---|---|

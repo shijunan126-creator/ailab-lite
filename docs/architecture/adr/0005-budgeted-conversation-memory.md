@@ -1,6 +1,5 @@
 # ADR 0005 · 有预算的历史与会话元数据
-
-状态：采用（2026-10-23），实现 `96654e6`，最终集成验收见进度文档。
+状态：已采纳（2026-10-23），部分被 [ADR 0024](0024-model-window-compaction-and-adaptive-output.md)、[ADR 0033](0033-context-epoch-band-process-snapshot.md) 修改。
 
 一个 Run 继续对应一轮用户消息，不为现有行为新增 messages 表。Agent通过独立、有界内部model-input/model-context获取历史，Conversation只保存一个摘要与其through_run_id；摘要更新按旧游标CAS，数据库升级仅添加nullable列及历史keyset索引。
 
@@ -10,4 +9,4 @@
 
 自动标题属于首轮成功后的可选元数据：最多一次小模型请求、独立计费、有短总时限；失败不破坏主回答，API只在会话名称仍为空时CAS应用，手动改名优先。不得将截取用户首句伪装为模型生成标题。公司/用户内容不会进入trace属性。
 
-成本：通常多一次有界内部历史请求；只有超预算增加摘要调用，首次成功回答增加小标题调用。模型token估计不保证等同供应商tokenizer。具体双库计划与验收边界见[T14报告](../../reviews/2026-10-23-t14-model-context.md)。
+成本：通常多一次有界内部历史请求；只有超预算增加摘要调用，首次成功回答增加小标题调用。模型 token 估计不保证等同供应商 tokenizer。

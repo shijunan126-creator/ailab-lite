@@ -1,6 +1,5 @@
 # ADR 0002 · 单机服务身份与请求绑定
-
-状态：accepted，2026-10-23。覆盖差距审查 T03/T05；不实现 Kubernetes TokenReview。
+状态：已采纳（2026-10-23）。
 
 单机先采用每服务独立的高熵 bearer credential，沿用 `X-Service-Token` 传输。原共享令牌使 Worker 可调沙箱、Agent 可回写扫描；拆开后，每个请求先过声明式 scope，再检查资源上下文。认证端只分发 SHA-256 验证摘要，不分发其他调用方的原始令牌，避免接收端能冒充任意服务。比较使用 constant-time digest compare。
 

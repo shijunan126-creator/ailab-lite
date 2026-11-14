@@ -1,10 +1,9 @@
 # ADR 0027：Portal 前端栈、流式管线与非阻塞发送
-
-状态：本地实施（分支 `feat/frontend-genui`），依据 [前端/GenUI HLD](../design/2026-10-28-frontend-genui-hld.md) §4、§16。偏离冻结目标架构中的 assistant-ui。
+状态：已采纳（2026-10-30）。偏离冻结目标架构中的 assistant-ui。
 
 ## 决定
 
-- **样式**：2026-10-30 起 legacy 层清空（HLD P5）。层序 `theme < base < components < utilities`，Tailwind preflight 在 base 层。旧样式按区域并入 `styles/base|shell|chat|library|pages.css`，与重建的 `app.css`、`genui.css` 同在 components 层，按此顺序加载，同一套特异性与先后规则决定胜负，不再靠“重建层整体压过旧层”。并入规则：
+- **样式**：legacy 层已清空。层序 `theme < base < components < utilities`，Tailwind preflight 在 base 层。旧样式按区域并入 `styles/base|shell|chat|library|pages.css`，与重建的 `app.css`、`genui.css` 同在 components 层，按此顺序加载，同一套特异性与先后规则决定胜负，不再靠“重建层整体压过旧层”。并入规则：
   - 迁移前在它命中的每个元素上都被重建规则覆盖的旧声明删除；源码中不再出现的类删除（由模板拼出的类名如 `tone-${kind}` 保留）。
   - 同层后，针对同一元素的更具体规则胜出，例如开关和复选框的圆角、列表行字重；以前被通用的 `button` 规则无意盖掉，现在恢复原意。
   - 旧规则压过重建组件的个别情况，改回重建值或并入 `app.css`，例如侧栏链接。
@@ -16,11 +15,11 @@
 - **测试**：`npm test` 改为 Vitest；旧 `node:test` 用例通过 `tests/node-test-compat.mjs` 原样迁移，组件测试按文件声明 jsdom。
 - **浏览器 JavaScript**：`quickjs-emscripten-core` + `@jitl/quickjs-wasmfile-release-sync`（0.32.0，精确锁定）。用途：模型请求的小计算在用户浏览器的 Web Worker 里跑，不占服务端 CPU；首次使用才加载约 0.5 MB Wasm。内存上限靠传入固定 `maximum` 的 `WebAssembly.Memory`（该构建的 `setMemoryLimit` 不生效），超时靠中断处理器加 Worker `terminate()`。
 - **GenUI 存为图片**：`modern-screenshot`（4.7.0，精确锁定）。用途：把 GenUI 块按页面所见画成 PNG 复制或下载；首次点击才加载（约 21 KB gzip），只在用户浏览器运行，无服务端成本。自写 foreignObject 光栅要自己处理伪元素、Safari 解码重画和滚动位置，库已覆盖。
-- **侧栏原生文档查看器**（2026-11-02，[办公能力接口定稿](../design/office-suite/04-viewer-and-file-contract.md)）：Word/Excel/PowerPoint/PDF 查看器由 `office/build.mjs` 从 `vendor/office-suite/upstream/office-runtime` 的 UI 打包（esbuild 0.28.2，开发依赖），运行在 `app/frame/office` 的 `allow-scripts` 不透明源框架里，宿主只换传输层（`office/host.ts`）。为它新增的运行依赖都精确锁定、只进查看器包、首次打开文档才由框架加载（约 4 MiB JS + 按需字体/Wasm，浏览器不可变缓存）：`docx-preview` 0.4.0（Word 版式渲染）、`@extend-ai/react-xlsx` 0.16.0（表格网格与公式，Wasm）、`@aiden0z/pptx-renderer` 1.2.4（幻灯片渲染）、`pdfjs-office`（`pdfjs-dist@5.4.296` 别名；查看器按该版本编写，Portal 自己的 PDF 预览仍用原版本）、`@fontsource/noto-sans-sc` 5.3.1（PDF 未嵌入中文字体的回退字形，按 unicode-range 分片）。框架内模块 Worker 无法从 blob URL 启动，两个 Worker 均打成经典脚本；PDF 替代字体经资源通道转成 blob URL，框架保持无网络。
+- **侧栏原生文档查看器**：Word/Excel/PowerPoint/PDF 查看器由 `office/build.mjs` 从 `vendor/office-suite/upstream/office-runtime` 的 UI 打包（esbuild 0.28.2，开发依赖），运行在 `app/frame/office` 的 `allow-scripts` 不透明源框架里，宿主只换传输层（`office/host.ts`）。为它新增的运行依赖都精确锁定、只进查看器包、首次打开文档才由框架加载（约 4 MiB JS + 按需字体/Wasm，浏览器不可变缓存）：`docx-preview` 0.4.0（Word 版式渲染）、`@extend-ai/react-xlsx` 0.16.0（表格网格与公式，Wasm）、`@aiden0z/pptx-renderer` 1.2.4（幻灯片渲染）、`pdfjs-office`（`pdfjs-dist@5.4.296` 别名；查看器按该版本编写，Portal 自己的 PDF 预览仍用原版本）、`@fontsource/noto-sans-sc` 5.3.1（PDF 未嵌入中文字体的回退字形，按 unicode-range 分片）。框架内模块 Worker 无法从 blob URL 启动，两个 Worker 均打成经典脚本；PDF 替代字体经资源通道转成 blob URL，框架保持无网络。
 - **浏览器 Office 有界准入**（2026-11-06）：复用已由 `docx-preview` 携带的 JSZip 3.10.1，显式锁定为直接依赖；在可取消的临时 Worker 中检查结构与内嵌图片预算，避免首开依赖服务端全文索引，又把整包解析和过大的解码图留在主线程。超限走既有后备，不替代服务端安全扫描。
 - **不采用 assistant-ui**：其消息/runtime 模型与以 Run 为中心的版本、过程、排队、插话、ask_user 和 500 轮卸载机制冲突。
 
-本轮**未引入**（没有使用点就不加依赖）：Streamdown（自研 Markdown 已满足 40 万字分块、`ailab-file://`、来源 pill；替换需先做 HLD Spike A 对比）、Recharts（GenUI 图表用自绘 SVG，见 ADR 0028）、Motion、shadcn/Base UI 组件、TanStack Query。各自在对应屏幕重建且有具体行为需要时再引入。
+当前**未引入**（没有使用点就不加依赖）：Streamdown（自研 Markdown 已满足 40 万字分块、`ailab-file://`、来源 pill；替换需先做 HLD Spike A 对比）、Recharts（GenUI 图表用自绘 SVG，见 ADR 0028）、Motion、shadcn/Base UI 组件、TanStack Query。各自在对应屏幕重建且有具体行为需要时再引入。
 
 ## 流式管线
 

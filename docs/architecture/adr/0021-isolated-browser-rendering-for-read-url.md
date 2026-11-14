@@ -1,6 +1,5 @@
 # ADR 0021 · read_url: Trafilatura first, isolated browser rendering when that is weak
-
-Status: accepted (2026-10-26), two-tier reader deployed in PR95. Process supervision and capacity correction are under validation in PR96; see the [current evidence](../../progress/updates/2026-10-26-crawler-process-reaping.md).
+状态：已采纳（2026-10-26）。
 
 ## Context
 
@@ -18,7 +17,7 @@ Most pages carry their article in the HTML the server sends; a good extractor fi
 5. **Failures are visible.** Crawler down, timeout, busy or render error are defined tool errors, or — when the plain fetch had text — that text with an explicit `note`. The metric `ailab_web_read_seconds{path=static|rendered|static_fallback,outcome}` shows how often rendering is needed and fails. Secure profile refuses a crawler URL without a token of at least 24 characters.
 6. **Output keeps the old shape** (`url, title, text, content_type, truncated, links`, plus `note` when partial), so the model contract does not change. The old flat-text extractor (`extract_html`) is removed.
 
-The JSON `GET /v1/reader` (extracted blocks for the old 正文 view, unused by the Portal since PR #87) and `ailab_platform/reader.py` are removed. `GET /v1/reader/render` (the Portal's original-page iframe) is unchanged and stays script-free.
+The JSON `GET /v1/reader` (extracted blocks for the old 正文 view, unused by the Portal) and `ailab_platform/reader.py` are removed. `GET /v1/reader/render` (the Portal's original-page iframe) is unchanged and stays script-free.
 
 ## Consequences
 
@@ -26,17 +25,17 @@ The JSON `GET /v1/reader` (extracted blocks for the old 正文 view, unused by t
 - A rendered read costs a worker import, browser start and render. Target-VM batch testing confirmed that two complex pages can exceed 1 GiB and kill browser children even while the HTTP server survives; the default is now one page. The supervisor adds one temporary Python process and at most 5 s cleanup budget. Final latency/memory and sustained acceptance are recorded in the linked evidence, separately from earlier short tests and estimates.
 - Residual: page JavaScript can make further requests to public hosts. The browser only ever receives the URL, never conversation data, so this is not a new exfiltration channel beyond the URL itself (already bounded by provenance). Per-page subresource bytes are bounded by time (20 s page timeout, 120 s proxy tunnel deadline), not by a byte cap.
 - IPv6: the proxy's address rule covers IPv6 forms; the NetworkPolicy's second layer is IPv4-only, matching the validated single-stack lite node.
-- The original real crawler/proxy, Linux/k3s and personal Compose checks were completed in [PR95 acceptance](../../progress/updates/2026-10-26-merged-reader-validation.md). They were short tests and did not establish sustained PID/memory reliability; PR96 must pass continuous browser and startup-timeout fault tests before release.
+- Short crawler/proxy checks do not establish sustained PID/memory reliability; continuous browser and startup-timeout fault tests remain required before release.
 
-## Dependency verification (2026-10-26)
+## Dependency verification
 
 The actual PyPI wheel `crawl4ai==0.7.4` installs with `aiohttp==3.12.15`; both `BrowserConfig` and `CrawlerRunConfig` construct successfully with this server's arguments. Its packaged [license](../../../images/crawler/Crawl4AI-LICENSE) contains Apache-2.0 **plus an Attribution Requirement**, not just an optional credit request. The required credit is in the root README and the image's `/app/NOTICE`; `/app/Crawl4AI-LICENSE` retains the full text. Transitive dependencies are not fully pinned.
 
 
-## 2026-10-29 extension: source preview shares the isolated renderer
+## 来源预览复用隔离渲染器
 
 The original-page preview no longer stops at a recoverable static HTTP/transport failure while `read_url` can recover the same page. `GET /v1/reader/render` keeps its static fast path, retries eligible failures once through the existing crawler with `include_html: true`, and re-serves the rendered DOM under the existing script-free CSP. It does not render every click or bypass URL/TLS/private-address refusals. The model's Markdown response contract is unchanged; HTML is opt-in, capped at 2 MiB without silent truncation, and shares the existing single-page semaphore, process cleanup and timeouts. The API's whole request deadline remains 45 seconds.
 
 Only the API and Agent receive the crawler credential and ingress permission; the crawler receives no platform/model identity and still has only its public-only egress proxy. Secure startup requires a valid crawler token for the API as well as the Agent when the crawler URL is configured. The API performs no browser execution. Public pages that continue to deny access remain failures; the iframe receives readable Chinese HTML with a prompt to use its original-site button, never a JSON blob or a fabricated article. This is not a logged-in browsing/session feature and does not guarantee access through site challenges.
 
-Actual source/preview/security and performance evidence: [2026-10-29 report](../../progress/updates/2026-10-29-reader-preview-403.md). This extension does not claim hundreds-user browser capacity or complete handling of HTTP-200 script-only shells.
+This extension does not claim hundreds-user browser capacity or complete handling of HTTP-200 script-only shells.

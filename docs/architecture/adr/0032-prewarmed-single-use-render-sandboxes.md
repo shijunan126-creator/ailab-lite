@@ -1,8 +1,5 @@
 # ADR 0032：单次使用的预热渲染沙箱
-
-状态：部分被取代（2026-10-31）。用户确认隔离边界为用户，新的决定见[渲染沙箱生命周期指南](../design/2026-10-31-render-sandbox-lifecycle.md)；实现完成，2026-11-01 测速见[记录](../../progress/updates/2026-10-31-prefix-cache-render.md)。历史结果和未测边界见 [C3d](../../progress/updates/2026-10-31-prefix-cache-render.md#c3d-预热渲染)。
-
-C3f/C3g 之后的现状以“新决定”“槽位”“边界”三节为准；C3d–C3f 的过程见 [C3f 进展](../../progress/updates/2026-10-31-prefix-cache-render.md#c3f-实现进展)。下方“历史决定”保留作为历史描述。
+状态：已采纳（2026-10-31），单次使用部分被[渲染沙箱生命周期设计](../design/2026-10-31-render-sandbox-lifecycle.md)取代。隔离边界为用户。
 
 ## 新决定
 

@@ -1,7 +1,7 @@
 # ADR 0041：同模式分叉沿用被分叉轮次的上下文
+状态：已采纳（2026-11-12）。
 
-- 状态：已实施（2026-11-12，分支 `feat/fork-reuse-checkpoint`，base `main@cf758dd1`）
-- 相关：[记录](../../progress/updates/2026-11-12-fork-checkpoint.md)、[前缀缓存设计](../design/2026-10-31-prefix-cache.md)、[ADR 0030](0030-prefix-stable-model-requests.md)、压缩 HLD §41/§88
+相关：[前缀缓存设计](../design/2026-10-31-prefix-cache.md)、[ADR 0030](0030-prefix-stable-model-requests.md)。
 
 ## 背景
 
@@ -20,4 +20,4 @@
 - 跨模式分叉仍整段不命中：规则和工具列表在最前面。不为此把模式规则挪到后面或合并工具列表（每个 Chat 请求都要多带 Work 的工具，模型更难守住模式）；只多一次冷启动。
 - 存储：每次同模式分叉多一份 checkpoint（通常几十到几百 KB，上限为 `checkpoint_max_bytes`），计入分叉的 2 GiB/10000 对象上限。生命周期与普通叶子相同：分支下一轮成功后 7 天到期；分支清除时按 `checkpoints/{run}/` 前缀删除；文件来源失效时随轮次删除；提交前失败由分叉自身清理，崩溃留下的对象由孤儿扫描回收。
 - 成本：分叉时在用户锁内多一次 checkpoint 读取、解压、JSON 解析和重新压缩，量级与 checkpoint 大小成正比（默认上限 4 MiB）。
-- 修订压缩 HLD §41 “fork/edit ancestry change 必须重建”中 fork 的部分；§88 “分支之间不共享快照”不变：分支拿到的是自己的副本。
+- 修订压缩设计中“fork/edit ancestry change 必须重建”的 fork 部分；“分支之间不共享快照”不变：分支拿到的是自己的副本。

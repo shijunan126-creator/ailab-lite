@@ -1,4 +1,4 @@
-# Library query plans — 2026-10-23
+# 资料库查询计划
 
 Checked SQLite and a throwaway PostgreSQL 16 instance. No application/developer database was queried or modified.
 This is a synthetic query comparison, not an end-to-end production benchmark.
@@ -12,7 +12,7 @@ Elapsed figures below are mean client query times over ten warm repetitions (ms)
 The timestamp distribution deliberately includes stretches of non-image rows to expose filtering work.
 
 Existing indexes: user_id, project_id, and (user_id, created_at); conversations use the corresponding updated_at ordering in the application.
-The count queries do not depend on the ordering timestamp. New indexes are amended into the unreleased 0008 migration:
+The count queries do not depend on the ordering timestamp. The indexes are defined in `models.py` and created by migrations:
 
 ```sql
 CREATE INDEX ix_files_user_starred ON files (user_id, starred_at)
@@ -44,10 +44,9 @@ These four indexes add write/storage cost only for the measured paths (starred/i
 Migration upgrade/downgrade, existing referenced data, and metadata drift are checked on both database engines by the normal migration suite.
 
 
-## T18 — immutable versions and trash (2026-10-23)
+## 版本与回收站
 
-Worktree `arch/w2-file-versions`, based on `609c1d3`; SQLite and throwaway PostgreSQL 16 on port 15490.
-100,000 file rows / 20 users / five immutable versions per lineage (20,000 heads); 1/11 lineages trashed,
+SQLite and a throwaway PostgreSQL 16 instance. 100,000 file rows / 20 users / five immutable versions per lineage (20,000 heads); 1/11 lineages trashed,
 1/7 images and 1/31 starred. Run ANALYZE on SQLite and VACUUM ANALYZE on PG before ten warm repetitions.
 These are synthetic database checks, not production latency or object-store/RSS acceptance.
 

@@ -1,7 +1,7 @@
 # ADR 0040：定时任务绑定一个会话，到点在原会话接着回复
+状态：已采纳（2026-11-11）。
 
-- 状态：已实施（2026-11-11，分支 `feat/schedule-in-conversation`，base `origin/main@81d24699`）
-- 相关：[记录](../../progress/updates/2026-11-11-schedule-conversation.md)、迁移 `0071_schedule_conversation`、[ADR 0030 前缀稳定](0030-prefix-stable-model-requests.md)、[2026-10-24 定时任务原设计](../../progress/updates/2026-10-24-schedules-citations.md)
+相关：迁移 `0071_schedule_conversation`、[ADR 0030 前缀稳定](0030-prefix-stable-model-requests.md)。
 
 ## 背景
 

@@ -1,6 +1,5 @@
-# ADR 0018 草案 · 文件 OCR 与对话多模态输入
-
-状态：accepted（本地实现），2026-10-23。T19子任务已在a1547fe集成，4f9f3cb补齐多模态与运行恢复契约；[最终验收](../../reviews/2026-10-23-t07-runtime.md)。真实付费vision未验。
+# ADR 0018 · 文件 OCR 与对话多模态输入（历史）
+状态：已被 [ADR 0023](0023-system-document-reader-and-concurrent-capabilities.md) 取代（OCR 改由平台执行器识别，不再经模型 vision 调用）。
 
 ## 决定
 
@@ -25,7 +24,7 @@
 
 ## 迁移与输入契约
 
-正式链为0014→0016→0017→0018→0019，双库升/降/再升及漂移通过；不再使用子任务临时改链。AgentLoop已接input_content，并按图片限制vision候选；checkpoint存图片文件引用，恢复时重新授权读取。Worker files:ocr scope已同步ADR0002。
+AgentLoop 接 input_content，并按图片限制 vision 候选；checkpoint 存图片文件引用，恢复时重新授权读取。Worker 的 `files:ocr` scope 同步 ADR 0002。
 
 ## 未验证与边界
 

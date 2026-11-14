@@ -19,6 +19,7 @@ from tests.test_migrations import engine as engine
 from tests.test_ocr import api as api
 from tests.test_ocr import rapid_upstream as rapid_upstream
 from tests.test_ocr import upstream as upstream
+from tests.test_schedule_conversation import next_daily
 
 
 def as_utc(value):
@@ -341,7 +342,7 @@ def test_dispatch_skips_a_conversation_waiting_for_the_user(guardrail_task, stat
         row = db.get(ScheduledTask, task["id"])
         assert row.last_run_id == first["run_id"] and row.failure_streak == 0
         assert row.last_status == "skipped" and row.last_error == "会话在等你回复" and row.due_at is None
-        assert as_utc(row.next_run_at) > now + timedelta(hours=1)
+        assert as_utc(row.next_run_at) == next_daily(now, "09:00", row.timezone)
         assert row.recent_run_ids == [first["run_id"]]
     assert c.get("/v1/schedules", headers=auth).json()[0]["last_status"] == "skipped"
 

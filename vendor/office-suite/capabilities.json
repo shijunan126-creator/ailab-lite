@@ -12,7 +12,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/.zcode-plugin/plugin.json",
@@ -41,7 +41,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/agents/visual-judge.md",
@@ -73,7 +73,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/package.json",
@@ -107,7 +107,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/package.json#build",
@@ -140,7 +140,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/package.json#clean",
@@ -173,7 +173,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/package.json#smoke",
@@ -206,7 +206,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/package.json#test:e2e",
@@ -236,7 +236,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx-viewer/SKILL.md",
@@ -265,7 +265,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/LICENSE.txt",
@@ -301,7 +301,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/SKILL.md",
@@ -335,7 +335,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/env_setup/env_check.sh",
@@ -365,7 +365,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/env_setup/font_list.txt",
@@ -398,7 +398,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/env_setup/setup.md",
@@ -433,7 +433,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/env_setup/setup_mac_linux.sh",
@@ -469,7 +469,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/env_setup/setup_windows.ps1",
@@ -506,7 +506,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/chart-templates.md",
@@ -536,7 +536,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/common-rules.md",
@@ -564,7 +564,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/decorations.md",
@@ -598,7 +598,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/design-system.md",
@@ -633,7 +633,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/docx-js-advanced.md",
@@ -665,7 +665,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/docx-js-core.md",
@@ -695,7 +695,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/faq.md",
@@ -727,7 +727,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/math-formulas.md",
@@ -763,7 +763,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/ooxml.md",
@@ -796,7 +796,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/references/toc.md",
@@ -829,7 +829,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/routes/comment.md",
@@ -862,7 +862,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/routes/create.md",
@@ -899,7 +899,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/routes/edit.md",
@@ -934,7 +934,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/routes/format.md",
@@ -972,7 +972,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/routes/read.md",
@@ -1002,7 +1002,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scenes/academic.md",
@@ -1030,7 +1030,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scenes/contract.md",
@@ -1058,7 +1058,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scenes/copywriting.md",
@@ -1086,7 +1086,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scenes/exam.md",
@@ -1114,7 +1114,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scenes/official-doc.md",
@@ -1142,7 +1142,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scenes/report.md",
@@ -1170,7 +1170,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scenes/resume.md",
@@ -1198,7 +1198,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/__init__.py",
@@ -1231,7 +1231,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/add_toc_placeholders.py",
@@ -1267,7 +1267,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/document.py",
@@ -1304,7 +1304,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#Document.add_comment",
@@ -1341,7 +1341,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#Document.reply_to_comment",
@@ -1378,7 +1378,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#Document.save",
@@ -1415,7 +1415,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#Document.validate",
@@ -1452,7 +1452,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.append_to",
@@ -1489,7 +1489,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.insert_after",
@@ -1526,7 +1526,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.insert_before",
@@ -1563,7 +1563,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.replace_node",
@@ -1600,7 +1600,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.revert_deletion",
@@ -1637,7 +1637,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.revert_insertion",
@@ -1674,7 +1674,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.suggest_deletion",
@@ -1711,7 +1711,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.suggest_paragraph",
@@ -1741,7 +1741,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/fix_footer_fields.py",
@@ -1774,7 +1774,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/postcheck.py",
@@ -1802,7 +1802,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/templates/comments.xml",
@@ -1830,7 +1830,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/templates/commentsExtended.xml",
@@ -1858,7 +1858,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/templates/commentsExtensible.xml",
@@ -1886,7 +1886,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/templates/commentsIds.xml",
@@ -1914,7 +1914,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/templates/people.xml",
@@ -1948,7 +1948,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/scripts/utilities.py",
@@ -1985,7 +1985,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:documents-plugin/skills/docx/setup.sh",
@@ -2016,7 +2016,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/.gitignore",
@@ -2045,7 +2045,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/CONTRACT.md",
@@ -2074,7 +2074,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/LICENSE",
@@ -2103,7 +2103,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/contract.example.ts",
@@ -2136,7 +2136,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/contract.test.ts",
@@ -2171,7 +2171,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/contract.ts",
@@ -2200,7 +2200,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/fixtures/budget.xlsx",
@@ -2229,7 +2229,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/fixtures/cjk.pdf",
@@ -2264,7 +2264,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/fixtures/generate.py",
@@ -2296,7 +2296,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/fixtures/generate_cjk.py",
@@ -2325,7 +2325,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/fixtures/launch.pptx",
@@ -2354,7 +2354,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/fixtures/paper.pdf",
@@ -2383,7 +2383,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/fixtures/report.docx",
@@ -2412,7 +2412,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/index.ts",
@@ -2441,7 +2441,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/module.ts",
@@ -2494,7 +2494,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/package.json",
@@ -2566,7 +2566,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:office-runtime/package.json#build",
@@ -2637,7 +2637,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:office-runtime/package.json#lint",
@@ -2708,7 +2708,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:office-runtime/package.json#test",
@@ -2779,7 +2779,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:office-runtime/package.json#typecheck",
@@ -2829,7 +2829,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/scripts/build.mjs",
@@ -2868,7 +2868,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/scripts/e2e.mjs",
@@ -2902,7 +2902,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/scripts/kind-filter.mjs",
@@ -2935,7 +2935,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/scripts/kind-filter.test.mjs",
@@ -2968,7 +2968,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/scripts/licenses.mjs",
@@ -2999,7 +2999,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/scripts/plugin-name.mjs",
@@ -3032,7 +3032,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/scripts/smoke.mjs",
@@ -3063,7 +3063,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/CONTRACT.md",
@@ -3096,7 +3096,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/assets.test.ts",
@@ -3127,7 +3127,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/assets.ts",
@@ -3162,7 +3162,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/files.test.ts",
@@ -3197,7 +3197,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/files.ts",
@@ -3232,7 +3232,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/main.ts",
@@ -3267,7 +3267,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/parse/docx.ts",
@@ -3296,7 +3296,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/parse/dommatrix.ts",
@@ -3333,7 +3333,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/parse/ooxml.ts",
@@ -3368,7 +3368,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/parse/parse.test.ts",
@@ -3401,7 +3401,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/parse/pdf.ts",
@@ -3434,7 +3434,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/parse/pptx.ts",
@@ -3469,7 +3469,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/parse/xlsx.ts",
@@ -3500,7 +3500,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/parsers.ts",
@@ -3536,7 +3536,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/server.test.ts",
@@ -3575,7 +3575,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/adapters/server.ts",
@@ -3611,7 +3611,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/app/documents.ts",
@@ -3646,7 +3646,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/app/sessions.test.ts",
@@ -3683,7 +3683,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/app/views.test.ts",
@@ -3718,7 +3718,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/contract.ts",
@@ -3751,7 +3751,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/domain/anchor.test.ts",
@@ -3784,7 +3784,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/domain/anchor.ts",
@@ -3817,7 +3817,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/domain/cjk.test.ts",
@@ -3848,7 +3848,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/domain/cjk.ts",
@@ -3879,7 +3879,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/domain/model.ts",
@@ -3912,7 +3912,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/domain/text.test.ts",
@@ -3943,7 +3943,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/domain/text.ts",
@@ -3972,7 +3972,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/kinds.ts",
@@ -4003,7 +4003,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/profile.ts",
@@ -4032,7 +4032,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/types.d.ts",
@@ -4063,7 +4063,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/src/wording.ts",
@@ -4094,7 +4094,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/tsconfig.json",
@@ -4126,7 +4126,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/assets.ts",
@@ -4158,7 +4158,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/bootstrap.ts",
@@ -4189,7 +4189,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/cjkFontRuntime.ts",
@@ -4222,7 +4222,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/cjkFonts.test.ts",
@@ -4253,7 +4253,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/cjkFonts.ts",
@@ -4284,7 +4284,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/dom.ts",
@@ -4318,7 +4318,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/host.ts",
@@ -4353,7 +4353,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/i18n.test.ts",
@@ -4386,7 +4386,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/i18n.ts",
@@ -4415,7 +4415,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/icons.tsx",
@@ -4451,7 +4451,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/main.tsx",
@@ -4484,7 +4484,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/panel.css",
@@ -4513,7 +4513,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/panel.html",
@@ -4546,7 +4546,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/profile.test.ts",
@@ -4579,7 +4579,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/raster.ts",
@@ -4611,7 +4611,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/rpc.ts",
@@ -4644,7 +4644,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/float.ts",
@@ -4680,7 +4680,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/inline.tsx",
@@ -4714,7 +4714,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/menus.tsx",
@@ -4748,7 +4748,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/panes.tsx",
@@ -4783,7 +4783,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/parts.tsx",
@@ -4819,7 +4819,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/state.ts",
@@ -4855,7 +4855,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/useCaptureView.ts",
@@ -4890,7 +4890,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/useFind.ts",
@@ -4925,7 +4925,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/useOffscreenTargets.ts",
@@ -4960,7 +4960,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/shell/useShellKeys.ts",
@@ -4997,7 +4997,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/viewers/DocxView.tsx",
@@ -5037,7 +5037,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/viewers/PdfView.tsx",
@@ -5076,7 +5076,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/viewers/PptxView.tsx",
@@ -5114,7 +5114,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/viewers/XlsxView.tsx",
@@ -5150,7 +5150,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/viewers/align.test.ts",
@@ -5183,7 +5183,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/viewers/align.ts",
@@ -5217,7 +5217,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/viewers/registry.ts",
@@ -5250,7 +5250,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/viewers/types.ts",
@@ -5283,7 +5283,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/windowStorage.test.ts",
@@ -5316,7 +5316,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/ui/windowStorage.ts",
@@ -5347,7 +5347,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:office-runtime/vitest.config.ts",
@@ -5380,7 +5380,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/.zcode-plugin/plugin.json",
@@ -5409,7 +5409,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/agents/visual-judge.md",
@@ -5441,7 +5441,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/package.json",
@@ -5475,7 +5475,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/package.json#build",
@@ -5508,7 +5508,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/package.json#clean",
@@ -5541,7 +5541,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/package.json#smoke",
@@ -5574,7 +5574,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/package.json#test:e2e",
@@ -5602,7 +5602,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf-viewer/SKILL.md",
@@ -5631,7 +5631,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/LICENSE.txt",
@@ -5667,7 +5667,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/SKILL.md",
@@ -5704,7 +5704,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/briefs/academic.md",
@@ -5738,7 +5738,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/briefs/creative-fixed-canvas.md",
@@ -5769,7 +5769,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/briefs/creative-flow.md",
@@ -5802,7 +5802,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/briefs/creative.md",
@@ -5833,7 +5833,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/briefs/poster.md",
@@ -5871,7 +5871,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/briefs/process-advanced.md",
@@ -5905,7 +5905,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/briefs/process.md",
@@ -5943,7 +5943,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/briefs/report.md",
@@ -5975,7 +5975,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/briefs/resume.md",
@@ -6003,7 +6003,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/configs/components.md",
@@ -6033,7 +6033,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/configs/fonts.md",
@@ -6061,7 +6061,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/configs/visual_framework.md",
@@ -6098,7 +6098,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/env_setup/env_check.sh",
@@ -6130,7 +6130,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/env_setup/font_list.txt",
@@ -6165,7 +6165,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/env_setup/setup.md",
@@ -6206,7 +6206,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/env_setup/setup_mac_linux.sh",
@@ -6247,7 +6247,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/env_setup/setup_windows.ps1",
@@ -6277,7 +6277,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/references/resume-academic.tex",
@@ -6307,7 +6307,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/references/resume-altacv.tex",
@@ -6340,7 +6340,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/cover_render.py",
@@ -6374,7 +6374,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/cover_validate.js",
@@ -6406,7 +6406,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/design_engine.py",
@@ -6437,7 +6437,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/design_engine.py#audit",
@@ -6468,7 +6468,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/design_engine.py#compile",
@@ -6499,7 +6499,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/design_engine.py#derive",
@@ -6530,7 +6530,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/design_engine.py#full",
@@ -6561,7 +6561,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/design_engine.py#layout",
@@ -6592,7 +6592,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/design_engine.py#palette",
@@ -6623,7 +6623,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/design_engine.py#palette-cascade",
@@ -6654,7 +6654,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/design_engine.py#svg",
@@ -6689,7 +6689,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
@@ -6720,7 +6720,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/html2poster.js",
@@ -6828,7 +6828,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/pdf.py",
@@ -6940,7 +6940,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#code.sanitize",
@@ -7052,7 +7052,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#content.sanitize",
@@ -7164,7 +7164,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#convert.blueprint",
@@ -7276,7 +7276,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#convert.html",
@@ -7388,7 +7388,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#convert.latex",
@@ -7500,7 +7500,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#convert.office",
@@ -7612,7 +7612,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#env.check",
@@ -7724,7 +7724,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#env.fix",
@@ -7836,7 +7836,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#extract.image",
@@ -7948,7 +7948,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#extract.table",
@@ -8060,7 +8060,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#extract.text",
@@ -8172,7 +8172,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#font.check",
@@ -8284,7 +8284,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#form.annotate",
@@ -8396,7 +8396,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#form.check-bbox",
@@ -8508,7 +8508,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#form.detail",
@@ -8620,7 +8620,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#form.fill",
@@ -8732,7 +8732,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#form.fill-legacy",
@@ -8844,7 +8844,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#form.info",
@@ -8956,7 +8956,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#form.render",
@@ -9068,7 +9068,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#form.validate",
@@ -9180,7 +9180,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#meta.brand",
@@ -9292,7 +9292,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#meta.get",
@@ -9404,7 +9404,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#meta.set",
@@ -9516,7 +9516,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#pages.clean",
@@ -9628,7 +9628,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#pages.crop",
@@ -9740,7 +9740,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#pages.merge",
@@ -9852,7 +9852,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#pages.rotate",
@@ -9964,7 +9964,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#pages.split",
@@ -10076,7 +10076,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#palette.cascade",
@@ -10188,7 +10188,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#palette.generate",
@@ -10300,7 +10300,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/pdf.py#toc.check",
@@ -10336,7 +10336,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/pdf_qa.py",
@@ -10368,7 +10368,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/poster_validate.py",
@@ -10401,7 +10401,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/poster_validate.py#check-html",
@@ -10434,7 +10434,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/poster_validate.py#check-pdf",
@@ -10467,7 +10467,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:pdf-plugin/skills/pdf/scripts/poster_validate.py#check-tex",
@@ -10506,7 +10506,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/setup.sh",
@@ -10545,7 +10545,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/scripts/toc_validate.py",
@@ -10578,7 +10578,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/typesetting/charts.md",
@@ -10606,7 +10606,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
@@ -10636,7 +10636,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/typesetting/cover.md",
@@ -10666,7 +10666,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/typesetting/fill-engine.md",
@@ -10694,7 +10694,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/typesetting/geometry.md",
@@ -10724,7 +10724,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/typesetting/overflow.md",
@@ -10754,7 +10754,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/typesetting/pagination.md",
@@ -10784,7 +10784,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/typesetting/palette.md",
@@ -10812,7 +10812,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:pdf-plugin/skills/pdf/typesetting/typography.md",
@@ -10842,7 +10842,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:presentations-plugin/.zcode-plugin/plugin.json",
@@ -10871,7 +10871,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:presentations-plugin/agents/visual-judge.md",
@@ -10903,7 +10903,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:presentations-plugin/package.json",
@@ -10937,7 +10937,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:presentations-plugin/package.json#build",
@@ -10970,7 +10970,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:presentations-plugin/package.json#clean",
@@ -11003,7 +11003,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:presentations-plugin/package.json#smoke",
@@ -11036,7 +11036,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:presentations-plugin/package.json#test:e2e",
@@ -11064,7 +11064,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:presentations-plugin/skills/pptx-viewer/SKILL.md",
@@ -11093,7 +11093,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:presentations-plugin/skills/pptx/LICENSE.txt",
@@ -11129,7 +11129,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:presentations-plugin/skills/pptx/SKILL.md",
@@ -11160,7 +11160,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/.zcode-plugin/plugin.json",
@@ -11189,7 +11189,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/agents/visual-judge.md",
@@ -11221,7 +11221,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/package.json",
@@ -11255,7 +11255,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/package.json#build",
@@ -11288,7 +11288,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/package.json#clean",
@@ -11321,7 +11321,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/package.json#smoke",
@@ -11354,7 +11354,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/package.json#test:e2e",
@@ -11382,7 +11382,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx-viewer/SKILL.md",
@@ -11411,7 +11411,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/LICENSE.txt",
@@ -11445,7 +11445,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/SKILL.md",
@@ -11479,7 +11479,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/engines/chart-templates.md",
@@ -11507,7 +11507,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/engines/chart.md",
@@ -11540,7 +11540,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/engines/design.md",
@@ -11568,7 +11568,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/engines/vba-templates.md",
@@ -11601,7 +11601,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/env_setup/env_check.sh",
@@ -11631,7 +11631,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/env_setup/font_list.txt",
@@ -11663,7 +11663,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/env_setup/setup.md",
@@ -11696,7 +11696,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/env_setup/setup_mac_linux.sh",
@@ -11730,7 +11730,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/env_setup/setup_windows.ps1",
@@ -11762,7 +11762,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
@@ -11793,7 +11793,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/advanced.md",
@@ -11826,7 +11826,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/analyze-recipes.md",
@@ -11854,7 +11854,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/analyze.md",
@@ -11888,7 +11888,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/convert.md",
@@ -11916,7 +11916,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/create.md",
@@ -11944,7 +11944,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/edit-patterns.md",
@@ -11978,7 +11978,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/edit.md",
@@ -12006,7 +12006,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/finance.md",
@@ -12038,7 +12038,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/finance_lite.md",
@@ -12068,7 +12068,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/vba.md",
@@ -12101,7 +12101,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/setup.sh",
@@ -12137,7 +12137,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/templates/base.py",
@@ -12167,7 +12167,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/templates/palettes.py",
@@ -12214,7 +12214,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "source:spreadsheets-plugin/skills/xlsx/xlsx.py",
@@ -12264,7 +12264,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/skills/xlsx/xlsx.py#audit",
@@ -12314,7 +12314,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/skills/xlsx/xlsx.py#chart-verify",
@@ -12364,7 +12364,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/skills/xlsx/xlsx.py#inspect",
@@ -12414,7 +12414,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/skills/xlsx/xlsx.py#pivot",
@@ -12464,7 +12464,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/skills/xlsx/xlsx.py#recalc",
@@ -12514,7 +12514,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/skills/xlsx/xlsx.py#scan",
@@ -12564,7 +12564,7 @@
         ]
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/contracts/test_office_production.py"
       ],
       "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
       "id": "command:spreadsheets-plugin/skills/xlsx/xlsx.py#validate",
@@ -12599,8 +12599,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:docx:open",
@@ -12634,8 +12634,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:docx:outline",
@@ -12669,8 +12669,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:docx:zoom",
@@ -12704,8 +12704,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:docx:search",
@@ -12739,8 +12739,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:docx:selection",
@@ -12774,8 +12774,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:docx:reveal-highlight",
@@ -12809,8 +12809,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:docx:current-view",
@@ -12844,8 +12844,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:docx:capture",
@@ -12879,8 +12879,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:docx:selection-reference",
@@ -12914,8 +12914,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:xlsx:open",
@@ -12949,8 +12949,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:xlsx:outline",
@@ -12984,8 +12984,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:xlsx:zoom",
@@ -13019,8 +13019,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:xlsx:search",
@@ -13054,8 +13054,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:xlsx:selection",
@@ -13089,8 +13089,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:xlsx:reveal-highlight",
@@ -13124,8 +13124,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:xlsx:current-view",
@@ -13159,8 +13159,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:xlsx:capture",
@@ -13194,8 +13194,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:xlsx:selection-reference",
@@ -13229,8 +13229,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pptx:open",
@@ -13264,8 +13264,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pptx:outline",
@@ -13299,8 +13299,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pptx:zoom",
@@ -13334,8 +13334,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pptx:search",
@@ -13369,8 +13369,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pptx:selection",
@@ -13404,8 +13404,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pptx:reveal-highlight",
@@ -13439,8 +13439,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pptx:current-view",
@@ -13474,8 +13474,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pptx:capture",
@@ -13509,8 +13509,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pptx:selection-reference",
@@ -13544,8 +13544,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pdf:open",
@@ -13579,8 +13579,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pdf:outline",
@@ -13614,8 +13614,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pdf:zoom",
@@ -13649,8 +13649,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pdf:search",
@@ -13684,8 +13684,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pdf:selection",
@@ -13719,8 +13719,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pdf:reveal-highlight",
@@ -13754,8 +13754,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pdf:current-view",
@@ -13789,8 +13789,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pdf:capture",
@@ -13824,8 +13824,8 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-portal-tests.md",
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/portal/tests/office-view.test.tsx",
+        "platform/e2e/test_office_native.py"
       ],
       "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
       "id": "viewer:pdf:selection-reference",
@@ -13878,7 +13878,7 @@
         "python": []
       },
       "evidence": [
-        "docs/progress/updates/2026-11-02-office-suite-p5.md"
+        "platform/tests/test_artifact_review.py"
       ],
       "execution_validation": "representative DOCX/XLSX/PPTX/PDF tasks, not every recipe or independent visual model",
       "id": "visual-gate:ailab-review",

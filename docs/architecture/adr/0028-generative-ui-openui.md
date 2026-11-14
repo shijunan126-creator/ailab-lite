@@ -1,6 +1,5 @@
 # ADR 0028：回答内 Generative UI（OpenUI 结构化路径）
-
-状态：本地实施（分支 `feat/frontend-genui`），设计见 [HLD](../design/2026-10-28-frontend-genui-hld.md) §6。用户随后要求默认启用：全局默认true，所有现有模型配置声明genui；仍可用模型capability与 `AILAB_GENUI_ENABLED` 显式关闭。真实模型评测（P6）记录见 [评测报告](../../progress/updates/2026-10-30-genui-real-model-eval.md)。
+状态：已采纳（2026-10-30），目录与提示词部分被 [ADR 0029](0029-genui-registry-v2.md) 取代。GenUI 全局默认开启，所有模型配置声明 genui；仍可用模型 capability 与 `AILAB_GENUI_ENABLED` 显式关闭。
 
 ## 决定
 

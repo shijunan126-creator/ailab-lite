@@ -1,6 +1,5 @@
 # ADR 0006 · 精简部署的可选有界追踪
-
-状态：采用（2026-10-23）。
+状态：已采纳（2026-10-23）。
 
 单机默认依靠Prometheus低基数指标和请求相关ID，不默认运行追踪Collector或加载OpenTelemetry SDK。设置OTLP HTTP traces endpoint并安装otel extra后才启用追踪；错误配置在服务启动失败，不静默回退。等待导出的span队列256、每批32、导出超时2秒，不把外部Collector阻塞加入业务请求链。
 

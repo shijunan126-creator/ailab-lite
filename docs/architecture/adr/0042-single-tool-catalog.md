@@ -1,12 +1,12 @@
 # ADR 0042：只保留一套工具目录，退役 V1 文档工具与精简目录
+状态：已采纳（2026-11-13）。
 
-- 状态：已实施（2026-11-13，分支 `feat/current-time-tool`，base `main@d174905b`）
-- 相关：[记录](../../progress/updates/2026-11-13-single-catalog.md)、[ADR 0030](0030-prefix-stable-model-requests.md)、[前缀缓存设计](../design/2026-10-31-prefix-cache.md)、[Pi 对齐设计](../design/2026-11-11-pi-aligned-workspace-tools.md)
+相关：[ADR 0030](0030-prefix-stable-model-requests.md)、[前缀缓存设计](../design/2026-10-31-prefix-cache.md)。
 
 ## 背景
 
 1. 文档工具曾有两套目录（`document_tools_version` V1/V2）。2026-11-08 起新 Run 一律 V2，V1 只为“部署前创建、仍可恢复”的 Run 保留冻结目录。实际没有任何新路径会产生 V1，维护成本却是两套目录、`permitted`/`catalog_version` 分支、四个旧 handler、提示词与技能模块的版本分支，以及两套测试矩阵。
-2. 2026-11-01 的前缀缓存设计为了小上下文模型引入精简目录（`REDUCED_V1/V2`，全量 schema 超过输入预算 15% 时裁剪）。实际全量目录 V2 为 Chat 约 5.1k / Work 约 5.4k tokens，节省有限，却带来第二套目录、按模型预算分支、以及提示词与精简目录互相矛盾（规则要求 `ls`/`find`/`grep`/`web_search`/`save_skill`，精简集里没有）。低于精简目录所需上下文（Work 约 19k、Chat 约 25k）时 `catalog_for_budget` 直接抛错，Run 失败。
+2. 前缀缓存设计曾为了小上下文模型引入精简目录（`REDUCED_V1/V2`，全量 schema 超过输入预算 15% 时裁剪）。实际全量目录 V2 为 Chat 约 5.1k / Work 约 5.4k tokens，节省有限，却带来第二套目录、按模型预算分支、以及提示词与精简目录互相矛盾（规则要求 `ls`/`find`/`grep`/`web_search`/`save_skill`，精简集里没有）。低于精简目录所需上下文（Work 约 19k、Chat 约 25k）时 `catalog_for_budget` 直接抛错，Run 失败。
 
 ## 决定
 

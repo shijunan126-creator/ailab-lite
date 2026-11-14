@@ -1,10 +1,9 @@
 # ADR 0019 · 记忆读取路径与治理
-
-状态：采用（2026-10-26）。建立在 PR #80（夜间 dream：来源 episode、ADD-only 抽取、事实失效）之上，对照《ChatGPT-like 长期记忆系统架构》（下称“架构文档”）补齐读取与治理。
+状态：已采纳（2026-10-26），部分被 [ADR 0022](0022-memory-consistency-and-scoped-recall.md)、[ADR 0035](0035-memory-v2.md)、[ADR 0037](0037-memory-single-origin.md) 修改。
 
 ## 背景
 
-记忆已有两半：账号级事实文档（`users.settings.memory`，最多 100 条 / 1.2 万字符，每轮全量注入）和夜间 dream（PR #80）。缺的是：
+记忆已有两半：账号级事实文档（`users.settings.memory`，最多 100 条 / 1.2 万字符，每轮全量注入）和夜间 dream。缺的是：
 
 1. 没有“回忆过往对话”的能力：用户问“上次为什么选 Kubernetes”，Agent 只能看当前会话。
 2. 写入没有闸门：dream 允许从助手回复里抽事实；凭据和“像指令的文字”没有拦截。
@@ -34,10 +33,10 @@
 |---|---|---|
 | PostgreSQL + Qdrant、sparse 向量 | 沿用现有双库（SQLite/PG），词法检索在应用内 | 没有必要引入向量库，见下方“稠密通道” |
 | cross-encoder 重排 | 未做 | 没有重排模型；两路各有绝对阈值 |
-| `events/episodes/memories/memory_sources/relations/entities` 表 | 事实留在 JSON 文档，episode 沿用 PR #80 的 `memory_episodes` | 容量上限 100 条，文档形态已够；建表迁移成本高于收益。事实超出上限时再迁移 |
+| `events/episodes/memories/memory_sources/relations/entities` 表 | 事实留在 JSON 文档，episode 沿用既有 `memory_episodes` | 容量上限 100 条，文档形态已够；建表迁移成本高于收益。事实超出上限时再迁移 |
 | contested / quarantined 状态 | 只有 invalid / superseded / suppressed；可疑内容直接拒收并计数 | 没有人工复核流；`ailab_memory_guard_rejected_total` 可观测 |
 | 事务 outbox、异步索引 | 无 | 没有派生索引，不需要 |
-| 项目级 / 会话级记忆作用域 | 未做 | 当前只有账号级；项目作用域是后续项 |
+| 项目级 / 会话级记忆作用域 | 项目级由 [ADR 0022](0022-memory-consistency-and-scoped-recall.md) 实现；会话级仍不做 | 项目事实需要严格隔离；临时会话入口已取消 |
 | 实体抽取与实体检索 | 仅沿用 dream 的 `entities` 字段做候选选择 | 词法通道已覆盖名称与标识符 |
 
 ## 影响与验证
@@ -53,7 +52,7 @@
 - 稠密通道：有 embedding 模型后接入 `search_history`，用 RRF 融合。
 - 基于真实对话的离线评测（记忆 vs 无记忆基线，memory-hurt 率）；现有 `scripts/evaluate_memory_dream.py` 只评抽取与裁决。
 
-## 追加：稠密通道（embedding，2026-10-26）
+## 追加：稠密通道（embedding）
 
 历史检索现在有两路相互独立的候选，用 RRF（k=60）合并（§10.3–10.4）：词法 BM25（覆盖度闸门）和稠密余弦相似度（绝对阈值）。两路各自弃权，所以无关问题仍返回 `NO_RELEVANT_MEMORY`。
 
