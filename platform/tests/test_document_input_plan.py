@@ -283,3 +283,51 @@ def test_confirmed_preview_admission_rejection_releases_slot_without_renewing_de
         db.flush()
         resumed = start(db, file, job, "second")
         assert resumed.status == "running" and aware(resumed.execution_deadline) == deadline
+
+
+def test_inline_pdf_pages_bind_their_canonical_renders():
+    from ailab_platform.models import RenderedPage
+
+    init_db()
+    with SessionLocal() as db:
+        file, index = make_file(db)
+        key = index.manifest_key
+        body = b"Native text with one figure"
+        unit = {
+            "ordinal": 0,
+            "anchor": "page:1",
+            "unit_number": 1,
+            "name": "text.txt",
+            "chars": len(body),
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "byte_offset": 0,
+            "byte_size": len(body),
+            "quality": "native_unverified",
+        }
+        index.status = "ready"
+        get_storage().put_bytes(key.rsplit("/", 1)[0] + "/text.txt", body)
+        get_storage().put_bytes(
+            key,
+            json.dumps(
+                {
+                    "parser": index.parser_version,
+                    "version": 2,
+                    "kind": "pdf",
+                    "units": [unit],
+                    "total_units": 1,
+                    "chars": len(body),
+                    "status": "ready",
+                    "visual_status": "present",
+                    "visual_units": [{"unit_number": 1}],
+                }
+            ).encode(),
+        )
+        file.meta = {**file.meta, "document_manifest_key": key}
+        db.add(RenderedPage(file_id=file.id, page=1, version="poppler-1280-v1", key=f"derived/{file.id}/pages/1.png", digest="d1"))
+        db.commit()
+        plan = prepare(
+            db, db.get(User, file.user_id), [file], ModelSpec("m", "m", capabilities=["tools", "vision"]), "read", send_id=str(uuid4())
+        )
+        item = plan["items"][0]
+        assert item["inline"]
+        assert [(page["page"], page["digest"], page["content_type"]) for page in item["visual_pages"]] == [(1, "d1", "image/png")]
