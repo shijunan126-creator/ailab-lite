@@ -563,6 +563,8 @@ class Settings(ContextBandSettings, BaseSettings):
                 problems.append(f"AILAB_{name.upper()} is still the default")
         if self.sandbox_provider == "mock":
             problems.append("mock sandbox is forbidden")
+        if self.sandbox_provider == "docker" and self.sandbox_runtime != "runsc":
+            problems.append("Docker sandbox requires AILAB_SANDBOX_RUNTIME=runsc (runc is not an isolation boundary)")
         if self.sandbox_provider == "opensandbox" and self.osb_network_mode == "kubernetes" and not self.osb_kubernetes_isolation_verified:
             problems.append("Kubernetes sandbox isolation must be verified before enabling secure OpenSandbox Kubernetes mode")
         if self.crawler_url and len(self.crawler_token) < 24 and service in (None, "agent", "api"):

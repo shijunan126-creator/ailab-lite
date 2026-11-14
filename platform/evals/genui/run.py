@@ -24,22 +24,14 @@ from ailab_platform.llm import MockLLM, ModelCall, model_call
 from ailab_platform.model_transport import ModelTransport
 
 
-def load_key(env_name="AILAB_KEY_DEEPSEEK", env_file=None):
-    """Use the existing personal deployment key without ever serializing it."""
+def load_key(env_name, env_file=None):
+    """Put the model key into the process environment only; it is never serialized."""
     if env_file and not os.environ.get(env_name):
         from dotenv import dotenv_values
 
         value = dotenv_values(env_file).get(env_name)
         if value:
             os.environ[env_name] = value
-    if env_name == "AILAB_KEY_DEEPSEEK" and not os.environ.get(env_name):
-        from dotenv import dotenv_values
-
-        source = Path("/Users/michael/Documents/AILab-local/config/deepseek.env")
-        if source.is_file():
-            value = dotenv_values(source).get("AILAB_KEY_DEEPSEEK")
-            if value:
-                os.environ["AILAB_KEY_DEEPSEEK"] = value
     return bool(os.environ.get(env_name))
 
 

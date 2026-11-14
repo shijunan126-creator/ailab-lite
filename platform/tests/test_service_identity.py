@@ -170,6 +170,7 @@ def secure_settings(**overrides):
         dev_token="",
         osb_api_key="",
         sandbox_provider="docker",
+        sandbox_runtime="runsc",
         scanner_backend="clamav",
         registration="closed",
     )
@@ -180,6 +181,7 @@ def secure_settings(**overrides):
     "overrides,reason",
     [
         ({"sandbox_provider": "mock"}, "mock sandbox"),
+        ({"sandbox_runtime": "runc"}, "runsc"),
         ({"scanner_backend": "stub"}, "stub scanner"),
         ({"dev_token": "dev-demo-token"}, "DEV_TOKEN"),
         ({"osb_api_key": "dev-osb-key"}, "OSB_API_KEY"),

@@ -1,4 +1,7 @@
-"""Equal small-fixture ranges; records raw measurements, never claims production capacity."""
+"""Equal small-fixture ranges; records raw measurements, never claims production capacity.
+
+Usage: bench_office.py [OUTPUT.json]  (default: the system temp directory; results never go into the repo)
+"""
 
 import hashlib
 import json
@@ -67,7 +70,7 @@ for kind, name in [("pdf", "paper.pdf"), ("docx", "report.docx"), ("xlsx", "budg
                 ),
             }
         )
-out = root / "docs/reviews/2026-10-29-office-performance.json"
+out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(tempfile.gettempdir()) / "ailab-office-performance.json"
 out.write_text(
     json.dumps(
         {
