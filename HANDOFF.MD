@@ -213,6 +213,9 @@
 
 ## Portal
 
+### 浏览器 JavaScript
+- **`getPromiseState()` 返回 settled 状态时必须 dispose `value`/`error` 句柄**。在循环条件里直接读 `.type` 会丢掉 rejected/fulfilled 结果，`JS_FreeRuntime` 随后断言；`import()` 和同步 rejected promise 都走这条路径。内存错误或 runtime 清理失败后丢弃 engine，不能复用损坏的 Wasm 实例。代码：`platform/portal/lib/js/engine.ts::run`；测试：`platform/portal/tests/js-engine.test.ts`。
+
 ### 预览与查看器
 - **预览外壳是唯一标题栏**。侧栏标签栏和全屏查看器顶栏已经命名文件并放操作；文档控件经 `DocTools` 插槽 portal 进去，不要在预览内部再画一行工具栏，上游 docbar 由 `office/build.mjs` 的补丁去掉。代码：`platform/portal/components/preview/doc-tools.tsx::DocTools`、`platform/portal/office/build.mjs`。
 - **预览 iframe 用 `aria-label` 命名，不用 `title`**。Chromium 会把 `title` 当悬停提示盖在整页文档上；E2E 用 `iframe.office-frame[aria-label=…]` 定位。代码：`platform/portal/components/preview/office-view.tsx::OfficeView`、`platform/e2e/test_office_native.py`。

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { dropEngine, loadEngine, run } from "../lib/js/engine";
 import { DEFAULT_LIMITS, type JsJob } from "../lib/js/protocol";
 
@@ -14,6 +14,20 @@ describe("browser JavaScript engine", () => {
   it("waits for an async program", async () => {
     expect(run(await loadEngine(), job("(async () => { await null; return 6 * 7 })()"))).toMatchObject({ ok: true, value: "42" });
     expect(run(await loadEngine(), job("Promise.reject(new TypeError('no'))"))).toMatchObject({ ok: false, error: { type: "runtime", message: "TypeError: no" } });
+  });
+
+  it("disposes settled promise states without aborting the runtime", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => errors.push(args.map(String).join(" ")));
+    try {
+      for (const code of ["Promise.reject(new Error('no'))", "import('os')", "return import('os')", "await import('os')"]) {
+        expect(run(await loadEngine(), job(code))).toMatchObject({ ok: false, error: { type: "runtime" } });
+      }
+      expect(run(await loadEngine(), job("1 + 1"))).toMatchObject({ ok: true, value: "2" });
+      expect(errors.join("\n")).not.toContain("Aborted");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("runs code written as a function body: return and top-level await", async () => {
@@ -32,12 +46,21 @@ describe("browser JavaScript engine", () => {
   it("stops at the memory limit and the output limit", async () => {
     const small = { ...DEFAULT_LIMITS, memory_mb: 8 };
     const started = Date.now();
-    expect(run(await loadEngine(8), job("const a = []; while (true) a.push('x'.repeat(1 << 16))", { limits: small }))).toMatchObject({ ok: false, error: { type: "memory" } });
-    dropEngine();
-    expect(run(await loadEngine(8), job("const a = []; for (;;) a.push(new Array(1e5).fill(1))", { limits: small }))).toMatchObject({ ok: false, error: { type: "memory" } });
-    dropEngine();
-    expect(Date.now() - started).toBeLessThan(1500);
-    expect(run(await loadEngine(), job("'x'.repeat(70 * 1024)"))).toMatchObject({ ok: false, error: { type: "output_limit" } });
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => errors.push(args.map(String).join(" ")));
+    try {
+      expect(run(await loadEngine(8), job("const a = []; while (true) a.push('x'.repeat(1 << 16))", { limits: small }))).toMatchObject({ ok: false, error: { type: "memory" } });
+      dropEngine();
+      expect(run(await loadEngine(8), job("1 + 1", { limits: small }))).toMatchObject({ ok: true, value: "2" });
+      dropEngine();
+      expect(run(await loadEngine(8), job("const a = []; for (;;) a.push(new Array(1e5).fill(1))", { limits: small }))).toMatchObject({ ok: false, error: { type: "memory" } });
+      dropEngine();
+      expect(Date.now() - started).toBeLessThan(1500);
+      expect(run(await loadEngine(), job("'x'.repeat(70 * 1024)"))).toMatchObject({ ok: false, error: { type: "output_limit" } });
+      expect(errors.join("\n")).not.toContain("Aborted");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("reports syntax errors and has no host objects", async () => {
