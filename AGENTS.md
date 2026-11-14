@@ -65,7 +65,7 @@
 **安全**
 - 资源归属由 API 根据已认证主体决定，不接受 Agent 或模型给出的 `user_id`。
 - 内部端点检查调用方的服务 scope，相关时把请求绑定到 `run_id`/`job_id`。
-- `AILAB_PROFILE=secure` 拒绝 mock 沙箱、未知后端、默认凭据、桩扫描器和不在白名单的模型。新增任何不安全的默认值，都要在这里加检查。
+- `AILAB_PROFILE=secure` 拒绝 mock 沙箱、Docker 配 `runc`、未知后端、默认凭据、桩扫描器和不在白名单的模型。新增任何不安全的默认值，都要在这里加检查。
 - 不记录密钥、token、预签名 URL 和数据库密码；沙箱凭据不进消息和事件。不可信文件只在 Worker 的受限子进程或沙箱里解析。
 
 **性能**（目标机器 2 vCPU / 约 8 GB 跑整套；pod 限额见 `platform/deploy/base/apps/services.yaml`）

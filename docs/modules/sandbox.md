@@ -63,7 +63,7 @@ Broker 是沙箱的唯一持有者：租约、exec 代理、文件注入与两�
 
 ### 安全边界
 - Docker 后端用 `--network none`、`--cap-drop ALL`、`no-new-privileges`、`--pids-limit 256`、swap 与内存相同（禁用额外 swap）、`/tmp` tmpfs，不挂宿主目录；PID1 是过期监督进程，只读 `/run/ailab-lease.json`，到点或租约进入 `releasing` 就退出。
-- Docker 的隔离强度由 `AILAB_SANDBOX_RUNTIME` 决定：默认 `runc`，设为 `runsc` 才是 gVisor；部署验收必须记录实际运行时，不能按镜像名推断。
+- Docker 的隔离强度由 `AILAB_SANDBOX_RUNTIME` 决定：默认 `runc`，设为 `runsc` 才是 gVisor；secure profile 拒绝 Docker 配 `runc`。部署验收必须记录实际运行时，不能按镜像名推断。
 - OpenSandbox k3s 路径由 `k3s/opensandbox-template.yaml` 固定 `runtimeClassName: gvisor`、`runAsUser: 10001`、丢弃全部 capabilities、不挂 ServiceAccount token；Broker 只按 spec 传 image、cpu、memory 和期限，模型不能选运行时或网络。
 - `osb_network_mode=sidecar` 时创建带 deny-all 策略；`kubernetes` 模式依赖 sandbox 命名空间的 default-deny NetworkPolicy，secure profile 还要求 `osb_kubernetes_isolation_verified`。
 - 沙箱内没有平台凭据、服务 token 或宿主目录；用户命令在 `/workspace` 工作，`/tmp` 是 tmpfs，`.ailab/` 是平台自己的目录；可变租约状态在 root-only 的 `/run/ailab-lease.json`，用户命令不可写。

@@ -155,7 +155,7 @@ lite 的应用与基础设施 request 合计约 0.68 CPU / 2.5 GiB（不含仅 d
 ### `AILAB_PROFILE=secure`
 `profile` 未显式设置时，`env=test` 为 `test`，`dev/smoke/k3s` 为 `dev`，其他环境为 `secure`。k3s 清单显式写 `AILAB_PROFILE=dev`，要上线必须主动改为 `secure` 并准备真实依赖。
 
-`secure` 下 `Settings::validate_secrets` 拒绝：默认 `dev_token`/`service_token`/`osb_api_key`；mock 沙箱；stub 扫描器；非空旧式共享 `AILAB_SERVICE_TOKEN`；缺失或不足 24 字符的本服务 credential；不匹配的 verifier；未声明 api/agent/broker/worker/ops 五个身份；未设置邀请码的 open/invite 注册；未验收的 OpenSandbox Kubernetes 隔离；过短的 crawler token；以及默认不允许的外部模型主机。检查在四个服务的 lifespan 中执行，失败直接阻止启动。
+`secure` 下 `Settings::validate_secrets` 拒绝：默认 `dev_token`/`service_token`/`osb_api_key`；mock 沙箱；Docker 沙箱配 `runc` 运行时；stub 扫描器；非空旧式共享 `AILAB_SERVICE_TOKEN`；缺失或不足 24 字符的本服务 credential；不匹配的 verifier；未声明 api/agent/broker/worker/ops 五个身份；未设置邀请码的 open/invite 注册；未验收的 OpenSandbox Kubernetes 隔离；过短的 crawler token；以及默认不允许的外部模型主机。检查在四个服务的 lifespan 中执行，失败直接阻止启动。
 
 | 变量 | 作用 | 默认 |
 |---|---|---|
