@@ -32,13 +32,23 @@ export function run(engineModule: QuickJSWASMModule, job: JsJob): JsReply {
   const vm: QuickJSContext = runtime.newContext();
   const logs: string[] = [];
   let logSize = 0;
+  let value: QuickJSHandle | undefined;
+  let damaged = false;
   const reply = (r: Omit<JsReply, "id" | "stats">): JsReply => ({ ...r, id: job.id, logs: logs.join("\n") || undefined, stats: { ms: Math.round(performance.now() - started), heap_kb: heapKb() } });
   const heapKb = () => {
+    if (damaged) return undefined;
     try {
       const usage = runtime.computeMemoryUsage();
-      const total = vm.getNumber(vm.getProp(usage, "memory_used_size"));
-      usage.dispose();
-      return Math.round(total / 1024);
+      try {
+        const prop = vm.getProp(usage, "memory_used_size");
+        try {
+          return Math.round(vm.getNumber(prop) / 1024);
+        } finally {
+          prop.dispose();
+        }
+      } finally {
+        usage.dispose();
+      }
     } catch {
       return undefined;
     }
@@ -77,29 +87,33 @@ export function run(engineModule: QuickJSWASMModule, job: JsJob): JsReply {
     if (failed(evaluated)) {
       const err = vm.dump(evaluated.error);
       evaluated.error.dispose();
-      return reply({ ok: false, error: classify(err, Date.now() > deadline) });
+      const error = classify(err, Date.now() > deadline);
+      if (error.type === "memory") damaged = true;
+      return reply({ ok: false, error });
     }
-    let value = evaluated.value;
+    value = evaluated.value;
     // an async program: run its jobs until the promise settles (still bounded by the interrupt handler)
-    for (let i = 0; i < 10000 && vm.getPromiseState(value).type === "pending"; i++) {
+    let state = vm.getPromiseState(value);
+    for (let i = 0; i < 10000 && state.type === "pending"; i++) {
       const jobs = runtime.executePendingJobs();
       if (failed(jobs)) {
         const err = vm.dump(jobs.error);
         jobs.error.dispose();
-        value.dispose();
-        return reply({ ok: false, error: classify(err, Date.now() > deadline) });
+        const error = classify(err, Date.now() > deadline);
+        if (error.type === "memory") damaged = true;
+        return reply({ ok: false, error });
       }
       if (jobs.value === 0) break;
+      state = vm.getPromiseState(value);
     }
-    const state = vm.getPromiseState(value);
     if (state.type === "rejected") {
       const err = vm.dump(state.error);
       state.error.dispose();
-      value.dispose();
-      return reply({ ok: false, error: classify(err, false) });
+      const error = classify(err, false);
+      if (error.type === "memory") damaged = true;
+      return reply({ ok: false, error });
     }
     if (state.type === "pending") {
-      value.dispose();
       return reply({ ok: false, error: { type: "runtime", message: "Promise 没有完成" } });
     }
     if (!state.notAPromise) {
@@ -109,14 +123,22 @@ export function run(engineModule: QuickJSWASMModule, job: JsJob): JsReply {
     // the completion value of the program, serialized inside the VM
     const json = vm.getProp(vm.global, "JSON");
     const stringify = vm.getProp(json, "stringify");
-    const text = vm.callFunction(stringify, json, value);
-    stringify.dispose();
-    json.dispose();
+    const text = (() => {
+      try {
+        return vm.callFunction(stringify, json, value);
+      } finally {
+        stringify.dispose();
+        json.dispose();
+      }
+    })();
     value.dispose();
+    value = undefined;
     if (failed(text)) {
       const err = vm.dump(text.error);
       text.error.dispose();
-      return reply({ ok: false, error: classify(err, Date.now() > deadline) });
+      const error = classify(err, Date.now() > deadline);
+      if (error.type === "memory") damaged = true;
+      return reply({ ok: false, error });
     }
     const out = vm.typeof(text.value) === "string" ? vm.getString(text.value) : undefined;
     text.value.dispose();
@@ -125,13 +147,33 @@ export function run(engineModule: QuickJSWASMModule, job: JsJob): JsReply {
     }
     return reply({ ok: true, value: out });
   } catch (error) {
-    return reply({ ok: false, error: classify(error, Date.now() > deadline) });
+    const classified = classify(error, Date.now() > deadline);
+    if (classified.type === "memory") damaged = true;
+    return reply({ ok: false, error: classified });
   } finally {
-    try {
-      vm.dispose();
-      runtime.dispose();
-    } catch {
-      // a program stopped at the memory limit can leave the runtime unusable; the next job gets a fresh one
+    if (damaged) {
+      // The Wasm runtime may already be inconsistent; never reuse this engine.
+      dropEngine();
+    } else {
+      let cleanupFailed = false;
+      if (value) {
+        try {
+          value.dispose();
+        } catch {
+          cleanupFailed = true;
+        }
+      }
+      try {
+        vm.dispose();
+      } catch {
+        cleanupFailed = true;
+      }
+      try {
+        runtime.dispose();
+      } catch {
+        cleanupFailed = true;
+      }
+      if (cleanupFailed) dropEngine();
     }
   }
 }
