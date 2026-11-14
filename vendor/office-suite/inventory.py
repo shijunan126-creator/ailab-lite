@@ -21,8 +21,10 @@ DISTRIBUTIONS = {
     "win32com": "pywin32",
 }
 
-P5_EVIDENCE = "docs/progress/updates/2026-11-02-office-suite-p5.md"
-VIEWER_EVIDENCE = "docs/progress/updates/2026-11-02-office-portal-tests.md"
+# Evidence is the test that exercises the capability, not a session note.
+P5_EVIDENCE = "platform/tests/contracts/test_office_production.py"
+VIEWER_EVIDENCE = "platform/portal/tests/office-view.test.tsx"
+REVIEW_EVIDENCE = "platform/tests/test_artifact_review.py"
 
 
 def inventory() -> dict:
@@ -205,7 +207,7 @@ def inventory() -> dict:
                     "acceptance_case_id": "OFFICE-" + sha(key.encode())[:12],
                     "status": "implemented",
                     "reason": "Native viewer and document_view connected; verification covers recorded local samples.",
-                    "evidence": [VIEWER_EVIDENCE, P5_EVIDENCE],
+                    "evidence": [VIEWER_EVIDENCE, "platform/e2e/test_office_native.py"],
                     "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
                 }
             )
@@ -238,7 +240,7 @@ def inventory() -> dict:
             "acceptance_case_id": "OFFICE-AILAB-VISUAL-REVIEW",
             "status": "implemented",
             "reason": "Bounded structural/page-image evidence; pending_model_judgment is not an automatic quality pass.",
-            "evidence": [P5_EVIDENCE],
+            "evidence": [REVIEW_EVIDENCE],
             "execution_validation": "representative DOCX/XLSX/PPTX/PDF tasks, not every recipe or independent visual model",
         }
     )

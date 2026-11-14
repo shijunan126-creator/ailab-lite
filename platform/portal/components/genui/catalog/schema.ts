@@ -1,6 +1,6 @@
 // GenUI catalog v2: names, positional props, descriptions and the per-component notes the model reads, without
 // React, so the contract generator (`npm run genui:prompt`) and Markdown fallbacks run in Node. Design:
-// docs/architecture/design/2026-10-30-genui-registry-v2.md. Same version: only add optional props, opts keys or
+// docs/architecture/adr/0029-genui-registry-v2.md. Same version: only add optional props, opts keys or
 // components; renaming, removing or reordering props needs v3. Only components/genui/** imports @openuidev/*.
 //
 // Conventions the model relies on: the main data are positional (at most four), everything else is one trailing

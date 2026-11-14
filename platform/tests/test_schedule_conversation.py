@@ -89,6 +89,18 @@ def test_every_occurrence_continues_the_same_conversation(client):
     assert c.get(f"/v1/schedules?conversation_id={first['conversation_id']}", headers=auth).json()[0]["id"] == task["id"]
 
 
+def next_daily(after, hhmm, zone):
+    """The first local hh:mm strictly after `after`, computed without the product code."""
+    from zoneinfo import ZoneInfo
+
+    local = as_utc(after).astimezone(ZoneInfo(zone))
+    hour, minute = map(int, hhmm.split(":"))
+    candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if candidate <= local:
+        candidate += timedelta(days=1)
+    return candidate.astimezone(UTC)
+
+
 def test_a_busy_conversation_gets_the_reply_right_after_it(client):
     c, auth = client
     conv_id, run_id = chat_turn(c, auth)
@@ -105,7 +117,8 @@ def test_a_busy_conversation_gets_the_reply_right_after_it(client):
     later = as_utc(waiting.next_run_at)
     assert dispatch_schedules(later) == 1
     done = row(task["id"])
-    assert done.due_at is None and done.last_run_id and as_utc(done.next_run_at) > later + timedelta(hours=1)
+    # back on the regular schedule, not another one-minute retry
+    assert done.due_at is None and done.last_run_id and as_utc(done.next_run_at) == next_daily(later, "09:00", done.timezone)
     with SessionLocal() as db:
         run = db.get(Run, done.last_run_id)
         # the turn stands for the original time, not the retry; the conversation keeps Chat
