@@ -90,6 +90,11 @@ OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调�
 # Read-only workspace lookups: the same turn may run several at once, each saving a sandbox round trip.
 # They never touch /workspace or the tool log's ordering, so results can be gathered and appended in ordinal order.
 READ_ONLY_TOOLS = frozenset({"read", "ls", "grep", "find", deferred.CALL})
+# Web tools are not read-only for the checkpoint: each result is durable, so a resume reuses it instead
+# of spending another external request. They are independent of the workspace and of each other, so the
+# same turn may still run several at once.
+NET_TOOLS = frozenset({"web_search", "read_url"})
+PARALLEL_TOOLS = READ_ONLY_TOOLS | NET_TOOLS
 FILE_TOOLS = frozenset(
     {"copy_library_file", "write", "edit", "bash", "deliver_file", "run_subtasks", *net_tools.NAMES}
 )  # tools that change /workspace or its outputs
@@ -1598,6 +1603,9 @@ class AgentLoop:
                     timezone=(turn.run.get("options") or {}).get("timezone") or "",
                 )
                 ctx.run_aliases = self._states[run_id].get("run_aliases") or {}
+                if call.name in NET_TOOLS:
+                    ctx.web_reads = self._states[run_id].setdefault("web_reads", {})
+                    ctx.step = step
                 budget = self._budgets[run_id]
                 budget.update()
                 ctx.exec_lifetime_seconds = (
@@ -1719,7 +1727,7 @@ class AgentLoop:
                 ),
                 "stderr": (result.get("stderr") or "")[:2000],
                 "error": result.get("error"),
-                **({"sources": web_sources(result)} if call.name in {"web_search", "read_url"} else {}),
+                **({"sources": web_sources(result)} if call.name in NET_TOOLS else {}),
                 **({"images": [i["path"] for i in result.get("images", [])]} if call.name == "search_images" else {}),
             },
         )
@@ -2331,7 +2339,7 @@ class AgentLoop:
                             result,
                             image_start=image_start,
                         )
-                    if call.name in {"web_search", "read_url"}:
+                    if call.name in NET_TOOLS:
                         seen = {source["url"] for source in state["sources"]}
                         for source in web_sources(result):
                             if source["url"] not in seen and len(state["sources"]) < 50:
@@ -2372,7 +2380,7 @@ class AgentLoop:
 
                 while state["pending"]:
                     batch = 0
-                    while batch < len(state["pending"]) and state["pending"][batch]["name"] in READ_ONLY_TOOLS:
+                    while batch < len(state["pending"]) and state["pending"][batch]["name"] in PARALLEL_TOOLS:
                         batch += 1
                     parallel = [state["pending"][i] for i in range(batch)] if batch > 1 else []
                     image_start = len(state.get("pending_image_inputs", []))
@@ -2386,6 +2394,16 @@ class AgentLoop:
                         )
                         failure = next((item for item in gathered if isinstance(item, BaseException)), None)
                         if failure is not None:
+                            # A completed web read costs an external request: persist it before the pause so
+                            # the resumed run reuses the bytes instead of fetching the same page again.
+                            completed = False
+                            for (call, invocation), result in zip(prepared, gathered, strict=True):
+                                if isinstance(result, BaseException) or call.name not in NET_TOOLS:
+                                    continue
+                                state["tool_log"][invocation] = {"name": call.name, "result": result}
+                                completed = True
+                            if completed:
+                                await self._checkpoint(run_id, turn)
                             raise failure
                         for (call, invocation), result in zip(prepared, gathered, strict=True):
                             await _consume(call, invocation, result, image_start)

@@ -296,6 +296,9 @@ class Settings(ContextBandSettings, BaseSettings):
     web_download_max_bytes: int = Field(default=100 * 1024 * 1024, gt=0)  # one file
     web_run_download_bytes: int = Field(default=512 * 1024 * 1024, gt=0)  # everything one run fetches
     web_run_requests: int = Field(default=120, gt=0)  # external requests one run may start
+    # Search hits may carry a short page excerpt. The reads run together, but the search answer never
+    # waits longer than this; a slow hit simply has no excerpt.
+    web_excerpt_deadline_seconds: float = Field(default=6, gt=0, le=30)
     # Optional, only to verify signed image paths already present in legacy answers. New images use short IDs.
     web_image_key: SecretStr = SecretStr("")
 
