@@ -22,6 +22,7 @@
 - **同一分支不能由两个 worktree 并发提交**。另一处推进 HEAD 后，本地旧 index 看起来像反向暂存；发现时立即隔离到新分支，不要提交那些反向差异。
 - **用 `git hash-object -w` + `update-index --cacheinfo` 部分暂存时，路径相对仓库根**。在子目录执行会在根目录生成错误的索引项。
 - **`docker build` 报 “No matching distribution” 先查是不是 DNS 失败**。只重试失败的层，保留已完成的大依赖层。
+- **从 macOS 打包源码进 VM 时设 `COPYFILE_DISABLE=1` 并加 `--no-xattrs`**。否则 tar 带进 `._*` AppleDouble 文件，Alembic 把 `migrations/versions/._*.py` 当迁移加载，API 启动报 null bytes。
 - **Colima 不把宿主 `/tmp` 挂进 VM，`docker run -v /tmp/...` 得到空目录**。共享文件放用户缓存目录或经 stdin 传入；自定义 `COLIMA_HOME` 要先建目录，否则悄悄回退默认目录。
 - **DNS 解析到 `198.18.*` 时是宿主 VPN 的 fake-IP**。按宿主 VPN → Colima → 容器的顺序查解析，不要为它放行非公网地址或关掉 SSRF 检查。
 
@@ -36,7 +37,7 @@
 - **`load_skill` 对基础技能先返回导航，正文按资源名再读**。把导航当整份技能会让模型缺操作细节；导航只列包和依赖。代码：`platform/ailab_platform/agent/prompts.py::load_skill`、`platform/ailab_platform/agent/skill_modules.py::read_module`；测试：`platform/tests/test_skill_modules.py::test_navigation_and_whole_file_reads`。
 
 ### 网页读取
-- **抓取必须经 `_fetch_page` 用 `CurlOpt.RESOLVE` 钉住 `public_addresses` 查过的 IP，并显式 `NOPROXY "*"`**。只换 UA 或让 libcurl 再解析会让 DNS rebinding 绕过检查；选项要随每个请求的 session 设置。代码：`platform/ailab_platform/web.py::_fetch_page`。
+- **抓取必须经 `_fetch_page` 用 `CurlOpt.RESOLVE` 钉住 `public_addresses` 查过的 IP，并显式 `NOPROXY "*"`**。只换 UA 或让 libcurl 再解析会让 DNS rebinding 绕过检查；选项要随每个请求的 session 设置；全部地址写进同一条 `host:port:ip1,ip2` 且 IPv4 在前，libcurl 对同一 host:port 只保留最后一条，分开写会钉到无路由的 IPv6。代码：`platform/ailab_platform/web.py::_fetch_page`。
 - **链接同时保留正文链接和整页 `<a>` 兜底**。Trafilatura 的 `include_links` 会丢掉只有一行的链接段；只取正文链接会让后续 `read_url`/`download_url` 的来源白名单漏掉真正的引用。代码：`platform/ailab_platform/web.py::_extract_document`、`platform/ailab_platform/agent/net_tools.py::sources_from`。
 - **Wayback 只用 14 位时间戳拼 `/{stamp}id_/{url}`，剩余不足 3 秒就放弃**。直接信 API 返回的 `url` 会带工具栏和重写；兜底不能吃掉整个读页预算。代码：`platform/ailab_platform/web.py::_wayback`。
 
