@@ -8,7 +8,6 @@ resources:
 - queue
 - scanner
 - search
-- crawler
 - apps
 - gateway
 - network.yaml

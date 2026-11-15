@@ -27,6 +27,7 @@ dependencies = [
   "pillow>=11",
   "rapidfuzz>=3.9",  # deterministic fuzzy candidate selection for memory dedupe
   "trafilatura>=2.0,<3",  # read_url: main content of a fetched page as Markdown (web.py)
+  "curl_cffi>=0.13,<0.18",  # read_url: Chrome TLS/HTTP fingerprint, with libcurl RESOLVE pinning the checked IP
 ]
 
 [project.optional-dependencies]

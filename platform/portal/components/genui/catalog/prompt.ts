@@ -31,7 +31,21 @@ const PICK = [
  */
 // Highlights is here because the rules route every max/min/total/change fact to it; written from memory it broke.
 // Segments and Steps left on 2026-11-13: 2 of 68 answers with a UI block used either (prompt-diet design).
-export const CORE = ["Stack", "Grid", "Text", "Callout", "Table", "Compare", "Metric", "Highlights", "LineChart", "BarChart", "Series"];
+// Timeline joined: it was the most requested ui_components lookup outside this list (17 of ~250), each one a model round trip.
+export const CORE = [
+  "Stack",
+  "Grid",
+  "Text",
+  "Callout",
+  "Table",
+  "Compare",
+  "Metric",
+  "Highlights",
+  "Timeline",
+  "LineChart",
+  "BarChart",
+  "Series",
+];
 /** Core components whose example teaches a data shape the signature alone leaves open. */
 const CORE_EXAMPLES = new Set(["Table", "Compare"]);
 
@@ -48,7 +62,7 @@ const INDEX = `## 回答中的界面（GenUI）
 选组件：
 ${PICK.map((line) => `- ${line}`).join("\n")}
 
-下方常用组件可直接写；其他组件先调用 ui_components（names 填组件名）读说明，没读过说明的不写。
+下方常用组件的说明已经完整，直接写，不为它们调用 ui_components；其他组件先调用一次 ui_components（names 一次填全要用的组件名）读说明，没读过说明的不写。
 `;
 
 const SYNTAX = `## 写法

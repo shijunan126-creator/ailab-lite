@@ -13,7 +13,7 @@ The sandbox keeps `--network none`. Public bytes are fetched by the Agent and st
 
 | Need | Tool | Fetched by | Opened by |
 |---|---|---|---|
-| page, GitHub issue + comments | `read_url` | Agent (bounded fetch + Trafilatura Markdown); since [ADR 0021](0021-isolated-browser-rendering-for-read-url.md) pages that come back weak are rendered by the isolated crawler behind the egress proxy | model context, marked untrusted |
+| page, GitHub issue + comments | `read_url` | Agent (bounded fetch; `text/markdown` direct or Trafilatura); weak or blocked pages use structured data or a Wayback snapshot, see [ADR 0045](0045-lightweight-web-read.md) | model context, marked untrusted |
 | file, image, document | `download_url` | Agent → disk spool → Broker → sandbox | sandbox |
 | public repository source | `fetch_repo` | Agent (GitHub tarball) | sandbox (`tarfile` data filter + count/size limits) |
 | Python dependencies | `fetch_packages` | Agent resolves with PyPI JSON metadata, downloads files with PyPI sha256 | sandbox `pip install --no-index` |

@@ -346,7 +346,7 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in, stack) -> None:
         if page_image.evaluate("el => el.tagName === 'IFRAME'"):
             slide = page_image.content_frame.locator(".slide-frame").first
             expect(slide).to_be_visible(timeout=20000)
-            assert slide.inner_text().strip()
+            expect(slide).to_have_text(re.compile(r"\S"), timeout=20000)  # the frame shows before its text is laid out
         elif page_image.evaluate("el => el.tagName === 'IMG'"):
             expect(page_image).to_have_js_property("complete", True)
             assert page_image.evaluate("el => el.naturalWidth > 0 && el.naturalHeight > 0")

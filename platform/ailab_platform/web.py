@@ -2,17 +2,19 @@
 
 The sandbox has no egress. This module runs in the Agent process (outside the
 sandbox): it searches with a private SearXNG instance and turns public pages
-into Markdown: its own bounded fetch + Trafilatura, and only when that comes
-back weak, the isolated crawler's browser rendering (ADR 0021). The model only
-sees the text and source URLs; the sandbox never gets a network route.
+into Markdown with one bounded fetch plus Trafilatura. Pages that only render
+with JavaScript are salvaged from their own structured data (JSON-LD,
+__NEXT_DATA__, meta description) instead of running a browser; blocked pages
+fall back to a Wayback snapshot (ADR 0045). The model only sees the text and
+source URLs; the sandbox never gets a network route.
 
 Security rules:
 * only http(s), default ports 80/443, no credentials in URLs;
 * every hostname is resolved and every address must be globally routable
   (rejects loopback, RFC1918, link-local, CGNAT, cloud metadata, and IPv6 forms
   that embed one of those: mapped, NAT64, 6to4, Teredo);
-* the connection goes to the address that was checked, never a second lookup,
-  so a DNS answer that changes between check and connect cannot reach inside;
+* the connection goes to the address that was checked: libcurl's RESOLVE option
+  maps host:port to the checked IP and no second DNS lookup happens;
 * redirects are followed manually and validated again;
 * responses are bounded by time and bytes, and only text-like content types
   are accepted;
@@ -32,22 +34,37 @@ import ssl
 import tempfile
 import time
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
+from functools import partial
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 import httpcore
 import httpx
 import trafilatura
+from curl_cffi import CurlOpt
+from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.exceptions import CertificateVerifyError, RequestException, Timeout
 
 from . import metrics
 from .config import settings
 
 USER_AGENT = "AILab-lite/0.1 (safe web research; https://github.com/shijunan126-creator/ailab-lite)"
+BROWSER_ACCEPT = "text/markdown, text/html;q=0.9, */*;q=0.8"
+HTML_ACCEPT = "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.1"
+BROWSER_HEADERS = {"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7"}
 MAX_REDIRECTS = 3
-MAX_LINKS = 40
+MAX_LINKS = 12
 MAX_PAGE_IMAGES = 6
+ALLOWED_PORTS = (80, 443)
+DNS_TIMEOUT_SECONDS = 3.0
+WAYBACK_MIN_SECONDS = 3.0
+WAYBACK_AVAILABLE = "https://archive.org/wayback/available"
+WAYBACK_SNAPSHOT = "https://web.archive.org/web/{stamp}id_/{url}"
+TIMEOUT_MESSAGE = "该站读取超时，请换其他来源"
 TEXT_TYPES = {
     "text/html",
     "application/xhtml+xml",
@@ -70,7 +87,7 @@ class WebStatusError(WebError):
 
 
 class WebFetchError(WebError):
-    """A transport failure that a separate browser connection may recover from."""
+    """A transport failure (timeouts are WebError with a caller-facing message)."""
 
 
 def enabled() -> bool:
@@ -93,7 +110,10 @@ def is_public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 async def public_addresses(host: str, port: int) -> list[str]:
     try:
-        infos = await asyncio.to_thread(socket.getaddrinfo, host, port, 0, socket.SOCK_STREAM)
+        async with asyncio.timeout(DNS_TIMEOUT_SECONDS):
+            infos = await asyncio.to_thread(socket.getaddrinfo, host, port, 0, socket.SOCK_STREAM)
+    except TimeoutError as exc:
+        raise WebError(f"DNS lookup for {host} timed out; try another source") from exc
     except (socket.gaierror, UnicodeError) as exc:
         raise WebError(f"cannot resolve host: {host}") from exc
     addresses = list(dict.fromkeys(info[4][0] for info in infos))
@@ -256,7 +276,7 @@ def _validate_url(raw: str) -> str:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
     except ValueError as exc:
         raise WebError("invalid port") from exc
-    if port not in (80, 443):
+    if port not in ALLOWED_PORTS:
         raise WebError("only ports 80 and 443 are allowed")
     try:
         ip = ipaddress.ip_address(host)
@@ -286,6 +306,7 @@ class _References(HTMLParser):
         self.shared: list[tuple[str, str]] = []  # og:image / twitter:image: the picture the page chose to represent it
         self.images: list[tuple[str, str]] = []
         self.shared_alt = ""
+        self.description = ""
 
     def handle_starttag(self, tag: str, attrs) -> None:
         tag = tag.lower()
@@ -300,6 +321,8 @@ class _References(HTMLParser):
                 self.shared.append((content, ""))
             elif name in ("og:image:alt", "twitter:image:alt") and not self.shared_alt:
                 self.shared_alt = content
+            elif name in ("description", "og:description") and content and not self.description:
+                self.description = content
         elif tag == "img" and len(self.images) < MAX_PAGE_IMAGES * 10:
             values = dict(attrs)
             if any(_attr_px(values.get(side)) <= 64 for side in ("width", "height")):
@@ -341,7 +364,7 @@ def image_reference(raw: str, base: str = "") -> str | None:
     return url if len(url.encode()) <= 4096 else None
 
 
-def _references(html: str, base: str) -> tuple[list[str], list[dict]]:
+def _references(html: str, base: str) -> tuple[list[str], list[dict], str]:
     parser = _References()
     with contextlib.suppress(Exception):  # malformed HTML only costs the links and pictures
         parser.feed(html)
@@ -360,12 +383,64 @@ def _references(html: str, base: str) -> tuple[list[str], list[dict]]:
             images.append({"image": ref, "page_url": base, "alt": _clean(alt)[:120]})
         if len(images) >= MAX_PAGE_IMAGES:
             break
-    return links, images
+    return links, images, _clean(parser.description)[:1000]
 
 
-def extract_markdown(html: str, base: str = "") -> tuple[str, str, list[str], list[dict]]:
-    """Title, main content as Markdown (navigation, footers and boilerplate dropped by Trafilatura), links and
-    picture address candidates. CPU-bound: callers run it in a thread."""
+MARKDOWN_LINK = re.compile(r"\]\(\s*<?(https?://[^)\s>]+)>?\s*\)|<(https?://[^>\s]+)>")
+TEXT_KEYS = {"articlebody", "body", "content", "text", "summary", "excerpt", "description"}
+
+
+def _json_strings(value, keys: set[str]) -> list[str]:
+    found: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if isinstance(child, str) and key.lower() in keys:
+                found.append(child)
+            else:
+                found.extend(_json_strings(child, keys))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(_json_strings(child, keys))
+    return found
+
+
+def _plain_markup(text: str) -> str:
+    return _clean(unescape(re.sub(r"<[^>]+>", " ", text)))
+
+
+def _structured_text(html: str, description: str) -> str:
+    """Article text a server-rendered HTML page carries for its own scripts; no JS engine is involved."""
+    article: list[str] = []
+    for match in re.finditer(r"<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>", html, re.I | re.S):
+        with contextlib.suppress(ValueError, TypeError):
+            article.extend(_json_strings(json.loads(match[1]), {"articlebody"}))
+    if article:
+        return _plain_markup(max(article, key=len))
+
+    next_data: list[str] = []
+    for match in re.finditer(r"<script[^>]+id=[\"']__NEXT_DATA__[\"'][^>]*>(.*?)</script>", html, re.I | re.S):
+        with contextlib.suppress(ValueError, TypeError):
+            next_data.extend(_json_strings(json.loads(match[1]), TEXT_KEYS))
+    next_data = [_plain_markup(item) for item in next_data]
+    if best := next((item for item in sorted(next_data, key=len, reverse=True) if len(item) >= 200), ""):
+        return best
+
+    return description if len(description) >= 80 else ""
+
+
+def _content_links(text: str, base: str) -> list[str]:
+    links: list[str] = []
+    for match in MARKDOWN_LINK.finditer(text):
+        url = urljoin(base, match[1] or match[2]).split("#")[0]
+        if url.startswith(("http://", "https://")) and len(url) <= 2000 and url not in links:
+            links.append(url)
+        if len(links) >= MAX_LINKS:
+            break
+    return links
+
+
+def _extract_document(html: str, base: str, recover: bool = False) -> dict:
+    """Title, main Markdown, links, pictures and weakness for one HTML page. CPU-bound: callers run it in a thread."""
     try:
         text = trafilatura.extract(
             html,
@@ -373,7 +448,7 @@ def extract_markdown(html: str, base: str = "") -> tuple[str, str, list[str], li
             output_format="markdown",
             include_tables=True,
             include_formatting=True,
-            include_links=False,
+            include_links=True,
             include_images=False,
             include_comments=False,
             favor_recall=True,
@@ -384,7 +459,28 @@ def extract_markdown(html: str, base: str = "") -> tuple[str, str, list[str], li
     title = (meta.title if meta and meta.title else "") or ""
     if not title and (m := re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)):
         title = unescape(m[1])
-    return _clean(title)[:300], _markdown(text or ""), *_references(html, base)
+    text = _markdown(text or "")
+    page_links, images, description = _references(html, base)
+    links = _content_links(text, base) or page_links
+    weak = _weakness(html, text)
+    challenged = bool(CHALLENGE_TITLE.fullmatch(_clean(title).strip()) or CHALLENGE_TITLE.fullmatch(text.strip()))
+    recovered = _structured_text(html, description) if recover and weak in ("short", "script") else ""
+    return {
+        "title": _clean(title)[:300],
+        "text": text,
+        "links": links[:MAX_LINKS],
+        "images": images,
+        "weak": weak,
+        "challenged": challenged,
+        "recovered": recovered,
+    }
+
+
+def extract_markdown(html: str, base: str = "") -> tuple[str, str, list[str], list[dict]]:
+    """Title, main content as Markdown (navigation, footers and boilerplate dropped by Trafilatura), links and
+    picture address candidates. CPU-bound: callers run it in a thread."""
+    page = _extract_document(html, base)
+    return page["title"], page["text"], page["links"], page["images"]
 
 
 def _markdown(text: str) -> str:
@@ -392,15 +488,14 @@ def _markdown(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text.replace("\xa0", " ").replace("\u200b", "")).strip()
 
 
-# A static fetch is good enough for most pages. These signs mean the content needs a browser: too
-# little text, an app shell waiting for its scripts, or a bot wall answering instead of the site.
+# A static fetch is good enough for most pages. These signs mean the server sent an app shell, a bot wall,
+# or too little text: salvage the page's own structured data, then try a Wayback snapshot.
 MIN_TEXT = 200
 SCRIPT_SHELL = re.compile(
     r"<div[^>]+id=[\"'](?:root|app|__next|__nuxt|q-app)[\"'][^>]*>\s*</div>|enable javascript|启用\s*javascript|"
     r"cf-chl|challenge-platform|just a moment\.\.\.",
     re.I,
 )
-RENDER_STATUSES = {403, 408, 412, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 CHALLENGE_TITLE = re.compile(
     r"^(?:just a moment[.!…]*|attention required[!！]?(?:\s*\|\s*cloudflare)?|access denied|verify (?:that )?you are human)[.!…\s]*$",
     re.I,
@@ -408,7 +503,9 @@ CHALLENGE_TITLE = re.compile(
 
 
 def _weakness(html: str, text: str) -> str | None:
-    if not text or (len(text) < MIN_TEXT and re.search(r"<script\b", html, re.I)):
+    if not text:
+        return "script" if SCRIPT_SHELL.search(html) else "short"
+    if len(text) < MIN_TEXT and re.search(r"<script\b", html, re.I):
         return "short"
     if len(text) < 1500 and SCRIPT_SHELL.search(html):
         return "script"
@@ -567,192 +664,287 @@ async def read_github_issue(owner: str, repo: str, number: str, limit: int) -> d
     }
 
 
+# Extraction runs on its own two threads. A cancelled await cannot stop a running thread, so a semaphore released on
+# cancellation (excerpt and run deadlines) would let abandoned extractions pile up past any bound: each holds a parsed
+# tree and competes for the agent's small CPU quota, which starves the event loop (model connects time out) and memory.
+# Queued jobs whose caller was cancelled are dropped before they start.
+_EXTRACT_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web-extract")
+
+
+def _remaining(deadline: float) -> float:
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise WebError(TIMEOUT_MESSAGE)
+    return left
+
+
+def _resolve_entries(host: str, port: int, addresses: list[str]) -> list[bytes]:
+    """One RESOLVE entry carrying every checked address. libcurl keeps only the last entry for a host:port, so one
+    entry per address would pin the connection to whichever came last (often an IPv6 address with no route here).
+    IPv4 first: the containers this runs in usually have no IPv6 route, and libcurl tries the list in order."""
+    ordered = sorted(addresses, key=lambda address: ":" in address)
+    targets = ",".join(f"[{address}]" if ":" in address else address for address in ordered)
+    return [f"{host}:{port}:{targets}".encode()]
+
+
+async def _fetch_page(url: str, headers: dict[str, str], deadline: float, max_bytes: int | None = None) -> dict:
+    """One HTTP GET pinned to the addresses public_addresses checked; libcurl's RESOLVE means no second lookup."""
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").rstrip(".").lower()
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    limit = max_bytes or settings.web_max_bytes
+    remaining = _remaining(deadline)
+    try:
+        async with asyncio.timeout(remaining):
+            addresses = await public_addresses(host, port)
+    except TimeoutError as exc:
+        raise WebError(TIMEOUT_MESSAGE) from exc
+    remaining = _remaining(deadline)
+    options = {CurlOpt.NOPROXY: b"*"}
+    if not _is_ip_literal(host):  # an already-checked literal connects directly; RESOLVE syntax cannot carry IPv6 hosts
+        options[CurlOpt.RESOLVE] = _resolve_entries(host, port, addresses)
+    try:
+        async with AsyncSession(
+            impersonate="chrome",
+            trust_env=False,
+            discard_cookies=True,
+            allow_redirects=False,
+            timeout=remaining,
+            curl_options=options,
+        ) as session:
+            response = await session.get(url, headers=headers, stream=True, allow_redirects=False)
+            try:
+                ctype = (response.headers.get("content-type") or "").split(";")[0].strip().lower()
+                declared = response.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > limit:
+                    raise WebError(f"page is too large ({declared} bytes)")
+                body, total, truncated = bytearray(), 0, False
+                async for chunk in response.aiter_content():
+                    if time.monotonic() >= deadline:
+                        raise WebError(TIMEOUT_MESSAGE)
+                    if total + len(chunk) > limit:
+                        body.extend(chunk[: limit - total])
+                        truncated = True
+                        break
+                    body.extend(chunk)
+                    total += len(chunk)
+                return {
+                    "url": response.url,
+                    "status": response.status_code,
+                    "content_type": ctype,
+                    "location": response.headers.get("location"),
+                    "text": body.decode(response.encoding or "utf-8", "replace"),
+                    "truncated": truncated,
+                }
+            finally:
+                with contextlib.suppress(Exception):
+                    await response.aclose()
+    except WebError:
+        raise
+    except CertificateVerifyError as exc:
+        raise WebError(f"TLS certificate verification failed for {url}") from exc
+    except Timeout as exc:
+        raise WebError(TIMEOUT_MESSAGE) from exc
+    except RequestException as exc:
+        if time.monotonic() >= deadline:
+            raise WebError(TIMEOUT_MESSAGE) from exc
+        raise WebFetchError(f"could not fetch {url}: {type(exc).__name__}") from exc
+
+
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host.split("%")[0])
+    except ValueError:
+        return False
+    return True
+
+
+async def _fetch_follow(url: str, headers: dict[str, str], deadline: float) -> dict:
+    current = _validate_url(url)
+    for _ in range(MAX_REDIRECTS + 1):
+        _remaining(deadline)
+        page = await _fetch_page(current, headers, deadline)
+        if page["status"] in (301, 302, 303, 307, 308):
+            location = page.get("location")
+            if not location:
+                raise WebError("redirect without location")
+            current = _validate_url(urljoin(current, location))
+            continue
+        return page
+    raise WebError("too many redirects")
+
+
 async def fetch_html(url: str) -> dict:
     """One bounded public fetch of a text-like page: raw decoded text, nothing extracted. The
     Agent's read_url and the Portal's original-page view share it — same caps, one fetch per click."""
     current = _validate_url(url)
-    headers = {
-        "Accept": "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.1",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
-    }
-    async with public_client(settings.web_fetch_timeout_seconds, headers) as client:
-        async with open_public(client, current) as resp:
-            final = str(resp.url)
-            ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-            if ctype and ctype not in TEXT_TYPES:
-                raise WebError(f"unsupported content type: {ctype}; use download_url for files")
-            declared = resp.headers.get("content-length")
-            if declared and declared.isdigit() and int(declared) > settings.web_max_bytes:
-                raise WebError(f"page is too large ({declared} bytes)")
-            body, truncated = await _read_bounded(
-                resp, settings.web_max_bytes, deadline=time.monotonic() + settings.web_transfer_deadline_seconds
-            )
-            encoding = resp.encoding or "utf-8"
-    text = body.decode(encoding, "replace")
+    deadline = time.monotonic() + settings.web_read_deadline_seconds
+    page = await _fetch_follow(current, {"Accept": HTML_ACCEPT, **BROWSER_HEADERS}, deadline)
+    if page["status"] >= 400:
+        raise WebStatusError(page["status"], f"HTTP {page['status']} from {page['url']}")
+    ctype = page["content_type"]
+    if ctype and ctype not in TEXT_TYPES:
+        raise WebError(f"unsupported content type: {ctype}; use download_url for files")
+    text = page["text"]
     title = ""
     if m := re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S):
         title = _clean(unescape(m[1]))[:300]
     return {
-        "url": final,
+        "url": page["url"],
         "title": title,
         "text": text,
         "content_type": ctype or "text/html",
-        "truncated": truncated,
+        "truncated": page["truncated"],
     }
 
 
-async def read_url(url: str, max_chars: int | None = None) -> dict:
-    """httpx + Trafilatura first; a weak result (or a bot wall) is rendered by the isolated crawler (ADR 0021)."""
-    current = _validate_url(url)
-    limit = max(1000, min(int(max_chars or settings.web_max_chars), 60_000))
-    issue = GITHUB_ISSUE.match(current)
-    if issue:
-        return await read_github_issue(*issue.groups(), limit)
-    started = time.monotonic()
-    path, outcome = "static", "error"
-    try:
-        try:
-            page, weak = await _read_static(current, limit)
-        except WebStatusError as exc:
-            if exc.status not in RENDER_STATUSES or not settings.crawler_url:
-                raise
-            page, weak = None, "blocked"
-        except WebFetchError:
-            if not settings.crawler_url:
-                raise
-            page, weak = None, "transport"
-        if weak is None or not settings.crawler_url:
-            if page is None or not page["text"]:
-                raise WebError("page had no readable text")
-            outcome = "ok"
-            return page
-        path = "rendered"
-        try:
-            rendered = await _read_rendered(current, limit)
-        except WebError:
-            if page is None or not page["text"]:
-                raise
-            # The browser could not help; what the plain fetch found is still worth returning, marked as partial.
-            path = "static_fallback"
-            outcome = "ok"
-            return {**page, "note": "这页需要浏览器渲染但渲染失败，以下是未运行脚本时取到的内容，可能不完整"}
-        outcome = "ok"
-        return rendered
-    finally:
-        metrics.observe_web_read(path, outcome, time.monotonic() - started)
+async def _extract_bounded(html: str, base: str) -> dict:
+    return await asyncio.get_running_loop().run_in_executor(_EXTRACT_POOL, partial(_extract_document, html, base, recover=True))
 
 
-async def _read_static(current: str, limit: int) -> tuple[dict, str | None]:
-    """The page and, for HTML, why it may need a browser (None when the static text is good)."""
-    page = await fetch_html(current)
-    final, ctype, raw, truncated = page["url"], page["content_type"], page["text"], page["truncated"]
-    weak = None
-    if ctype in ("text/html", "application/xhtml+xml") or raw.lstrip().startswith("<"):
-        title, text, links, images = await asyncio.to_thread(extract_markdown, raw, final)
-        weak = _weakness(raw, text)
-        if CHALLENGE_TITLE.fullmatch(title.strip()) or CHALLENGE_TITLE.fullmatch(text.strip()):
-            # An access wall is not useful partial article content if rendering fails.
-            text, weak = "", "challenge"
-    else:
-        title, links, images, text = page["title"], [], [], raw
-        if ctype == "application/json":
-            with contextlib.suppress(ValueError):
-                text = json.dumps(json.loads(raw), ensure_ascii=False, indent=1)
-        text = _markdown(text)
-    if len(text) > limit:
-        text, truncated = text[:limit].rstrip() + "\n...[truncated]", True
-    page = {
-        "url": final,
-        "title": title or urlsplit(final).netloc,
-        "text": text,
-        "content_type": ctype,
-        "truncated": truncated,
-        "links": links,
-        **({"images": images} if images else {}),
-    }
-    return page, weak
-
-
-def _crawler_client() -> httpx.AsyncClient:
-    """Internal service call: no environment proxy, no redirects, bounded connect and total time."""
-    return httpx.AsyncClient(timeout=httpx.Timeout(settings.crawler_timeout_seconds, connect=3), trust_env=False, follow_redirects=False)
-
-
-async def fetch_rendered_html(url: str) -> dict:
-    """A bounded HTML snapshot from the same proxy-confined, disposable browser as read_url."""
-    current = _validate_url(url)
-    if not settings.crawler_url:
-        raise WebError("page reader is not configured")
-    try:
-        async with asyncio.timeout(settings.crawler_timeout_seconds), _crawler_client() as client:
-            parsed = urlsplit(current)
-            await public_addresses(parsed.hostname or "", parsed.port or (443 if parsed.scheme == "https" else 80))
-            resp = await client.post(
-                settings.crawler_url.rstrip("/") + "/read",
-                json={"url": current, "max_chars": 1000, "include_html": True},
-                headers={"Authorization": f"Bearer {settings.crawler_token}"},
-            )
-            data = resp.json()
-    except (TimeoutError, httpx.TimeoutException) as exc:
-        raise WebError("page reader timed out") from exc
-    except (httpx.HTTPError, ValueError) as exc:
-        raise WebError("page reader unavailable") from exc
-    if resp.status_code >= 400:
-        raise WebError(str(data.get("error") or "page reader unavailable")[:300])
-    html = str(data.get("html") or "")
-    if not html or len(html.encode("utf-8")) > min(settings.web_max_bytes, 2 * 1024 * 1024):
-        raise WebError("rendered HTML is empty or exceeds the snapshot limit")
-    final = _validate_url(str(data.get("url") or current))
-    parsed = urlsplit(final)
-    await public_addresses(parsed.hostname or "", parsed.port or (443 if parsed.scheme == "https" else 80))
-    ctype = str(data.get("content_type") or "text/html")
-    if ctype not in {"text/html", "application/xhtml+xml"}:
-        raise WebError("not an HTML page")
-    return {"url": final, "text": html, "content_type": ctype, "title": str(data.get("title") or "")[:300]}
-
-
-async def _read_rendered(url: str, limit: int) -> dict:
-    """The page as the isolated crawler renders it: main content as Markdown. The URL is checked here
-    first (scheme, port, every DNS answer public); what the page loads afterwards is held to the same
-    rule by the egress proxy the crawler must use."""
-    try:
-        # HTTPX's read timeout bounds silence between chunks, not the whole response.
-        # Include DNS so a stalled resolver cannot keep the Agent's tool slot forever.
-        async with asyncio.timeout(settings.crawler_timeout_seconds), _crawler_client() as client:
-            parsed = urlsplit(url)
-            await public_addresses(parsed.hostname or "", parsed.port or (443 if parsed.scheme == "https" else 80))
-            resp = await client.post(
-                settings.crawler_url.rstrip("/") + "/read",
-                json={"url": url, "max_chars": limit},
-                headers={"Authorization": f"Bearer {settings.crawler_token}"},
-            )
-            try:
-                data = resp.json()
-            except ValueError:
-                data = {}
-    except (TimeoutError, httpx.TimeoutException) as exc:
-        raise WebError("page reader timed out; try again later or use another source") from exc
-    except httpx.HTTPError as exc:
-        raise WebError(f"page reader unavailable: {type(exc).__name__}") from exc
-    if resp.status_code == 503:
-        raise WebError("page reader is busy; try again shortly")
-    if resp.status_code >= 400:
-        raise WebError(str(data.get("error") or f"page reader returned HTTP {resp.status_code}")[:300])
-    final = str(data.get("url") or url)
-    text = _markdown(str(data.get("markdown") or ""))
-    if not text:
-        raise WebError("page had no readable text")
-    truncated = bool(data.get("truncated"))
-    if len(text) > limit:
-        text, truncated = text[:limit].rstrip(), True
-    if truncated:
-        text += "\n...[truncated]"
-    links = [str(link) for link in data.get("links") or [] if str(link).startswith(("http://", "https://"))][:MAX_LINKS]
+async def _page_from(fetched: dict) -> dict:
+    """Turn a fetched body into the read_url result shape; HTML extraction runs in a bounded thread."""
+    final, ctype, raw, truncated = fetched["url"], fetched["content_type"], fetched["text"], fetched["truncated"]
+    if ctype in ("text/html", "application/xhtml+xml") or (not ctype and raw.lstrip().startswith("<")):
+        document = await _extract_bounded(raw, final)
+        page = {
+            "url": final,
+            "title": document["title"] or urlsplit(final).netloc,
+            "text": document["text"],
+            "content_type": ctype or "text/html",
+            "truncated": truncated,
+            "links": document["links"],
+            "challenged": document["challenged"],
+            "weak": document["weak"],
+            "recovered": document["recovered"],
+            **({"images": document["images"]} if document["images"] else {}),
+        }
+        return page
+    text = raw
+    if ctype == "application/json":
+        with contextlib.suppress(ValueError):
+            text = json.dumps(json.loads(raw), ensure_ascii=False, indent=1)
+    text = _markdown(text)
+    heading = re.match(r"#\s+(.+)", text)
     return {
         "url": final,
-        "title": str(data.get("title") or "")[:300] or urlsplit(final).netloc,
+        "title": (_clean(heading[1])[:300] if heading else urlsplit(final).netloc),
         "text": text,
-        "content_type": str(data.get("content_type") or "text/html"),
+        "content_type": ctype or "text/plain",
         "truncated": truncated,
-        "links": links,
+        "links": [],
+        "challenged": False,
+        "weak": None,
+        "recovered": "",
     }
+
+
+def _window(page: dict, start: int, limit: int) -> dict:
+    """Return text[start:start+limit]; next_start is present only when more text may follow."""
+    full = page.get("text") or ""
+    if start >= len(full):
+        page["text"] = ""
+        page["truncated"] = bool(page.get("truncated"))
+        page.pop("next_start", None)
+        return page
+    end = start + limit
+    page["text"] = full[start:end]
+    page["truncated"] = end < len(full) or bool(page.get("truncated"))
+    if end < len(full):
+        page["next_start"] = end
+    else:
+        page.pop("next_start", None)
+    return page
+
+
+async def _wayback(url: str, deadline: float) -> dict | None:
+    """The closest Wayback snapshot as a normal page, or None when there is no usable snapshot in time."""
+    if deadline - time.monotonic() < WAYBACK_MIN_SECONDS:
+        return None
+    try:
+        async with asyncio.timeout(deadline - time.monotonic()):
+            data = await get_json(f"{WAYBACK_AVAILABLE}?url={quote(url, safe='')}", 256 * 1024)
+    except (WebError, TimeoutError):
+        return None
+    closest = (data.get("archived_snapshots") or {}).get("closest") if isinstance(data, dict) else None
+    stamp = str((closest or {}).get("timestamp") or "")
+    if not closest or not closest.get("available") or not re.fullmatch(r"\d{14}", stamp):
+        return None
+    try:
+        _remaining(deadline)
+        fetched = await _fetch_follow(
+            _validate_url(WAYBACK_SNAPSHOT.format(stamp=stamp, url=url)),
+            {"Accept": HTML_ACCEPT, **BROWSER_HEADERS},
+            deadline,
+        )
+        if fetched["status"] >= 400 or (fetched["content_type"] and fetched["content_type"] not in TEXT_TYPES):
+            return None
+        page = await _page_from(fetched)
+    except WebError:
+        return None
+    if not page["text"] or page["challenged"]:
+        return None
+    archived_at = datetime.strptime(stamp, "%Y%m%d%H%M%S").replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
+    page.pop("weak", None)
+    page.pop("recovered", None)
+    page["archived_at"] = archived_at
+    page["note"] = f"这是 Wayback Machine 存档快照（{archived_at}），可能不是最新内容。"
+    return page
+
+
+async def read_url(url: str, max_chars: int | None = None, start: int = 0) -> dict:
+    """Read a public page as Markdown with browser-like headers, structured-data recovery and a Wayback fallback."""
+    current = _validate_url(url)
+    limit = max(1000, min(int(max_chars or settings.web_max_chars), 60_000))
+    start = max(0, int(start or 0))
+    issue = GITHUB_ISSUE.match(current)
+    if issue:
+        return _window(await read_github_issue(*issue.groups(), start + limit), start, limit)
+    deadline = time.monotonic() + settings.web_read_deadline_seconds
+    started, path, outcome = time.monotonic(), "static", "error"
+    try:
+        fetched = await _fetch_follow(current, {"Accept": BROWSER_ACCEPT, **BROWSER_HEADERS}, deadline)
+        if fetched["status"] == 403:  # some sites (openai.com) reject Markdown negotiation but serve HTML
+            fetched = await _fetch_follow(current, {"Accept": HTML_ACCEPT, **BROWSER_HEADERS}, deadline)
+        path = "markdown" if fetched["content_type"] == "text/markdown" else "static"
+        status = fetched["status"]
+        if status in (401, 403, 429):
+            archived = await _wayback(current, deadline)
+            if archived:
+                path, outcome = "wayback", "ok"
+                return _window(archived, start, limit)
+            raise WebStatusError(status, f"HTTP {status} from {fetched['url']}；网站拒绝读取或需要验证，没有可用存档，请换其他来源")
+        if status >= 400:
+            raise WebStatusError(status, f"HTTP {status} from {fetched['url']}；请换其他来源")
+        if fetched["content_type"] and fetched["content_type"] not in TEXT_TYPES:
+            raise WebError(f"unsupported content type: {fetched['content_type']}; use download_url for files")
+        page = await _page_from(fetched)
+        if page["challenged"]:
+            archived = await _wayback(current, deadline)
+            if archived:
+                path, outcome = "wayback", "ok"
+                return _window(archived, start, limit)
+            raise WebError("该网站要求人机验证，没有可用存档，请换其他来源")
+        if page["weak"] in ("short", "script"):
+            if page["recovered"]:
+                page["text"] = page["recovered"]
+                page["truncated"] = False
+                page["note"] = "页面没有可直接抽取的正文，以下内容取自页面自带的结构化数据，可能不完整。"
+                path = "recovered"
+            elif page["weak"] == "script":
+                archived = await _wayback(current, deadline)
+                if archived:
+                    path, outcome = "wayback", "ok"
+                    return _window(archived, start, limit)
+            if not page["text"]:
+                raise WebError("页面正文由脚本加载，未运行脚本时没有可读内容，请换其他来源")
+        page.pop("weak", None)
+        page.pop("recovered", None)
+        if not page["text"]:
+            raise WebError("页面没有可读正文，请换其他来源")
+        outcome = "ok"
+        return _window(page, start, limit)
+    except WebFetchError as exc:
+        raise WebError(f"{exc}；请换其他来源") from exc
+    finally:
+        metrics.observe_web_read(path, outcome, time.monotonic() - started)

@@ -127,51 +127,18 @@ def test_render_handles_carriage_returns_and_valueless_meta_attributes():
     assert "正文" in rendered
 
 
-@pytest.mark.parametrize("status", [403, 412])
-def test_reader_retries_blocked_pages_once_in_isolated_browser(api, monkeypatch, status):
+@pytest.mark.parametrize("status", [403, 412, 429])
+def test_reader_maps_a_refused_page_to_502_without_a_browser(api, monkeypatch, status):
     calls = []
 
     async def fetch(url):
+        calls.append(url)
         raise web.WebStatusError(status, f"HTTP {status} from {url}")
 
-    async def snapshot(url):
-        calls.append(url)
-        return {"url": url, "content_type": "text/html", "text": "<h1>浏览器正文</h1><script>bad()</script>"}
-
     monkeypatch.setattr(web, "fetch_html", fetch)
-    monkeypatch.setattr(web, "fetch_rendered_html", snapshot)
-    monkeypatch.setattr(web.settings, "crawler_url", "http://crawler:8090")
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
     response = api.get("/v1/reader/render", params={"url": "https://example.com/a"})
-    assert response.status_code == 200 and "浏览器正文" in response.text
-    assert calls == ["https://example.com/a"]
-    assert "script-src 'none'" in response.headers["content-security-policy"]
-
-
-def test_reader_keeps_browser_refusal_as_failure_with_readable_html(api, monkeypatch):
-    async def fetch(url):
-        raise web.WebStatusError(403, f"HTTP 403 from {url}")
-
-    monkeypatch.setattr(web, "fetch_html", fetch)
-    monkeypatch.setattr(web, "fetch_rendered_html", fetch)
-    monkeypatch.setattr(web.settings, "crawler_url", "http://crawler:8090")
-    monkeypatch.setattr(web.settings, "web_search_provider", "mock")
-    response = api.get("/v1/reader/render", params={"url": "https://example.com/?q=<script>bad()</script>"})
     assert response.status_code == 502
-    assert "网站拒绝" in response.text and "新标签" in response.text
-    assert "<script>" not in response.text
+    assert "暂时无法预览" in response.text and "新标签" in response.text
+    assert calls == ["https://example.com/a"]
     assert response.headers["cache-control"] == "private, no-store"
-
-
-def test_reader_never_retries_private_address_or_tls_failure_in_browser(api, monkeypatch):
-    async def fetch(url):
-        raise web.WebError("refusing non-public address")
-
-    async def forbidden(url):
-        raise AssertionError("browser must not bypass public-only refusal")
-
-    monkeypatch.setattr(web, "fetch_html", fetch)
-    monkeypatch.setattr(web, "fetch_rendered_html", forbidden)
-    monkeypatch.setattr(web.settings, "crawler_url", "http://crawler:8090")
-    monkeypatch.setattr(web.settings, "web_search_provider", "mock")
-    assert api.get("/v1/reader/render", params={"url": "http://127.0.0.1/"}).status_code == 502

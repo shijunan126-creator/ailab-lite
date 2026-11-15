@@ -22,6 +22,7 @@
 - **同一分支不能由两个 worktree 并发提交**。另一处推进 HEAD 后，本地旧 index 看起来像反向暂存；发现时立即隔离到新分支，不要提交那些反向差异。
 - **用 `git hash-object -w` + `update-index --cacheinfo` 部分暂存时，路径相对仓库根**。在子目录执行会在根目录生成错误的索引项。
 - **`docker build` 报 “No matching distribution” 先查是不是 DNS 失败**。只重试失败的层，保留已完成的大依赖层。
+- **从 macOS 打包源码进 VM 时设 `COPYFILE_DISABLE=1` 并加 `--no-xattrs`**。否则 tar 带进 `._*` AppleDouble 文件，Alembic 把 `migrations/versions/._*.py` 当迁移加载，API 启动报 null bytes。
 - **Colima 不把宿主 `/tmp` 挂进 VM，`docker run -v /tmp/...` 得到空目录**。共享文件放用户缓存目录或经 stdin 传入；自定义 `COLIMA_HOME` 要先建目录，否则悄悄回退默认目录。
 - **DNS 解析到 `198.18.*` 时是宿主 VPN 的 fake-IP**。按宿主 VPN → Colima → 容器的顺序查解析，不要为它放行非公网地址或关掉 SSRF 检查。
 
@@ -34,6 +35,12 @@
 - **退役工具要同时摘目录、handler、内部端点和文件依赖，并加入 `RETIRED_TOOLS`**。恢复旧 checkpoint 时重建 `messages[0]` 与目录并记边界；只删目录会留下走不到的代码。代码：`platform/ailab_platform/agent/tools.py::RETIRED_TOOLS`、`platform/ailab_platform/agent/context.py::ContextManager::build`；测试：`platform/tests/test_prefix_cache.py::test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary`。
 - **不要恢复按模型预算裁剪的精简目录**。每个模式只有一份目录，`_tools_for_run` 不再按预算删 schema；小窗口模型多付 schema，但不能在请求构造后改工具集合。代码：`platform/ailab_platform/agent/loop.py::_tools_for_run`。
 - **`load_skill` 对基础技能先返回导航，正文按资源名再读**。把导航当整份技能会让模型缺操作细节；导航只列包和依赖。代码：`platform/ailab_platform/agent/prompts.py::load_skill`、`platform/ailab_platform/agent/skill_modules.py::read_module`；测试：`platform/tests/test_skill_modules.py::test_navigation_and_whole_file_reads`。
+
+### 网页读取
+- **抓取必须经 `_fetch_page` 用 `CurlOpt.RESOLVE` 钉住 `public_addresses` 查过的 IP，并显式 `NOPROXY "*"`**。只换 UA 或让 libcurl 再解析会让 DNS rebinding 绕过检查；选项要随每个请求的 session 设置；全部地址写进同一条 `host:port:ip1,ip2` 且 IPv4 在前，libcurl 对同一 host:port 只保留最后一条，分开写会钉到无路由的 IPv6。代码：`platform/ailab_platform/web.py::_fetch_page`。
+- **CPU 重活放进有固定线程数的专用池（`run_in_executor`），不要用“信号量 + `asyncio.to_thread`”限并发**。取消 await 停不了已在跑的线程，信号量却随取消释放，被摘录/运行截止放弃的抽取会越堆越多，挤满 Agent 的 0.3 CPU，连模型 TLS 握手都会超时。代码：`platform/ailab_platform/web.py::_extract_bounded`。
+- **链接同时保留正文链接和整页 `<a>` 兜底**。Trafilatura 的 `include_links` 会丢掉只有一行的链接段；只取正文链接会让后续 `read_url`/`download_url` 的来源白名单漏掉真正的引用。代码：`platform/ailab_platform/web.py::_extract_document`、`platform/ailab_platform/agent/net_tools.py::sources_from`。
+- **Wayback 只用 14 位时间戳拼 `/{stamp}id_/{url}`，剩余不足 3 秒就放弃**。直接信 API 返回的 `url` 会带工具栏和重写；兜底不能吃掉整个读页预算。代码：`platform/ailab_platform/web.py::_wayback`。
 
 ### 消息、图像与上下文
 - **用户消息文本只由 `user_text` 生成**。技能标记按用户原文码点插入，之后才套定时任务头和文档引用；实时、插话、历史必须走同一函数，否则历史字节与首次发送不同。代码：`platform/ailab_platform/agent/prompts.py::user_text`；测试：`platform/tests/test_prefix_cache.py::test_scheduled_turn_and_its_steer_place_skills_and_document_references_the_same_way`。
@@ -51,6 +58,7 @@
 
 ### 恢复、预算与后台命令
 - **付费响应先 checkpoint 再执行工具；有副作用的工具开始前写 `tool_log`**。只读工具不单独 checkpoint，恢复时允许重做；恢复调用用 `announce=False`，否则 UI 会多出一个永远转圈的步骤。代码：`platform/ailab_platform/agent/loop.py::AgentLoop::_durable_tool`、`::_run_tool`；测试：`platform/tests/test_agent_loop.py::test_tool_events_carry_the_call_id_that_pairs_them`。
+- **`web_search`/`read_url` 可同批并行，但不要并进 `READ_ONLY_TOOLS`**。web 结果要单独 checkpoint，恢复才不会再花一次外部请求；同批中断时已完成的结果也要先落 `tool_log` 再抛。代码：`platform/ailab_platform/agent/loop.py::PARALLEL_TOOLS`、`::_durable_tool`；测试：`platform/tests/test_web_parallel.py::test_an_interrupted_batch_keeps_the_completed_web_read`。
 - **同一 Run 的 checkpoint 写入必须串行，`expected_step` 只能有一个 CAS 在途**。心跳、预算暂停和并发工具都走同一把按 Run 的锁，否则会随机 409。代码：`platform/ailab_platform/agent/loop.py::AgentLoop::_checkpoint`；测试：`platform/tests/test_agent_loop.py::test_two_concurrent_checkpoints_never_share_one_expected_step`。
 - **checkpoint 超限写有界冻结记录并暂停，不能变成 413 失败或恢复被省略的付费结果**。已消费日志只保留身份指纹和完成状态，pending 结果与不可重放标记不能提前删。代码：`platform/ailab_platform/agent/checkpoint_budget.py::bounded_checkpoint`。
 - **`budget_window_id` 与 `job_id` 分开；只有用户明确继续预算类暂停才重置窗口**。回答 `ask_user` 和租约自动恢复只换 job；累计 token 与配额永不随时间续跑重置。代码：`platform/ailab_platform/agent/budgets.py::WorkBudget`、`platform/ailab_platform/agent/loop.py::AgentLoop::_process`。

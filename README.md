@@ -93,9 +93,3 @@ cd portal && npm test
 | `vendor/` | 上游办公技能原样副本 |
 | `deploy.sh`、`k3s/`、`tests/` | 一键部署、k3s 与 gVisor 配置、基座检查脚本 |
 | `docs/` | 模块文档、设计决策、能力状态和进度，入口 [docs/README.md](docs/README.md) |
-
-## 第三方软件署名
-
-This product includes software developed by UncleCode (https://x.com/unclecode) as part of the Crawl4AI project (https://github.com/unclecode/crawl4ai).
-
-Crawl4AI 0.7.4 的许可证为 Apache-2.0 加附加署名要求，原文见 [许可证](images/crawler/Crawl4AI-LICENSE)。

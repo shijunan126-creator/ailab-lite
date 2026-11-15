@@ -3,7 +3,8 @@
 The side pane cannot iframe external sites directly (most send X-Frame-Options), so /reader/render
 re-serves the fetched HTML with the frame-blocking headers gone and a <base> pointed at the site —
 the sandboxed iframe then shows the original page. It uses the Agent's public-only client, caps and
-deadlines; static first, then at most one isolated browser snapshot when needed.
+deadlines. A page that refuses the fetch gets a readable "open the original site" page; there is no
+browser renderer, so blocked pages stay blocked.
 """
 
 import asyncio
@@ -104,26 +105,12 @@ def _reader_failure(url: str, reason: str, status: int) -> Response:
     return Response(content=html, status_code=status, media_type="text/html; charset=utf-8", headers=SNAPSHOT_HEADERS)
 
 
-async def _preview_page(url: str) -> dict:
-    try:
-        return await web.fetch_html(url)
-    except web.WebStatusError as exc:
-        if exc.status not in web.RENDER_STATUSES or not web.settings.crawler_url:
-            raise
-    except web.WebFetchError:
-        if not web.settings.crawler_url:
-            raise
-    # Ordinary public-fetch rejections (including private destinations and TLS failures) never
-    # reach this path. The browser retains its independent egress proxy and the same URL checks.
-    return await web.fetch_rendered_html(url)
-
-
 @router.get("/reader/render")
 async def reader_render(url: str = Query(min_length=1, max_length=2000), _: User = Depends(current_user)) -> Response:
-    """Static snapshot first, one bounded browser retry on eligible upstream/transport failures."""
+    """One bounded public fetch, re-served under a script-free CSP."""
     _check_url(url)
     try:
-        page = await asyncio.wait_for(_preview_page(url), timeout=READ_TIMEOUT_SECONDS)
+        page = await asyncio.wait_for(web.fetch_html(url), timeout=READ_TIMEOUT_SECONDS)
     except TimeoutError:
         return _reader_failure(url, "page reader timed out", 504)
     except web.WebError as exc:

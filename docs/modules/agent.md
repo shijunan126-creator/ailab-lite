@@ -29,6 +29,7 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 | 并行子任务 | `platform/ailab_platform/agent/subtasks.py::TOOL`、`platform/ailab_platform/agent/loop.py::AgentLoop::_subtasks` |
 | 联网、下载、依赖、保存技能 | `platform/ailab_platform/agent/net_tools.py::download_url`、`::fetch_repo`、`::fetch_packages`、`::save_skill` |
 | 网页搜索与读取 | `platform/ailab_platform/web.py::search`、`::read_url` |
+| 联网工具的补搜、去重与摘录 | `platform/ailab_platform/agent/web_tools.py::read_page`、`::search`、`platform/ailab_platform/agent/web_excerpts.py::excerpt` |
 | 工作区 ls/grep/find | `platform/ailab_platform/agent/workspace_query.py::list_directory`、`::search_text`、`::find_files` |
 | Chat 文档工具 | `platform/ailab_platform/agent/document_tools.py::TOOLS` |
 | 思考字段与 `<think>` 拆分 | `platform/ailab_platform/thinking.py::reasoning_of`、`::ThinkSplitter` |
@@ -56,9 +57,17 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 1. 常驻工具直接声明，名单就是模式目录减去 `DEFERRED[mode]`；其余按需工具只在 `call_tool` 的 `name` 枚举里冻结名字。模型第一次调用按需工具时只拿到说明，说明已在上下文后才执行。
 2. 历史保留模型写的 `call_tool` 原文，执行、事件、工具日志和授权都用解析后的真实工具名。
 3. `_durable_tool` 以 `step:ordinal` 查 `tool_log`：已有结果直接复用；没有结果的 `bash` 属于 `NON_REPLAYABLE`，只按已有 handle 继续等待，绝不重跑。
-4. `READ_ONLY_TOOLS` 同批并行，结果仍按 ordinal 顺序消费；有副作用的工具开始前先写 `tool_log` 并 checkpoint。
+4. `PARALLEL_TOOLS`（`READ_ONLY_TOOLS` 加 `web_search`/`read_url`）同批并行，结果仍按 ordinal 顺序消费；有副作用的工具开始前先写 `tool_log` 并 checkpoint。web 工具不在 `READ_ONLY_TOOLS`，每个结果单独 checkpoint，所以恢复时 `_durable_tool` 直接复用已完成的结果，不再花一次外部请求；同批有调用中断时，已完成 web 结果先写 `tool_log` 再 checkpoint 才抛出。
 5. 工具结果按整批做上下文准入：单个结果放不下时替换成 `cannot_fit` 拒绝，同时为每个待配对调用保留最小结果；连这些也放不下就 `ContextPause`。结果写入 `tool_log`、追加 tool 消息、更新来源/交付/后台句柄，再 checkpoint。
-6. 工具异常转成 `{ok:false, error}` 交给模型；租约 410 向上抛 `LeaseInterrupted`，不伪装成普通工具失败。
+6. `web_tools.read_page` 以规范化 URL 加 `start` 为键，把成功读取的步号和 `next_start` 记在 `state["web_reads"]`（随 checkpoint 持久化）；同一段再次读取直接返回 `duplicate`，不抓取、不计请求。URL 未通过 `net_tools.check_source` 时先用它搜一次，命中同一规范化 URL 才读（`via_search`）；没命中就把搜索结果放进错误结果，供下一轮选择。
+7. `web_tools.search` 对前 3 条 web 结果并行读正文并附上 `excerpt`（`web_excerpts.excerpt` 按查询词重合度选段，最多 800 字符），整体不超过 `AILAB_WEB_EXCERPT_DEADLINE_SECONDS`；超时或失败的那条不带片段。每个摘录读取各计一次 `ctx.budget` 请求。
+8. 工具异常转成 `{ok:false, error}` 交给模型；租约 410 向上抛 `LeaseInterrupted`，不伪装成普通工具失败。
+
+### 网页读取
+1. `web.read_url` 在 Agent 进程内用 curl_cffi 的 Chrome 指纹抓取；每次解析（含每次跳转）都用 `public_addresses` 检查全部地址，再用 libcurl `RESOLVE` 连接到检查过的 IP。总时限 `AILAB_WEB_READ_DEADLINE_SECONDS`（默认 12 秒），DNS 单独最多 3 秒。
+2. 请求带 Markdown 协商；`text/markdown` 直接作为正文，否则交给 Trafilatura。403 会用普通 HTML Accept 重试一次。
+3. 空壳页先取 JSON-LD `articleBody`、`__NEXT_DATA__` 长文本或 meta description；401/403/429 或验证页再查 Wayback，快照读 `id_` 原始页面并标 `archived_at`。读不到时错误提示换来源。
+4. 结果携带正文链接（优先正文、上限 12）和 `next_start`；`start` 用于按字符偏移续读，同一 URL 每次重新抓取。HTML 抽取在最多 2 个并发线程里完成。
 
 ### 上下文、压缩与恢复
 1. `messages[0]` 是按模式与能力生成的平台规则，`messages[1]` 是会话上下文（工作区说明、记忆快照、资料索引、过期提示）。之后只有用户消息、assistant、工具结果和平台提示依次追加。
@@ -75,6 +84,7 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 - 工具目录在 Run 开始时冻结；暂停中的 Run 保留自己的目录，只有出现退役工具名、规则或 ABI 变化才重建。钉住它的测试：`platform/tests/test_deferred_tools.py::test_a_frozen_catalog_keeps_its_on_demand_names`、`platform/tests/test_prefix_cache.py::test_deploy_prompt_and_tool_changes_preserve_resumed_checkpoint`。
 - 只有配对完整的工具组才能压缩；`pending` 或进行中的模型调用拒绝压缩。钉住它的测试：`platform/tests/test_prefix_cache.py::test_run_compaction_extends_wire_prefix_and_retains_complete_groups`。
 - 付费模型响应先 checkpoint 再执行工具；有副作用的工具开始前写 `tool_log`。只读工具不单独 checkpoint，恢复时允许重做。钉住它的测试：`platform/tests/test_prefix_cache.py::test_failed_model_request_retry_reuses_identical_body`。
+- 同一 Run 内成功读过的（规范化 URL, start）不再抓取，记录在 `state["web_reads"]` 并随 checkpoint 恢复；web 工具同批并行，但结果消费时单独 checkpoint，恢复不重复外部请求、不重复追加结果。钉住它的测试：`platform/tests/test_web_parallel.py::test_an_interrupted_batch_keeps_the_completed_web_read`、`::test_a_read_is_not_fetched_again_after_a_checkpoint_restore`。
 - `bash` 不重放；中断后只按 handle 继续等待，交接不到就不确定结果，让模型先检查工作区。代码：`platform/ailab_platform/adapters/runtime.py::NON_REPLAYABLE`。
 - 恢复旧 checkpoint 时，`CONTEXT_ABI_VERSION` 不符或目录含 `RETIRED_TOOLS` 就重建 `messages[0]` 与工具目录，并记一次边界；其余历史字节保留。钉住它的测试：`platform/tests/test_prefix_cache.py::test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary`、`::test_parent_abi_match_exact_reuse_mismatch_rebuild`。
 - 平台规则不含用户、技能、记忆或禁用的具体状态；这些只能出现在追加消息里。钉住它的测试：`platform/tests/test_prefix_cache.py::test_platform_system_prompt_does_not_include_user_skill_state`。
@@ -129,7 +139,9 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 | `AILAB_SUBTASK_MAX_STEPS` | 每个子任务的最大步数 | 20 |
 | `AILAB_WATCHDOG_MODE` | Work 看门狗：`off`/`observe`/`nudge` | `observe` |
 | `AILAB_LLM_MAX_RETRIES` | 模型瞬时错误的重试次数 | 2 |
+| `AILAB_WEB_EXCERPT_DEADLINE_SECONDS` | 搜索结果附带正文摘录的整体等待上限 | 6 |
 | `AILAB_SKILLS_DIR` | 基础技能目录 | `images/sbx-office/skills` |
+| `AILAB_WEB_READ_DEADLINE_SECONDS` | 一次 `read_url` 的总时限（含 DNS、跳转、Markdown 重试和 Wayback） | 12 |
 
 完整配置见 `platform/ailab_platform/config.py::Settings`；压缩阈值是平台设置 `context_settings.threshold_ratio`（默认 0.90），不是环境变量。
 
@@ -147,6 +159,7 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 - [ADR 0042 单一工具目录](../architecture/adr/0042-single-tool-catalog.md)：每个模式一份目录，旧 Run 通过 ABI 和退役工具名重建。
 - [ADR 0043 按需工具](../architecture/adr/0043-on-demand-tools.md)：低频工具经 `call_tool` 加载，运行时目录不变。
 - [ADR 0044 工作区工具对齐 Pi](../architecture/adr/0044-pi-aligned-workspace-tools.md)：read/edit/bash 的语义、重活放在哪一侧、等待窗口与平台期限。
+- [ADR 0045 轻量网页读取](../architecture/adr/0045-lightweight-web-read.md)：不跑浏览器，curl_cffi 钉住 IP、Markdown 协商、结构化数据与 Wayback 兜底。
 
 ## 已知的坑
 

@@ -22,7 +22,7 @@
 - 布局：Stack、Grid、Card、Tabs、Tab、Details、Divider；文字：Heading、Text、Callout、Badge、Quote、List
 - 图表数据：Series
 
-下方常用组件可直接写；其他组件先调用 ui_components（names 填组件名）读说明，没读过说明的不写。
+下方常用组件的说明已经完整，直接写，不为它们调用 ui_components；其他组件先调用一次 ui_components（names 一次填全要用的组件名）读说明，没读过说明的不写。
 
 ## 写法
 
@@ -68,6 +68,7 @@ LineChart(title: string, categories: (string | number)[], series: Series[], opts
 BarChart(title: string, categories: (string | number)[], series: Series[], opts?: {unit?: string, decimals?: number, reference?: number, referenceLabel?: string, horizontal?: boolean, stacked?: boolean, percent?: boolean, better?: "high" | "low"}) — 类别之间的数量对比；有负数时以 0 为中线向两侧分开
 - 类别名长或超过 8 个时用 horizontal。stacked 堆叠各系列，percent 把每个类别换算成 100%。正负值（超预期/低于预期、盈亏）直接给带符号的数，better 决定正负哪边显示为好。排名用 Ranking。
 Series(name: string, values: number[]) — 图表的一组数据，只作为图表参数使用
+Timeline(events: {date: string, title: string, text?: string, tone?: "neutral" | "success" | "warning" | "danger" | "info"}[], opts?: {order?: "asc" | "desc"}) — 按时间排列的事件、里程碑或版本历史
 Table(columns: (string | number)[], rows: (string | number | any)[][], opts?: {decimals?: number}) — 逐项核对的表格；rows 为二维数组，最多 200 行，读者可点表头排序
 - 每行的单元格数与列数相同、顺序一致，通常写成 @Each(items, "x", [x.name, x.amount])；合计不放进表格。
 例：`detail = Table(["门店", "金额"], @Each(items, "x", [x.name, x.amount]), {decimals: 2})`

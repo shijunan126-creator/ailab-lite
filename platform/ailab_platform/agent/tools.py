@@ -22,7 +22,7 @@ from ..domain.text_truncate import read_lines
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..memory_dream.prompts import STANDARD as MEMORY_STANDARD
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
-from . import net_tools, subtasks, tool_schema, workspace_query
+from . import net_tools, subtasks, tool_schema, web_tools, workspace_query
 from .background_exec import background_exec, command_text
 from .document_tools import TOOLS as DOCUMENT_TOOLS
 from .file_mutation_queue import with_file_mutation_queue
@@ -389,6 +389,7 @@ WEB_SEARCH = {
     "function": {
         "name": "web_search",
         "description": "搜索公开网页，返回标题、URL 和摘要。需要最新信息或外部资料时先用它；再用 read_url 读正文。"
+        "前几条结果带 excerpt（与查询相关的正文摘录）；足够回答时不必再 read_url。"
         "kind=images 搜图片，每条结果的 image 是可在界面中展示的短图片 ID，原样使用，不要改写或自己编写。",
         "parameters": {
             "type": "object",
@@ -414,6 +415,12 @@ READ_URL = {
             "properties": {
                 "url": {"type": "string", "description": "http(s) URL"},
                 "max_chars": {"type": "integer", "minimum": 1000, "maximum": 20000, "default": 8000},
+                "start": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "从正文第几个字符继续读；用上次结果里的 next_start",
+                },
             },
             "required": ["url"],
         },
@@ -718,6 +725,8 @@ class ToolContext:
         self.budget = budget or net_tools.Budget()
         self.exec_lifetime_seconds = settings.run_max_seconds
         self.run_aliases: dict[str, str] = {}  # source run handle -> this fork's copy
+        self.web_reads: dict[str, dict] = {}  # page segment already read in this run; persisted in the checkpoint
+        self.step = 0  # the run step this call belongs to, for human-readable duplicate results
 
 
 def local_time(timezone: str | None, now: datetime | None = None) -> dict:
@@ -892,15 +901,7 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             payload["days"] = max(1, min(days, 3650))
         return {"ok": True, **await ctx.platform.recall(ctx.run_id, payload)}
     try:
-        if name == "read_url":
-            url = str(args.get("url") or "").strip()
-            if not url:
-                raise ToolError("read_url requires url")
-            net_tools.check_source(url, net_tools.sources_from(ctx.messages))
-            ctx.budget.request()
-        elif name == "web_search":
-            ctx.budget.request()
-        elif name == "download_url":
+        if name == "download_url":
             return await net_tools.download_url(args, lease_id, broker, net_tools.sources_from(ctx.messages), ctx.budget)
         elif name == "fetch_repo":
             return await net_tools.fetch_repo(args, lease_id, broker, ctx.budget)
@@ -1066,11 +1067,12 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         query = str(args.get("query") or "").strip()
         if not query:
             raise ToolError("web_search requires query")
+        kind = str(args.get("kind") or "web")
         try:
-            found = await web.search(query, int(args.get("max_results") or settings.web_max_results), str(args.get("kind") or "web"))
-        except web.WebError as exc:
+            found = await web_tools.search(ctx, query, int(args.get("max_results") or settings.web_max_results), kind)
+        except (web.WebError, net_tools.NetToolError) as exc:
             raise ToolError(str(exc)) from exc
-        if str(args.get("kind") or "web") == "images":
+        if kind == "images":
             found = await _register_web_images(ctx, found)
         return {"ok": True, "query": query, "results": found}
 
@@ -1078,13 +1080,16 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         url = str(args.get("url") or "").strip()
         if not url:
             raise ToolError("read_url requires url")
+        start = args.get("start", 0)
+        if isinstance(start, bool) or not isinstance(start, int) or start < 0:
+            raise ToolError("start 须是从 0 开始的整数")
         try:
-            page = await web.read_url(url, int(args.get("max_chars") or 8000))
-        except web.WebError as exc:
+            page = await web_tools.read_page(ctx, url, start=start, max_chars=int(args.get("max_chars") or 8000))
+        except (web.WebError, net_tools.NetToolError) as exc:
             raise ToolError(str(exc)) from exc
         if page.get("images"):
             page["images"] = await _register_web_images(ctx, page["images"])
-        return {"ok": True, **page}
+        return page
 
     if name == "search_images":
         query = str(args.get("query") or "").strip()
