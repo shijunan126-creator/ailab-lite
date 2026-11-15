@@ -160,3 +160,11 @@ def test_read_deadline_is_bounded_configuration():
         Settings(web_read_deadline_seconds=2)
     with pytest.raises(ValueError):
         Settings(web_read_deadline_seconds=121)
+
+
+def test_resolve_pins_every_checked_address_in_one_entry_ipv4_first():
+    """libcurl keeps only the last RESOLVE entry per host:port; separate entries pinned an unroutable IPv6 address."""
+    from ailab_platform.web import _resolve_entries
+
+    entries = _resolve_entries("example.com", 443, ["2606:4700::1", "104.26.13.77", "172.67.68.3"])
+    assert entries == [b"example.com:443:104.26.13.77,172.67.68.3,[2606:4700::1]"]

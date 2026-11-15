@@ -682,11 +682,12 @@ def _remaining(deadline: float) -> float:
 
 
 def _resolve_entries(host: str, port: int, addresses: list[str]) -> list[bytes]:
-    entries = []
-    for address in addresses:
-        target = f"[{address}]" if ":" in address else address
-        entries.append(f"{host}:{port}:{target}".encode())
-    return entries
+    """One RESOLVE entry carrying every checked address. libcurl keeps only the last entry for a host:port, so one
+    entry per address would pin the connection to whichever came last (often an IPv6 address with no route here).
+    IPv4 first: the containers this runs in usually have no IPv6 route, and libcurl tries the list in order."""
+    ordered = sorted(addresses, key=lambda address: ":" in address)
+    targets = ",".join(f"[{address}]" if ":" in address else address for address in ordered)
+    return [f"{host}:{port}:{targets}".encode()]
 
 
 async def _fetch_page(url: str, headers: dict[str, str], deadline: float, max_bytes: int | None = None) -> dict:
