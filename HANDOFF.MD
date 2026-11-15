@@ -51,6 +51,7 @@
 
 ### 恢复、预算与后台命令
 - **付费响应先 checkpoint 再执行工具；有副作用的工具开始前写 `tool_log`**。只读工具不单独 checkpoint，恢复时允许重做；恢复调用用 `announce=False`，否则 UI 会多出一个永远转圈的步骤。代码：`platform/ailab_platform/agent/loop.py::AgentLoop::_durable_tool`、`::_run_tool`；测试：`platform/tests/test_agent_loop.py::test_tool_events_carry_the_call_id_that_pairs_them`。
+- **`web_search`/`read_url` 可同批并行，但不要并进 `READ_ONLY_TOOLS`**。web 结果要单独 checkpoint，恢复才不会再花一次外部请求；同批中断时已完成的结果也要先落 `tool_log` 再抛。代码：`platform/ailab_platform/agent/loop.py::PARALLEL_TOOLS`、`::_durable_tool`；测试：`platform/tests/test_web_parallel.py::test_an_interrupted_batch_keeps_the_completed_web_read`。
 - **同一 Run 的 checkpoint 写入必须串行，`expected_step` 只能有一个 CAS 在途**。心跳、预算暂停和并发工具都走同一把按 Run 的锁，否则会随机 409。代码：`platform/ailab_platform/agent/loop.py::AgentLoop::_checkpoint`；测试：`platform/tests/test_agent_loop.py::test_two_concurrent_checkpoints_never_share_one_expected_step`。
 - **checkpoint 超限写有界冻结记录并暂停，不能变成 413 失败或恢复被省略的付费结果**。已消费日志只保留身份指纹和完成状态，pending 结果与不可重放标记不能提前删。代码：`platform/ailab_platform/agent/checkpoint_budget.py::bounded_checkpoint`。
 - **`budget_window_id` 与 `job_id` 分开；只有用户明确继续预算类暂停才重置窗口**。回答 `ask_user` 和租约自动恢复只换 job；累计 token 与配额永不随时间续跑重置。代码：`platform/ailab_platform/agent/budgets.py::WorkBudget`、`platform/ailab_platform/agent/loop.py::AgentLoop::_process`。

