@@ -780,7 +780,7 @@ async def fetch_html(url: str) -> dict:
     """One bounded public fetch of a text-like page: raw decoded text, nothing extracted. The
     Agent's read_url and the Portal's original-page view share it — same caps, one fetch per click."""
     current = _validate_url(url)
-    deadline = time.monotonic() + settings.web_transfer_deadline_seconds
+    deadline = time.monotonic() + settings.web_read_deadline_seconds
     page = await _fetch_follow(current, {"Accept": HTML_ACCEPT, **BROWSER_HEADERS}, deadline)
     if page["status"] >= 400:
         raise WebStatusError(page["status"], f"HTTP {page['status']} from {page['url']}")
