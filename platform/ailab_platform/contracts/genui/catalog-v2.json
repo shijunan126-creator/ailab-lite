@@ -1,7 +1,7 @@
 {
   "format": "openui",
   "version": 2,
-  "index_sha256": "ea100be7576d1c9cfa1a750eb1b9b82465e1e4cca3a0eae4527389d57697bea7",
+  "index_sha256": "e5bbc711d2a0844a03a435751df1efa2a6407ce4d99ef2f3a99875849bccce8d",
   "guide_sha256": "ae6bef7e273be5153dad641fc58d47e7f4ea78716f334b2da41b67ed434b516a",
   "core": [
     "Stack",
@@ -12,6 +12,7 @@
     "Compare",
     "Metric",
     "Highlights",
+    "Timeline",
     "LineChart",
     "BarChart",
     "Series"

@@ -500,12 +500,12 @@ def _ui_docs_messages(result):
 def test_ui_docs_reuse_requires_complete_trusted_current_results(alteration):
     from ailab_platform.agent.tools import ui_components
 
-    first = ui_components({"names": ["Timeline"]}, {}, html_enabled=True)
+    first = ui_components({"names": ["Steps"]}, {}, html_enabled=True)
     messages = _ui_docs_messages(first)
     if alteration in {"old_version", "truncated", "failed"}:
         changed = dict(first)
         if alteration == "old_version":
-            changed["components"] = changed["components"].replace("Timeline(", "OldTimeline(")
+            changed["components"] = changed["components"].replace("Steps(", "OldSteps(")
             changed["guide"] = "旧版指南"
         elif alteration == "truncated":
             changed["components"] = changed["components"][:-1]
@@ -521,7 +521,7 @@ def test_ui_docs_reuse_requires_complete_trusted_current_results(alteration):
         messages[-1]["name"] = "read_url"
     else:
         messages[-1]["content"] = "not json"
-    result = ui_components({"names": ["Timeline"]}, {"messages": messages}, html_enabled=True)
+    result = ui_components({"names": ["Steps"]}, {"messages": messages}, html_enabled=True)
     assert result["components"] == first["components"] and result["guide"] == first["guide"]
     assert "already_available" not in result
 

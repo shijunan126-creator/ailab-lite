@@ -20,7 +20,7 @@ from ..skill_registry import catalog as skills
 
 # The version belongs to one mode's rules. A shared version number would rewrite messages[0] of every
 # conversation in that mode once, and with it the prefix cache, so each mode records its own boundary.
-PROMPT_VERSIONS = {"chat": "2026-11-13-prompt-diet-chat", "work": "2026-11-13-prompt-diet-work"}
+PROMPT_VERSIONS = {"chat": "2026-11-16-web-research-chat", "work": "2026-11-16-web-research-work"}
 
 
 def prompt_version(mode: str) -> str:
@@ -130,7 +130,10 @@ CHAT_MODE_NOTE = """你是 AILab 助手，用中文和 Markdown 帮用户完成�
 
 
 WEB_NOTE = """
-需要最新、可验证的外部信息时先 web_search 找来源，再对最相关的 1~3 个 URL 调用 read_url；只引用实际读到的页面，保留来源链接。"""
+需要最新、可验证的外部信息时用 web_search；互不依赖的几个搜索词或 URL 在同一次回复里并列调用。
+前几条搜索结果带 excerpt（与查询相关的正文摘录）：摘录已能可靠回答就直接回答；缺关键事实、来源冲突或需要原文细节时才 read_url，
+一般只读 1~2 个最相关的页面；被截断时用 next_start 续读，不从头重读；读取失败就换其他来源，不重试同一个 URL。
+只引用实际读到的页面或摘录，保留来源链接；回答按用户的问题组织，只写支持结论的事实，不逐个来源复述页面内容。"""
 
 
 def personal_header(name: str) -> str:
