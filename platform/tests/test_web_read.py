@@ -168,3 +168,37 @@ def test_resolve_pins_every_checked_address_in_one_entry_ipv4_first():
 
     entries = _resolve_entries("example.com", 443, ["2606:4700::1", "104.26.13.77", "172.67.68.3"])
     assert entries == [b"example.com:443:104.26.13.77,172.67.68.3,[2606:4700::1]"]
+
+
+def test_cancelled_reads_cannot_push_extraction_past_two_threads(monkeypatch):
+    """A cancelled await leaves its thread running; the bound must hold for the threads, not for the awaiters."""
+    import threading
+
+    gate, lock = threading.Event(), threading.Lock()
+    running = {"now": 0, "peak": 0}
+
+    def slow_extract(html, base, recover=False):
+        with lock:
+            running["now"] += 1
+            running["peak"] = max(running["peak"], running["now"])
+        gate.wait(5)
+        with lock:
+            running["now"] -= 1
+        return {}
+
+    monkeypatch.setattr(web, "_extract_document", slow_extract)
+
+    async def scenario():
+        first = [asyncio.create_task(web._extract_bounded("<p>x</p>", "")) for _ in range(2)]
+        await asyncio.sleep(0.05)
+        for task in first:  # an excerpt deadline abandons both extractions while their threads still run
+            task.cancel()
+        await asyncio.gather(*first, return_exceptions=True)
+        later = [asyncio.create_task(web._extract_bounded("<p>y</p>", "")) for _ in range(2)]
+        await asyncio.sleep(0.2)
+        peak = running["peak"]
+        gate.set()
+        await asyncio.gather(*later)
+        return peak
+
+    assert asyncio.run(scenario()) == 2

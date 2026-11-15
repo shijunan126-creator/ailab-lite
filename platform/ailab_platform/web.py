@@ -33,9 +33,10 @@ import socket
 import ssl
 import tempfile
 import time
-import weakref
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from functools import partial
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -663,15 +664,11 @@ async def read_github_issue(owner: str, repo: str, number: str, limit: int) -> d
     }
 
 
-_EXTRACT_SLOTS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
-
-
-def _extract_slots() -> asyncio.Semaphore:
-    """Two HTML extractions per event loop; a module semaphore would bind to the first loop (and tests use many)."""
-    loop = asyncio.get_running_loop()
-    if (slots := _EXTRACT_SLOTS.get(loop)) is None:
-        slots = _EXTRACT_SLOTS[loop] = asyncio.Semaphore(2)
-    return slots
+# Extraction runs on its own two threads. A cancelled await cannot stop a running thread, so a semaphore released on
+# cancellation (excerpt and run deadlines) would let abandoned extractions pile up past any bound: each holds a parsed
+# tree and competes for the agent's small CPU quota, which starves the event loop (model connects time out) and memory.
+# Queued jobs whose caller was cancelled are dropped before they start.
+_EXTRACT_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web-extract")
 
 
 def _remaining(deadline: float) -> float:
@@ -802,8 +799,7 @@ async def fetch_html(url: str) -> dict:
 
 
 async def _extract_bounded(html: str, base: str) -> dict:
-    async with _extract_slots():
-        return await asyncio.to_thread(_extract_document, html, base, recover=True)
+    return await asyncio.get_running_loop().run_in_executor(_EXTRACT_POOL, partial(_extract_document, html, base, recover=True))
 
 
 async def _page_from(fetched: dict) -> dict:
