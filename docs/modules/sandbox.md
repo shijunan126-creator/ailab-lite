@@ -24,7 +24,6 @@ Broker 是沙箱的唯一持有者：租约、exec 代理、文件注入与两�
 | 系统文档读取 | `platform/ailab_platform/broker/documents.py::DocumentReader` |
 | Work 内查看与 OCR | `platform/ailab_platform/broker/workspace_view.py::view`、`platform/ailab_platform/broker/workspace_ocr.py::recognize` |
 | 镜像技能证明 | `platform/ailab_platform/broker/routes_skills.py::verify_lease_index` |
-| 受控联网代理（只服务抓取容器） | `platform/ailab_platform/egress.py::handle` |
 | 沙箱镜像 | `images/sbx-office/Dockerfile` |
 | 办公技能生成 | `vendor/office-suite/build.py` |
 | 技能索引与一致性检查 | `images/sbx-office/skill_index.py::build_index`、`platform/scripts/check_skills.py` |
@@ -102,8 +101,8 @@ Broker 是沙箱的唯一持有者：租约、exec 代理、文件注入与两�
 
 ### 受控联网
 - 沙箱始终无网络：`download_url` 由 Agent 取回、扫描后经 `put_fetched` 流式写入；`fetch_repo`/`fetch_packages` 也是 Agent 取包后在沙箱内解包或离线安装。
-- `platform/ailab_platform/egress.py` 不服务沙箱，只给 `read_url` 的抓取容器做唯一出口：只允许 CONNECT 443 和绝对形式 HTTP 80，每次 DNS 解析都必须是公网地址，并连接到已检查的地址。
-- 代价是 npm、apt、私有仓库和需要认证的 API 在沙箱内不可用；页面脚本也拿不到沙箱的路由。
+- `read_url` 也在 Agent 进程里完成：curl_cffi 模拟 Chrome、公网地址钉住、Markdown 协商和 Wayback 兜底，不经过沙箱，也没有需要额外放行的抓取容器（[ADR 0045](../architecture/adr/0045-lightweight-web-read.md)）。
+- 代价是 npm、apt、私有仓库和需要认证的 API 在沙箱内不可用。
 
 ### 后台命令
 - `bash` 启动、`bash_wait` 等待、`bash_kill` 终止；句柄由 run_id、调用标识和命令派生，恢复后等待同一执行而不是再启动一次。
@@ -191,7 +190,7 @@ Broker 是沙箱的唯一持有者：租约、exec 代理、文件注入与两�
 - [ADR 0020 弹性沙箱额度与闲置回收](../architecture/adr/0020-elastic-sandbox-allowance-and-idle-reclaim.md)：每用户弹性额度、先保存再回收。
 - [ADR 0032 预热渲染沙箱](../architecture/adr/0032-prewarmed-single-use-render-sandboxes.md)（“单次使用”部分已被取代）与[渲染沙箱生命周期](../architecture/design/2026-10-31-render-sandbox-lifecycle.md)：预热、按用户复用、槽位与失败不复用。
 - [ADR 0007 受控公网访问](../architecture/adr/0007-controlled-public-fetch.md)：沙箱保持无网络，公开字节由 Agent 获取、Broker 注入。
-- [ADR 0021 隔离浏览器渲染](../architecture/adr/0021-isolated-browser-rendering-for-read-url.md)：`egress.py` 只服务抓取容器的出网。
+- [ADR 0045 轻量网页读取](../architecture/adr/0045-lightweight-web-read.md)：read_url 不跑浏览器，直接抓取、结构化补救和存档兜底。
 - [ADR 0004 自研 Runtime 与平台检查点](../architecture/adr/0004-self-developed-runtime.md)：租约丢失后的中断与续跑。
 - [ADR 0023 系统文档读取](../architecture/adr/0023-system-document-reader-and-concurrent-capabilities.md)：短生命周期 render 租约承担系统解析。
 

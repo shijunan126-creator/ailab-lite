@@ -15,7 +15,7 @@
 | 工具目录与按需工具 | 已实现 | `platform/ailab_platform/agent/tools.py::RETIRED_TOOLS`、`platform/ailab_platform/agent/deferred.py::DEFERRED` | [agent](../modules/agent.md)、[ADR 0042](adr/0042-single-tool-catalog.md)、[ADR 0043](adr/0043-on-demand-tools.md) |
 | 提示词与模式规则 | 已实现 | `platform/ailab_platform/agent/prompts.py` | [agent](../modules/agent.md) |
 | 并行子任务 | 已实现 | `platform/ailab_platform/agent/subtasks.py`、`platform/ailab_platform/agent/loop.py` | [ADR 0031](adr/0031-parallel-subtasks.md) |
-| 联网读取、下载与依赖获取 | 已实现 | `platform/ailab_platform/agent/net_tools.py`、`platform/ailab_platform/api/routes_reader.py`、`images/crawler` | [ADR 0007](adr/0007-controlled-public-fetch.md)、[ADR 0021](adr/0021-isolated-browser-rendering-for-read-url.md) |
+| 联网读取、下载与依赖获取 | 已实现 | `platform/ailab_platform/agent/net_tools.py`、`platform/ailab_platform/web.py::read_url`、`platform/ailab_platform/api/routes_reader.py` | [ADR 0007](adr/0007-controlled-public-fetch.md)、[ADR 0045](adr/0045-lightweight-web-read.md) |
 
 ## API
 
@@ -57,7 +57,7 @@
 | Docker 与 OpenSandbox 适配 | 已实现 | `platform/ailab_platform/sandbox/docker.py`、`platform/ailab_platform/sandbox/opensandbox.py` | [sandbox](../modules/sandbox.md) |
 | 渲染沙箱与按用户复用 | 已实现 | `platform/ailab_platform/broker/render.py` | [渲染沙箱设计](design/2026-10-31-render-sandbox-lifecycle.md)、[ADR 0032](adr/0032-prewarmed-single-use-render-sandboxes.md) |
 | Work 镜像内 Office 读取 | 已实现 | `images/sbx-office`、`vendor/office-suite`、`platform/ailab_platform/agent/office_guides_v2.json` | [ADR 0025](adr/0025-work-office-reader.md) |
-| 受控公网内容注入 | 已实现 | `platform/ailab_platform/egress.py`、`platform/deploy/base/network.yaml`、`platform/tests/contracts/test_sandbox_network.py` | [ADR 0007](adr/0007-controlled-public-fetch.md) |
+| 受控公网内容注入 | 已实现 | `platform/ailab_platform/agent/net_tools.py`、`platform/deploy/base/network.yaml`、`platform/tests/contracts/test_sandbox_network.py` | [ADR 0007](adr/0007-controlled-public-fetch.md) |
 | 后台命令、等待与中断 | 已实现 | `platform/ailab_platform/agent/background_exec.py`、`platform/ailab_platform/agent/background_helper.py` | [ADR 0008](adr/0008-long-run-budgets-and-leases.md) |
 | Agent 直连 execd / Secure Access | 与目标架构有意不同（ADR 0003） | — | [ADR 0003](adr/0003-broker-exec-proxy-and-leases.md) |
 | 跨轮空闲沙箱复用与预热池 | 与目标架构有意不同（ADR 0001） | — | [ADR 0001](adr/0001-single-node-scope.md) |

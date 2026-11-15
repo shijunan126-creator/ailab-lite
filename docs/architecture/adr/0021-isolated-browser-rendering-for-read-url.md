@@ -1,5 +1,5 @@
 # ADR 0021 · read_url: Trafilatura first, isolated browser rendering when that is weak
-状态：已采纳（2026-10-26）。
+状态：已被 [0045](0045-lightweight-web-read.md) 取代（2026-11-16）。
 
 ## Context
 
@@ -29,7 +29,7 @@ The JSON `GET /v1/reader` (extracted blocks for the old 正文 view, unused by t
 
 ## Dependency verification
 
-The actual PyPI wheel `crawl4ai==0.7.4` installs with `aiohttp==3.12.15`; both `BrowserConfig` and `CrawlerRunConfig` construct successfully with this server's arguments. Its packaged [license](../../../images/crawler/Crawl4AI-LICENSE) contains Apache-2.0 **plus an Attribution Requirement**, not just an optional credit request. The required credit is in the root README and the image's `/app/NOTICE`; `/app/Crawl4AI-LICENSE` retains the full text. Transitive dependencies are not fully pinned.
+The actual PyPI wheel `crawl4ai==0.7.4` installed with `aiohttp==3.12.15`; both `BrowserConfig` and `CrawlerRunConfig` constructed successfully with this server's arguments. Its packaged license contained Apache-2.0 **plus an Attribution Requirement**, not just an optional credit request; the image, license and credit were removed together with the renderer in 0045. Transitive dependencies were not fully pinned.
 
 
 ## 来源预览复用隔离渲染器

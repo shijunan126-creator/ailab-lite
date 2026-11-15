@@ -152,11 +152,16 @@ PAGE = """<html><head><title>Story</title>
 def test_read_url_returns_page_pictures_as_signed_references(monkeypatch):
     html = PAGE.format(body="正文内容。" * 80)
 
-    async def fetch(url):
-        return {"url": "https://www.example.com/news/story", "title": "", "text": html, "content_type": "text/html", "truncated": False}
+    async def fetch(url, headers, deadline):
+        return {
+            "url": "https://www.example.com/news/story",
+            "status": 200,
+            "text": html,
+            "content_type": "text/html",
+            "truncated": False,
+        }
 
-    monkeypatch.setattr(web, "fetch_html", fetch)
-    monkeypatch.setattr(web.settings, "crawler_url", "")
+    monkeypatch.setattr(web, "_fetch_page", fetch)
     page = asyncio.run(web.read_url("https://www.example.com/news/story"))
     urls = [item["image"] for item in page["images"]]
     assert urls == [

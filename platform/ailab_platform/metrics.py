@@ -50,7 +50,7 @@ def record_prompt_cache(mode: str, kind: str, usage: dict) -> None:
 
 WEB_READ_SECONDS = Histogram(
     "ailab_web_read_seconds",
-    "read_url time by path (static, rendered, static_fallback) and outcome",
+    "read_url time by path (static, markdown, recovered, wayback) and outcome",
     ["path", "outcome"],
     buckets=(0.25, 0.5, 1, 2.5, 5, 10, 20, 40),
 )
@@ -239,7 +239,7 @@ def register_once(key: str, collector: Collector) -> None:
 
 
 def observe_web_read(path: str, outcome: str, seconds: float) -> None:
-    WEB_READ_SECONDS.labels(path if path in ("static", "rendered", "static_fallback") else "other", outcome).observe(seconds)
+    WEB_READ_SECONDS.labels(path if path in ("static", "markdown", "recovered", "wayback") else "other", outcome).observe(seconds)
 
 
 WEB_IMAGES = Counter("ailab_web_images_total", "Web picture proxy responses: served from cache, fetched, refused or failed", ["result"])

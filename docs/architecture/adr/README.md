@@ -16,7 +16,7 @@
 | [0018](0018-file-ocr-draft.md) | 文件 OCR 与对话多模态输入 | 已被 0023 取代 | OCR 与多模态输入曾由 API 模型调用承担。 |
 | [0019](0019-memory-read-path-and-governance.md) | 记忆读取路径与治理 | 已采纳，部分被 0022/0035/0037 修改 | 记忆按需检索、写入有闸门、删除沿来源传播。 |
 | [0020](0020-elastic-sandbox-allowance-and-idle-reclaim.md) | 弹性沙箱额度与闲置回收 | 已采纳 | 每人额度按水位弹性放宽，排队时先回收闲置租约。 |
-| [0021](0021-isolated-browser-rendering-for-read-url.md) | read_url: Trafilatura first, isolated browser rendering when that is weak | 已采纳 | 弱正文才交给隔离浏览器，渲染器不持有平台身份。 |
+| [0021](0021-isolated-browser-rendering-for-read-url.md) | read_url: Trafilatura first, isolated browser rendering when that is weak | 已被 0045 取代 | 弱正文曾交给隔离浏览器渲染；浏览器路径已删除，改为结构化数据与存档兜底。 |
 | [0022](0022-memory-consistency-and-scoped-recall.md) | 有来源、可隔离、可续的记忆 | 已采纳，部分被 0035/0036/0037 修改 | 记忆按来源和作用域读取写入，后台整理以 Run 为单元。 |
 | [0023](0023-system-document-reader-and-concurrent-capabilities.md) | 平台文件读取执行边界与并发 | 已采纳，部分被 0030/0042/0043 修改 | 平台文件读取在 Broker 系统租约执行，Worker 只编排。 |
 | [0024](0024-model-window-compaction-and-adaptive-output.md) | 模型完整窗口85%压缩与动态输出预算 | 已采纳，部分被 0033 修改 | 按模型完整窗口触发压缩，输出上限随剩余空间收缩。 |
@@ -40,3 +40,4 @@
 | [0042](0042-single-tool-catalog.md) | 只保留一套工具目录，退役 V1 文档工具与精简目录 | 已采纳 | 每个模式只有一套冻结工具目录，旧 Run 恢复时升级。 |
 | [0043](0043-on-demand-tools.md) | 低频工具经 call_tool 按需加载 | 已采纳 | 低频工具默认只暴露名字，首次调用时返回说明并还原真实调用。 |
 | [0044](0044-pi-aligned-workspace-tools.md) | 工作区工具对齐 Pi 的语义 | 已采纳 | read/write/edit/bash/grep/find 照 Pi 的语义；read 按行窗口，edit 线性匹配，bash 等待窗口与平台期限分开。 |
+| [0045](0045-lightweight-web-read.md) | 轻量网页读取：删除浏览器渲染，curl_cffi、Markdown 协商、结构化数据与 Wayback | 已采纳 | 直接抓取钉住已检查的 IP；弱页先取页面自带结构化数据，被拦截再读存档，不破解人机验证。 |

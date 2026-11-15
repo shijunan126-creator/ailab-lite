@@ -43,7 +43,6 @@ k3s() {
   esac
 }
 ROOT=$1 PLATFORM=$1/platform SANDBOX_IMAGE=office:lite PLATFORM_IMAGE=ailab-platform:lite SKIP_BUILD=0 DRY=0
-CRAWLER_IMAGE=ailab-crawler:lite
 build_images
 """
     )
