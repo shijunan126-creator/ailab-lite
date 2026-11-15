@@ -60,6 +60,12 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 5. 工具结果按整批做上下文准入：单个结果放不下时替换成 `cannot_fit` 拒绝，同时为每个待配对调用保留最小结果；连这些也放不下就 `ContextPause`。结果写入 `tool_log`、追加 tool 消息、更新来源/交付/后台句柄，再 checkpoint。
 6. 工具异常转成 `{ok:false, error}` 交给模型；租约 410 向上抛 `LeaseInterrupted`，不伪装成普通工具失败。
 
+### 网页读取
+1. `web.read_url` 在 Agent 进程内用 curl_cffi 的 Chrome 指纹抓取；每次解析（含每次跳转）都用 `public_addresses` 检查全部地址，再用 libcurl `RESOLVE` 连接到检查过的 IP。总时限 `AILAB_WEB_READ_DEADLINE_SECONDS`（默认 12 秒），DNS 单独最多 3 秒。
+2. 请求带 Markdown 协商；`text/markdown` 直接作为正文，否则交给 Trafilatura。403 会用普通 HTML Accept 重试一次。
+3. 空壳页先取 JSON-LD `articleBody`、`__NEXT_DATA__` 长文本或 meta description；401/403/429 或验证页再查 Wayback，快照读 `id_` 原始页面并标 `archived_at`。读不到时错误提示换来源。
+4. 结果携带正文链接（优先正文、上限 12）和 `next_start`；`start` 用于按字符偏移续读，同一 URL 每次重新抓取。HTML 抽取在最多 2 个并发线程里完成。
+
 ### 上下文、压缩与恢复
 1. `messages[0]` 是按模式与能力生成的平台规则，`messages[1]` 是会话上下文（工作区说明、记忆快照、资料索引、过期提示）。之后只有用户消息、assistant、工具结果和平台提示依次追加。
 2. 会变的内容只能追加：插话、技能读取结果、工具结果、记忆增量、图片和平台提示。运行中不主动改更早消息、工具声明、system 内容或思考设置。
@@ -130,6 +136,7 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 | `AILAB_WATCHDOG_MODE` | Work 看门狗：`off`/`observe`/`nudge` | `observe` |
 | `AILAB_LLM_MAX_RETRIES` | 模型瞬时错误的重试次数 | 2 |
 | `AILAB_SKILLS_DIR` | 基础技能目录 | `images/sbx-office/skills` |
+| `AILAB_WEB_READ_DEADLINE_SECONDS` | 一次 `read_url` 的总时限（含 DNS、跳转、Markdown 重试和 Wayback） | 12 |
 
 完整配置见 `platform/ailab_platform/config.py::Settings`；压缩阈值是平台设置 `context_settings.threshold_ratio`（默认 0.90），不是环境变量。
 
@@ -147,6 +154,7 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 - [ADR 0042 单一工具目录](../architecture/adr/0042-single-tool-catalog.md)：每个模式一份目录，旧 Run 通过 ABI 和退役工具名重建。
 - [ADR 0043 按需工具](../architecture/adr/0043-on-demand-tools.md)：低频工具经 `call_tool` 加载，运行时目录不变。
 - [ADR 0044 工作区工具对齐 Pi](../architecture/adr/0044-pi-aligned-workspace-tools.md)：read/edit/bash 的语义、重活放在哪一侧、等待窗口与平台期限。
+- [ADR 0045 轻量网页读取](../architecture/adr/0045-lightweight-web-read.md)：不跑浏览器，curl_cffi 钉住 IP、Markdown 协商、结构化数据与 Wayback 兜底。
 
 ## 已知的坑
 

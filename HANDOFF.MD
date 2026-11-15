@@ -35,6 +35,11 @@
 - **不要恢复按模型预算裁剪的精简目录**。每个模式只有一份目录，`_tools_for_run` 不再按预算删 schema；小窗口模型多付 schema，但不能在请求构造后改工具集合。代码：`platform/ailab_platform/agent/loop.py::_tools_for_run`。
 - **`load_skill` 对基础技能先返回导航，正文按资源名再读**。把导航当整份技能会让模型缺操作细节；导航只列包和依赖。代码：`platform/ailab_platform/agent/prompts.py::load_skill`、`platform/ailab_platform/agent/skill_modules.py::read_module`；测试：`platform/tests/test_skill_modules.py::test_navigation_and_whole_file_reads`。
 
+### 网页读取
+- **抓取必须经 `_fetch_page` 用 `CurlOpt.RESOLVE` 钉住 `public_addresses` 查过的 IP，并显式 `NOPROXY "*"`**。只换 UA 或让 libcurl 再解析会让 DNS rebinding 绕过检查；选项要随每个请求的 session 设置。代码：`platform/ailab_platform/web.py::_fetch_page`。
+- **链接同时保留正文链接和整页 `<a>` 兜底**。Trafilatura 的 `include_links` 会丢掉只有一行的链接段；只取正文链接会让后续 `read_url`/`download_url` 的来源白名单漏掉真正的引用。代码：`platform/ailab_platform/web.py::_extract_document`、`platform/ailab_platform/agent/net_tools.py::sources_from`。
+- **Wayback 只用 14 位时间戳拼 `/{stamp}id_/{url}`，剩余不足 3 秒就放弃**。直接信 API 返回的 `url` 会带工具栏和重写；兜底不能吃掉整个读页预算。代码：`platform/ailab_platform/web.py::_wayback`。
+
 ### 消息、图像与上下文
 - **用户消息文本只由 `user_text` 生成**。技能标记按用户原文码点插入，之后才套定时任务头和文档引用；实时、插话、历史必须走同一函数，否则历史字节与首次发送不同。代码：`platform/ailab_platform/agent/prompts.py::user_text`；测试：`platform/tests/test_prefix_cache.py::test_scheduled_turn_and_its_steer_place_skills_and_document_references_the_same_way`。
 - **浏览器时区在发送时冻结到 Run；`user_timezone` 只是回退口径，不代表用户此刻所在时区**。服务器解析不了浏览器时区时按未提供处理并回退账号时区；不能因此拒收消息。代码：`platform/ailab_platform/api/routes_runs.py::validate_run_input`、`platform/ailab_platform/agent/tools.py::local_time`；测试：`platform/tests/test_modes_skills_attachments.py::test_the_browser_timezone_is_frozen_on_the_run`。

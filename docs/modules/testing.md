@@ -66,7 +66,6 @@ CI 的入口是 `.github/workflows/ci.yml`；PR 按完整 diff 选择套件，`m
 | `python` | SQLite 覆盖率和 PostgreSQL 全套；真实 Redis/PG 必验组 | 15 分钟 |
 | `storage-contracts` | 真实 MinIO S3 契约 | 15 分钟 |
 | `shell` | actionlint、ShellCheck、Kustomize | 5 分钟 |
-| `crawler` | 爬虫组件单元测试 | 8 分钟 |
 | `e2e` | Portal 单测、生产构建、浏览器用例，三片 | 20 分钟 |
 | `CI` | 汇总门禁 | 2 分钟 |
 

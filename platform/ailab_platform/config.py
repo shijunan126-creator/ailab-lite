@@ -285,11 +285,9 @@ class Settings(ContextBandSettings, BaseSettings):
     web_max_bytes: int = 2 * 1024 * 1024
     web_max_chars: int = 20_000
     web_max_results: int = 5
-    # read_url renders a page in the isolated crawler (images/crawler, ADR 0021) only when the plain fetch +
-    # Trafilatura comes back weak. Empty = never render: weak pages return what the plain fetch found.
-    crawler_url: str = ""
-    crawler_token: str = ""
-    crawler_timeout_seconds: int = Field(default=40, gt=0)  # whole read: the crawler's own page timeout is 20s plus a fresh browser
+    # One read_url: DNS, redirects, the Markdown retry and the Wayback fallback all share this budget. DNS alone
+    # is capped separately at 3 seconds by web.py.
+    web_read_deadline_seconds: int = Field(default=12, ge=3, le=120)
     # Downloads (files, repository archives, packages) are fetched here too and streamed into the sandbox.
     web_download_timeout_seconds: int = Field(default=120, gt=0)
     web_transfer_deadline_seconds: int = Field(default=600, gt=0)  # total wall clock for one public fetch or download
@@ -567,8 +565,6 @@ class Settings(ContextBandSettings, BaseSettings):
             problems.append("Docker sandbox requires AILAB_SANDBOX_RUNTIME=runsc (runc is not an isolation boundary)")
         if self.sandbox_provider == "opensandbox" and self.osb_network_mode == "kubernetes" and not self.osb_kubernetes_isolation_verified:
             problems.append("Kubernetes sandbox isolation must be verified before enabling secure OpenSandbox Kubernetes mode")
-        if self.crawler_url and len(self.crawler_token) < 24 and service in (None, "agent", "api"):
-            problems.append("AILAB_CRAWLER_TOKEN must be at least 24 characters when AILAB_CRAWLER_URL is set")
         if self.scanner_backend == "stub":
             problems.append("stub scanner is forbidden")
         if self.service_token:

@@ -13,7 +13,6 @@
 | 平台镜像 | `platform/deploy/Dockerfile` |
 | Portal 镜像 | `platform/deploy/portal.Dockerfile` |
 | 沙箱镜像 | `images/sbx-office/Dockerfile` |
-| 抓取器镜像 | `images/crawler/Dockerfile` |
 | 配置模型与安全门禁 | `platform/ailab_platform/config.py::Settings`、`::validate_secrets` |
 | 模型目录与思考档位 | `platform/ailab_platform/catalog.py::load_catalog`、`::parse_reasoning`、`::reasoning_path`、`platform/models.toml`、`platform/reasoning.toml` |
 | 目录校验与发布 | `platform/scripts/make_catalog.py`、`platform/scripts/k8s_models.sh`、`platform/scripts/k8s_secrets.sh` |
@@ -33,7 +32,7 @@
 | Broker | 同一镜像，Deployment；lite 用 `hostNetwork` | 沙箱租约、exec、文件注入和交付 |
 | Worker | 同一镜像，Deployment | 扫描、解析、派生资源和预览 |
 
-`platform-crawler`（无头 Chromium）和 `platform-egress`（出口代理）是受控联网的附属进程，不是上面的五个业务服务。依赖包括：
+网页读取在 Agent 进程内完成（curl_cffi + Trafilatura + Wayback），不再有浏览器抓取容器或它的出口代理。依赖包括：
 
 | 依赖 | lite/dev 实现 | 备注 |
 |---|---|---|
@@ -44,7 +43,7 @@
 | 沙箱运行时 | OpenSandbox 1.1.1 + gVisor `RuntimeClass` | 节点侧 `runsc`；见 [ADR 0007](../architecture/adr/0007-controlled-public-fetch.md) |
 | 私有搜索 | `platform-searxng` | 只有 Agent 可以进入；不对外暴露 |
 
-镜像：平台、Portal 和沙箱从仓库根构建，crawler 以 `images/crawler` 为上下文；`deploy.sh::build_images` 负责构建、导入 containerd 和核对 digest。
+镜像：平台、Portal 和沙箱从仓库根构建；`deploy.sh::build_images` 负责构建、导入 containerd 和核对 digest。
 
 ## 资源预算
 
@@ -60,11 +59,9 @@
 | `platform-redis` | 50m / 64Mi | 200m / 128Mi |
 | `platform-clamav` | 100m / 1536Mi | 500m / 2Gi |
 | `platform-searxng` | 100m / 128Mi | 500m / 512Mi |
-| `platform-crawler` | 100m / 256Mi | 1 / 1Gi |
-| `platform-egress` | 20m / 48Mi | 300m / 128Mi |
 | `platform-postgres`（仅 dev） | 50m / 128Mi | 400m / 384Mi |
 
-lite 的应用与基础设施 request 合计约 0.68 CPU / 2.5 GiB（不含仅 dev 的 PostgreSQL）；lite 沙箱默认 `0.75` CPU / 1.5 GiB，namespace 还限制 1 个 Pod、每个容器 5 GiB ephemeral-storage（request 64 MiB）。`runsc` 的根 overlay 另由节点限制为 4 GiB。k3s 自身保留 500m CPU / 1536 MiB 内存，并在可用内存低于 500 MiB 时驱逐。把沙箱和 Portal 算进去后，2 vCPU / 8 GB 的预算已经接近上限；调整任何一个 Pod 或并发前先重算整栈预算。
+lite 的应用与基础设施 request 合计约 0.56 CPU / 2.2 GiB（不含仅 dev 的 PostgreSQL）；lite 沙箱默认 `0.75` CPU / 1.5 GiB，namespace 还限制 1 个 Pod、每个容器 5 GiB ephemeral-storage（request 64 MiB）。`runsc` 的根 overlay 另由节点限制为 4 GiB。k3s 自身保留 500m CPU / 1536 MiB 内存，并在可用内存低于 500 MiB 时驱逐。把沙箱和 Portal 算进去后，2 vCPU / 8 GB 的预算已经接近上限；调整任何一个 Pod 或并发前先重算整栈预算。
 
 存储：lite 的对象与 SQLite 共用 `platform-data` 40Gi PVC；dev 为 20Gi，并另给 PostgreSQL 4Gi。ClamAV 签名卷 1Gi。`AILAB_PROVISIONED_STORAGE_BYTES` 必须等于实际对象容量；当前 lite 设为 40 GiB。API 只在“用户数 × 资料库配额”超过该值时限告警，不阻止启动。
 
@@ -73,7 +70,7 @@ lite 的应用与基础设施 request 合计约 0.68 CPU / 2.5 GiB（不含仅 d
 ### 一次完整部署
 1. `preflight` 检查 root、`docker`、`k3s`/`kubectl`、Ready 节点、kubeconfig、内存下限和 Portal 端口；`k3s` 与 `kubectl` 由 `platform/scripts/_common.sh` 选择。
 2. `resolve_models` 选择 `models.toml` 或 `models.local.toml`，校验目录并确定默认模型的 Key 环境变量；自定义端点会先做一次真实的 chat completions 探测。
-3. `build_images` 构建沙箱、平台和 crawler 镜像，`docker save` 后导入 k3s containerd，并用配置 digest 或 manifest digest 核对确实导入了刚构建的镜像。
+3. `build_images` 构建沙箱和平台镜像，`docker save` 后导入 k3s containerd，并用配置 digest 或 manifest digest 核对确实导入了刚构建的镜像。
 4. `deploy_platform` 检查 OpenSandbox CRD 和节点 `runsc` 配置，应用根目录 `deploy/overlays/lite` 的 sandbox namespace，启动 `osb_up.sh`（`OSB_RUNTIME=kubernetes`），创建 Secret、模型 ConfigMap 和可选注册/embedding 配置，再应用 `platform/deploy/overlays/lite`。
 5. 已存在的部署中，`apply` 没有改动的四个服务会 `rollout restart` 以加载同一 tag 下的新代码；随后等待 8 个 Deployment 就绪，再等 API 和 Broker 的 readiness。
 6. `start_portal` 在 `package-lock.json` 变化时执行 `npm ci`，之后 `npm run build`、`next start`；`smoke_test` 检查默认令牌、Portal 代理、登录 Cookie、模型列表、内部路由 404 和离线模型 Run，`--smoke-real` 才跑真实模型。
@@ -91,7 +88,7 @@ lite 的应用与基础设施 request 合计约 0.68 CPU / 2.5 GiB（不含仅 d
 | 部署范围 | `--skip-build`、`--no-portal`、`--listen ADDR`、`--smoke-real`、`--dry-run` |
 
 ### 只改配置或模型
-`sudo ./deploy.sh --skip-build` 复用已导入的平台和 crawler 镜像，重新生成 Secret、模型 ConfigMap 和配置后 apply；沙箱镜像若已过期只会警告并保留旧镜像。改代码、改沙箱镜像不要用这个参数。
+`sudo ./deploy.sh --skip-build` 复用已导入的平台镜像，重新生成 Secret、模型 ConfigMap 和配置后 apply；沙箱镜像若已过期只会警告并保留旧镜像。改代码、改沙箱镜像不要用这个参数。
 
 ### 发布模型目录
 本机开发把 `models.toml`/`models.local.toml` 放在 `platform/`，重启 API 和 Agent。k3s 用 `bash platform/scripts/k8s_models.sh` 把目录和旁边的 `reasoning.toml` 发布成 `platform-models` ConfigMap，并重启 API、Agent；`NO_RESTART=1` 只发布不重启。首次部署时，`deploy.sh` 会把默认模型的 Key 写进 `platform-secrets`，再由 `k8s_secrets.sh` 投影到只挂给 API/Agent 的 `platform-model-secrets`。给已有部署增加第二个模型 Key 时，先把 `AILAB_KEY_<NAME>` 按 Secret 运维方式加入 `platform-secrets`（不要把值写进命令行历史），再运行 `k8s_secrets.sh` 重建 `platform-model-secrets`。
@@ -149,13 +146,13 @@ lite 的应用与基础设施 request 合计约 0.68 CPU / 2.5 GiB（不含仅 d
 | 模型与额度 | `AILAB_MODELS_FILE`、`AILAB_LLM_TIMEOUT_SECONDS`、`AILAB_LLM_MAX_RETRIES`、`AILAB_DAILY_TOKEN_LIMIT`、`AILAB_MONTHLY_TOKEN_LIMIT` | 推理超时、重试和用户额度 |
 | 沙箱 | `AILAB_SANDBOX_PROVIDER`、`AILAB_SANDBOX_CPU`、`AILAB_SANDBOX_MEMORY_BYTES`、`AILAB_OSB_*` | 沙箱容量、租约和 OpenSandbox |
 | 文件与扫描 | `AILAB_SCANNER_BACKEND`、`AILAB_CLAMD_ADDRESS`、`AILAB_MAX_UPLOAD_BYTES`、`AILAB_MAX_PARSE_BYTES` | 扫描器、上传和解析上限 |
-| 联网 | `AILAB_WEB_SEARCH_PROVIDER`、`AILAB_SEARXNG_URL`、`AILAB_CRAWLER_URL`、`AILAB_WEB_*` | 搜索、网页读取、下载预算 |
+| 联网 | `AILAB_WEB_SEARCH_PROVIDER`、`AILAB_SEARXNG_URL`、`AILAB_WEB_READ_DEADLINE_SECONDS`、`AILAB_WEB_*` | 搜索、网页读取、下载预算 |
 | 生命周期与观测 | `AILAB_GC_*`、`AILAB_*_RETENTION_DAYS`、`AILAB_LOG_FORMAT`、`AILAB_OTEL_*` | 清理、日志和追踪 |
 
 ### `AILAB_PROFILE=secure`
 `profile` 未显式设置时，`env=test` 为 `test`，`dev/smoke/k3s` 为 `dev`，其他环境为 `secure`。k3s 清单显式写 `AILAB_PROFILE=dev`，要上线必须主动改为 `secure` 并准备真实依赖。
 
-`secure` 下 `Settings::validate_secrets` 拒绝：默认 `dev_token`/`service_token`/`osb_api_key`；mock 沙箱；Docker 沙箱配 `runc` 运行时；stub 扫描器；非空旧式共享 `AILAB_SERVICE_TOKEN`；缺失或不足 24 字符的本服务 credential；不匹配的 verifier；未声明 api/agent/broker/worker/ops 五个身份；未设置邀请码的 open/invite 注册；未验收的 OpenSandbox Kubernetes 隔离；过短的 crawler token；以及默认不允许的外部模型主机。检查在四个服务的 lifespan 中执行，失败直接阻止启动。
+`secure` 下 `Settings::validate_secrets` 拒绝：默认 `dev_token`/`service_token`/`osb_api_key`；mock 沙箱；Docker 沙箱配 `runc` 运行时；stub 扫描器；非空旧式共享 `AILAB_SERVICE_TOKEN`；缺失或不足 24 字符的本服务 credential；不匹配的 verifier；未声明 api/agent/broker/worker/ops 五个身份；未设置邀请码的 open/invite 注册；未验收的 OpenSandbox Kubernetes 隔离；以及默认不允许的外部模型主机。检查在四个服务的 lifespan 中执行，失败直接阻止启动。
 
 | 变量 | 作用 | 默认 |
 |---|---|---|

@@ -7,7 +7,7 @@ rather than left to the prompt:
 * provenance: a URL the model may fetch must have appeared in the user's messages or in a web tool's results
   (search hits, page links), or be on a public code host. The model cannot invent a URL on an arbitrary host and
   append conversation data to it; what remains is choosing among links that already exist (see the review);
-* budget: requests and bytes per run are capped, so a loop cannot turn into an unbounded crawler.
+* budget: requests and bytes per run are capped, so a loop cannot turn into an unbounded fetcher.
 """
 
 from __future__ import annotations

@@ -11,7 +11,7 @@
 | PR 改动 | 运行 |
 |---|---|
 | 白名单 Markdown（`docs/**/*.md` 与指定 README/规则文件） | 只跑选择器测试与 `CI` 汇总 |
-| 仅 `platform/portal/**` | `quality`、`shell`、`crawler`、`e2e` |
+| 仅 `platform/portal/**` | `quality`、`shell`、`e2e` |
 | 后端、共享契约、依赖、部署、工作流、未知路径 | 全部 |
 
 选择器使用 merge base，并关闭 rename detection：移入或移出 `docs/` 的两端都会参与判断。`docs/` 下的脚本、配置、JSON 与非 Markdown 文件仍按代码处理；未知路径一律保守执行全套。白名单细节以 `.github/scripts/ci_scope.py::DOC_FILES` 与路径判断为准。

@@ -4,7 +4,7 @@
 
 ## 清单
 
-`base/` 按资源组拆分：`apps/`（API、Agent、Broker、Worker）、`database/`（PostgreSQL）、`objects/`（对象 PVC）、`queue/`（Redis）、`scanner/`（ClamAV）、`search/`（SearXNG）、`crawler/`（抓取器和出口代理）、`gateway/`（公共网关）和 `network.yaml`。每组都带自己的 `kustomization.yaml`，可以单独 apply；升级应用镜像不会重启数据库、重建 PVC 或重建 Portal。
+`base/` 按资源组拆分：`apps/`（API、Agent、Broker、Worker）、`database/`（PostgreSQL）、`objects/`（对象 PVC）、`queue/`（Redis）、`scanner/`（ClamAV）、`search/`（SearXNG）、`gateway/`（公共网关）和 `network.yaml`。每组都带自己的 `kustomization.yaml`，可以单独 apply；升级应用镜像不会重启数据库、重建 PVC 或重建 Portal。
 
 ```bash
 kubectl kustomize platform/deploy/overlays/dev
@@ -24,10 +24,9 @@ kubectl apply -k platform/deploy/overlays/lite
 |---|---|---|
 | `ailab-platform:lite` | `platform/deploy/Dockerfile` | API、Agent、Broker、Worker 共用一个镜像 |
 | `ailab-portal` | `platform/deploy/portal.Dockerfile` | Next.js standalone；需要独立 Portal 镜像时使用 |
-| `ailab-crawler:lite` | `images/crawler/Dockerfile` | 无头 Chromium 和 Crawl4AI |
 | `harbor.ailab.local/sandbox/sbx-office:lite` | `images/sbx-office/Dockerfile` | gVisor 下的办公沙箱 |
 
-平台、Portal 和沙箱镜像从仓库根构建；crawler 以 `images/crawler` 为上下文。`deploy.sh` 负责构建、导入 k3s containerd 并核对导入的配置 digest。`imagePullPolicy: Never` 的清单只能使用已导入的镜像，未导入时 Pod 不会自动拉取。
+平台、Portal 和沙箱镜像从仓库根构建。`deploy.sh` 负责构建、导入 k3s containerd 并核对导入的配置 digest。`imagePullPolicy: Never` 的清单只能使用已导入的镜像，未导入时 Pod 不会自动拉取。
 
 ## 运行约束
 

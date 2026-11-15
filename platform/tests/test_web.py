@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 
+import httpx
 import pytest
 
 from ailab_platform import web
@@ -103,3 +105,22 @@ def test_search_provider_errors_are_not_successful_empty_results(monkeypatch, pa
             asyncio.run(web.search("news today"))
     else:
         assert len(asyncio.run(web.search("news today"))) == len(payload["results"])
+
+
+@pytest.mark.parametrize("certificate_error", [False, True])
+def test_fetch_transport_classification_preserves_tls_verification(certificate_error):
+    async def broken(request):
+        if certificate_error:
+            raise httpx.ConnectError("TLS failed") from ssl.SSLCertVerificationError("invalid certificate")
+        raise httpx.RemoteProtocolError("peer closed connection")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(broken)) as client:
+            async with web.open_public(client, "https://example.com/"):
+                pytest.fail("unexpected response")
+
+    expected = web.WebError if certificate_error else web.WebFetchError
+    with pytest.raises(expected) as error:
+        asyncio.run(run())
+    if certificate_error:
+        assert not isinstance(error.value, web.WebFetchError)
