@@ -12,14 +12,25 @@
 #             messages, tools, stream, max_tokens...) cannot be set here.
 #
 # A level is fixed for the whole answer, including its summaries and wrap-ups, so the prefix cache keeps
-# hitting inside a run. Calls that switch thinking off (titles, see disable_reasoning_for_quiet) send no level.
+# hitting inside a run. Calls that switch thinking off (titles) send no level and use thinking.type=disabled instead.
 
 # DeepSeek V4.x: https://api-docs.deepseek.com/guides/thinking_mode
-# The API has three real strengths (low, high, max; medium/xhigh map to high); its own default is high.
+# Three real strengths (low, high, max; medium/xhigh map to high); the API default is high. "none" uses the OpenAI-format
+# thinking toggle, which both api.deepseek.com and the OpenCode Go gateway accept (verified by reasoning_tokens=0).
 [deepseek-v4]
 default = "low"
 levels = [
+  { id = "none", name = "关", body = { thinking = { type = "disabled" } } },
   { id = "low", name = "低", body = { reasoning_effort = "low" } },
   { id = "high", name = "高", body = { reasoning_effort = "high" } },
   { id = "max", name = "最高", body = { reasoning_effort = "max" } },
+]
+
+# Hy4 (Tencent Hunyuan, served by OpenCode Go): models.dev declares effort none/high. Only "none" changes how long it
+# thinks (verified by reasoning_tokens); low/high are accepted but produce the same thinking, so only two levels show.
+[hy4]
+default = "high"
+levels = [
+  { id = "none", name = "关", body = { thinking = { type = "disabled" } } },
+  { id = "high", name = "高", body = { reasoning_effort = "high" } },
 ]

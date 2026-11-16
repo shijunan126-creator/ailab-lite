@@ -34,11 +34,22 @@ def test_shipped_deepseek_profile_defaults_to_low_and_maps_to_real_strengths() -
     profile = cat.reasoning_for(cat.get("deepseek-v4.1-flash"))
     assert profile is not None and profile.default == "low"
     assert [(x.id, x.body) for x in profile.levels] == [
+        ("none", {"thinking": {"type": "disabled"}}),
         ("low", {"reasoning_effort": "low"}),
         ("high", {"reasoning_effort": "high"}),
         ("max", {"reasoning_effort": "max"}),
     ]
     assert cat.reasoning_for(cat.get("ailab-demo")) is None
+
+
+def test_shipped_hy4_profile_has_off_and_high() -> None:
+    cat = load_catalog(PLATFORM / "models.toml")
+    profile = cat.reasoning_for(cat.get("hy4-flash-free"))
+    assert profile is not None and profile.default == "high"
+    assert [(x.id, x.body) for x in profile.levels] == [
+        ("none", {"thinking": {"type": "disabled"}}),
+        ("high", {"reasoning_effort": "high"}),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -96,6 +107,28 @@ def test_each_call_carries_its_runs_level_and_side_calls_keep_it() -> None:
     # unmetered callers and models without a profile send nothing
     assert "reasoning_effort" not in _payload(transport, None)
     assert "reasoning_effort" not in _payload(ModelTransport("http://gw.test/v1"), ModelCall("c", "r", 100, reasoning="high"))
+
+
+def test_a_disabled_level_uses_the_same_off_field_as_a_quiet_call() -> None:
+    data = """
+[think]
+default = "high"
+levels = [
+  { id = "none", name = "关", body = { thinking = { type = "disabled" } } },
+  { id = "high", name = "高", body = { reasoning_effort = "high" } },
+]
+"""
+    profile = parse_reasoning(__import__("tomllib").loads(data))["think"]
+    transport = ModelTransport("http://gw.test/v1", reasoning=profile, disable_reasoning_for_quiet=True)
+    # the profile default is high: an explicit user choice of none must be what switches this call off
+    assert _payload(transport, ModelCall("c", "r", 100))["reasoning_effort"] == "high"
+    chosen = _payload(transport, ModelCall("c", "r", 100, reasoning="none"))
+    assert chosen["thinking"] == {"type": "disabled"} and "reasoning_effort" not in chosen
+    # a quiet title takes the quiet-disable branch off the high default; a prefix-continuing summary keeps high
+    title = _payload(transport, ModelCall("c", "r", 100, reasoning="high", quiet=True))
+    assert title["thinking"] == {"type": "disabled"} and "reasoning_effort" not in title
+    summary = _payload(transport, ModelCall("c", "r", 100, reasoning="high", quiet=True, continues_prefix=True))
+    assert summary["reasoning_effort"] == "high" and "thinking" not in summary
 
 
 @pytest.fixture()

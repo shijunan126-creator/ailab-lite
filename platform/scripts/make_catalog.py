@@ -84,7 +84,7 @@ def load(path: str) -> list[dict]:
         env = m.get("api_key_env")
         if env and not KEY_RE.match(env):
             sys.exit(f"{path}: api_key_env of {m['id']} must look like AILAB_KEY_SOMETHING")
-        if m.get("provider", "openai") == "openai" and not m.get("base_url"):
+        if m.get("provider", "openai") != "mock" and not m.get("base_url"):
             sys.exit(f"{path}: {m['id']} needs a base_url")
     return models
 

@@ -31,10 +31,11 @@ def main():
     from ailab_platform.agent import discovery, prompts, tools
     from ailab_platform.catalog import load_catalog
     from ailab_platform.internal_skills import load as internal_load
+    from ailab_platform.model_transport import _session_id
 
     catalog = load_catalog(args.catalog)
     spec = catalog.get(catalog.default_id())
-    if not spec or not spec.available or spec.provider != "openai":
+    if not spec or not spec.available or spec.provider == "mock":
         raise RuntimeError("real model unavailable")
     allowed = {"exec", "read_file", "write_file", "load_skill", "update_plan", "deliver_file"}
     tool_catalog = [discovery.SEARCH, *[t for t in tools.tools_for_turn() if t["function"]["name"] in allowed]]
@@ -49,6 +50,10 @@ def main():
     ]
     commands = []
     usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    headers = {"Authorization": "Bearer " + spec.api_key()}
+    if spec.session_header:
+        # OpenCode Go refuses requests without a stable conversation session.
+        headers[spec.session_header] = _session_id("verify-work-office")
 
     def docker(*parts):
         result = subprocess.run(
@@ -63,7 +68,7 @@ def main():
         for call in range(20):
             response = client.post(
                 spec.base_url.rstrip("/") + "/chat/completions",
-                headers={"Authorization": "Bearer " + spec.api_key()},
+                headers=headers,
                 json={
                     "model": spec.upstream_model,
                     "messages": messages,
