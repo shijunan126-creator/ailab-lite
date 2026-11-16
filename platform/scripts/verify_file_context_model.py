@@ -55,11 +55,11 @@ async def verify(args):
     catalog = catalog_module.get_catalog()
     model = args.model or catalog.default_id()
     original = catalog.get(model)
-    if not original or original.provider != "openai" or not original.available:
+    if not original or original.provider == "mock" or not original.available:
         raise RuntimeError("real model unavailable")
     # A smaller local verification window exercises compaction without huge requests.
     spec = replace(original, context_tokens=8192, max_output_tokens=2048, fallback=[], disable_reasoning_for_quiet=True)
-    catalog = Catalog([spec])
+    catalog = Catalog([spec], catalog.reasoning)
     from unittest.mock import patch
 
     patches = [
@@ -80,7 +80,13 @@ async def verify(args):
             return await super().chat_stream(messages, *a, **kw)
 
     llm = MeasuredModel(
-        spec.base_url, spec.api_key(), spec.upstream_model, echo_reasoning=spec.echo_reasoning, disable_reasoning_for_quiet=True
+        spec.base_url,
+        spec.api_key(),
+        spec.upstream_model,
+        echo_reasoning=spec.echo_reasoning,
+        disable_reasoning_for_quiet=True,
+        session_header=spec.session_header,
+        reasoning=catalog.reasoning_for(spec),
     )
     with TestClient(app) as client:
 
@@ -267,7 +273,7 @@ def audit_existing(args):
             checkpoint = read_checkpoint(db, run)
             state = checkpoint["state"]
             spec = replace(get_catalog().get(run.model), context_tokens=8192, max_output_tokens=2048, disable_reasoning_for_quiet=True)
-            catalog = Catalog([spec])
+            catalog = Catalog([spec], get_catalog().reasoning)
 
             class Bridge:
                 def __init__(self, client):

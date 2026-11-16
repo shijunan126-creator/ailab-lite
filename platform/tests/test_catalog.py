@@ -31,10 +31,39 @@ def test_the_shipped_catalog_is_valid_and_keyless() -> None:
     shipped = Path(__file__).resolve().parents[1] / "models.toml"  # the file the repo and the image ship
     cat = load_catalog(shipped)
     assert cat.get("deepseek-v4.1-flash").upstream_model == "deepseek-flash"
-    hy4 = cat.get("hy4-flash-free")  # OpenCode Go routes by session; its thinking has no adjustable strength
-    assert hy4.session_header == "x-opencode-session" and hy4.supports({"tools", "vision"}) and cat.reasoning_for(hy4) is None
+    hy4 = cat.get("hy4-flash-free")  # OpenCode Go routes by session and offers none/high thinking strengths
+    assert hy4.provider == "opencode-go" and hy4.session_header == "x-opencode-session"
+    assert hy4.echo_reasoning and hy4.disable_reasoning_for_quiet and hy4.supports({"tools", "vision"})
+    assert [level.id for level in cat.reasoning_for(hy4).levels] == ["none", "high"]
     text = shipped.read_text()
     assert "sk-" not in text, "a key must never be written into the catalog"
+
+
+def test_providers_supply_request_shape_defaults_and_models_can_override() -> None:
+    from ailab_platform.model_providers import PROVIDERS
+
+    assert PROVIDERS["openai"].session_header == "" and not PROVIDERS["openai"].echo_reasoning
+    assert not PROVIDERS["openai"].quiet_disable_thinking
+    opencode = PROVIDERS["opencode-go"]
+    assert opencode.session_header == "x-opencode-session" and opencode.echo_reasoning and opencode.quiet_disable_thinking
+    assert PROVIDERS["deepseek"].echo_reasoning and not PROVIDERS["deepseek"].session_header
+
+    cat = parse_catalog(
+        {
+            "models": [
+                {"id": "oc", "provider": "opencode-go", "base_url": "http://gw"},
+                {"id": "oc-plain", "provider": "opencode-go", "base_url": "http://gw", "session_header": "", "echo_reasoning": False},
+                {"id": "generic", "provider": "openai", "base_url": "http://gw"},
+            ]
+        }
+    )
+    assert cat.get("oc").session_header == "x-opencode-session" and cat.get("oc").echo_reasoning
+    assert cat.get("oc-plain").session_header == "" and not cat.get("oc-plain").echo_reasoning  # explicit override wins
+    assert cat.get("generic").session_header == "" and not cat.get("generic").echo_reasoning
+
+    deepseek = load_catalog(Path(__file__).resolve().parents[1] / "models.toml").get("deepseek-v4.1-flash")
+    assert deepseek.provider == "deepseek" and deepseek.session_header == "" and deepseek.echo_reasoning
+    assert deepseek.disable_reasoning_for_quiet
 
 
 @pytest.mark.parametrize(

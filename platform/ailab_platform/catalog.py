@@ -15,13 +15,15 @@ from functools import lru_cache
 from pathlib import Path
 
 from .config import settings
+from .model_providers import PROVIDERS as MODEL_PROVIDERS
+from .model_providers import provider_profile
 from .thinking import TAG_RE
 
 log = logging.getLogger("ailab.catalog")
 
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 KEY_ENV_PREFIX = "AILAB_KEY_"  # so a typo cannot make the catalog send e.g. AILAB_SERVICE_TOKEN upstream
-PROVIDERS = {"openai", "mock"}
+PROVIDERS = set(MODEL_PROVIDERS) | {"mock"}
 # A reasoning level may add provider fields, never reshape the request the transport builds.
 RESERVED_REQUEST_FIELDS = {
     "model", "messages", "tools", "tool_choice", "stream", "stream_options", "max_tokens", "max_completion_tokens", "n",
@@ -90,13 +92,12 @@ class ModelSpec:
     default: bool = False
     enabled: bool = True
     # Thinking models (DeepSeek V4.x) refuse the next turn of a tool conversation unless the previous
-    # reasoning_content is sent back; others reject or ignore it. Hence a per-model switch.
+    # reasoning_content is sent back. Defaults from the provider; a model may override it explicitly.
     echo_reasoning: bool = False
-    # DeepSeek's explicit non-thinking mode for metadata/summary calls. Opt in only
-    # for endpoints that support thinking.type; never infer capability from a URL.
+    # Whether quiet calls that start a fresh prefix send thinking.type=disabled. Defaults from the provider; a model
+    # may override it. This is about the call's nature, not the user's chosen strength (reasoning.toml).
     disable_reasoning_for_quiet: bool = False
-    # Upstreams that route and cache by conversation (OpenCode Go: x-opencode-session) get a stable,
-    # hashed per-conversation id in this header. Empty means no such header.
+    # Header carrying a stable, hashed per-conversation id. Defaults from the provider (OpenCode Go).
     session_header: str = ""
     # Name of a reasoning.toml profile: the thinking strengths users can pick for this model.
     reasoning: str = ""
@@ -206,13 +207,21 @@ def parse_catalog(data: dict, reasoning: dict[str, ReasoningProfile] | None = No
             raise CatalogError(f"{where}: bad id {mid!r} (letters, digits, '.', '_', '-')")
         if any(s.id == mid for s in specs):
             raise CatalogError(f"{where}: duplicate id {mid!r}")
-        spec = ModelSpec(**{**item, "id": mid, "name": str(item.get("name") or mid)})
-        if spec.provider not in PROVIDERS:
+        provider = item.get("provider", "openai")
+        if provider not in PROVIDERS:
             raise CatalogError(f"{where} ({mid}): provider must be one of {sorted(PROVIDERS)}")
+        merged = {**item, "id": mid, "name": str(item.get("name") or mid)}
+        if provider in MODEL_PROVIDERS:
+            # The provider owns the request-shape defaults; a model may still override them explicitly.
+            defaults = provider_profile(provider)
+            merged.setdefault("session_header", defaults.session_header)
+            merged.setdefault("echo_reasoning", defaults.echo_reasoning)
+            merged.setdefault("disable_reasoning_for_quiet", defaults.quiet_disable_thinking)
+        spec = ModelSpec(**merged)
         if type(spec.disable_reasoning_for_quiet) is not bool:
             raise CatalogError(f"{where}: disable_reasoning_for_quiet must be a boolean")
-        if spec.provider == "openai" and not spec.base_url:
-            raise CatalogError(f"{where} ({mid}): base_url is required for provider 'openai'")
+        if spec.provider != "mock" and not spec.base_url:
+            raise CatalogError(f"{where} ({mid}): base_url is required for provider {spec.provider!r}")
         if spec.api_key_env and not spec.api_key_env.startswith(KEY_ENV_PREFIX):
             raise CatalogError(f"{where} ({mid}): api_key_env must start with {KEY_ENV_PREFIX}")
         if not spec.weight > 0:

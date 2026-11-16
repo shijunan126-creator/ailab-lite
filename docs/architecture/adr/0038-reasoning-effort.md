@@ -20,3 +20,9 @@ DeepSeek V4 支持 `reasoning_effort`（实际只有 low/high/max 三档，默�
 
 - 默认从供应商的 high 改成 low：同样问题思考 token 明显减少（12 球称重题：low ≈2.8k、high ≈5k、max ≈8k），回答更快、额度消耗更少；需要深度推理时用户可调高。定时任务和旧客户端的请求用默认档。
 - 无迁移；`run.options` 多一个键。部署需要同时更新镜像（含 `reasoning.toml`）和 Portal；k8s 的 ConfigMap 由 `k8s_models.sh` 一起发布两个文件，自定义目录（`models.local.toml`）要自己加 `reasoning = ...` 才显示档位。
+
+## 供应商与关思考档位的补充
+
+- **请求形状由 provider 决定，档位字段由 reasoning.toml 决定**。`platform/ailab_platform/model_providers.py` 定义三个 provider 的默认请求形状：`opencode-go`（`x-opencode-session` 头、回传 `reasoning_content`、quiet 调用关思考）、`deepseek`（回传、quiet 关思考）、`openai`（通用兼容、无默认差异）。`models.toml` 的逐模型字段仍可覆盖 provider 默认值。传输层与调用逻辑不变，只按 provider 提供配置默认值。
+- **关思考是推理档位的一种**：DeepSeek 与 Hy4 的 profile 都含 `none` 档，body 为官方 OpenAI 格式的 `thinking.type=disabled`，与 quiet 短调用的关思考字段一致。`reasoning_effort` 只表达强度（low/high/max），不用它表达关闭。用户选 none 时主回答不思考；quiet 短调用按调用性质自动关思考，两条路互不覆盖。
+- **验证以 `reasoning_tokens` 为准**：opencode 网关对未知字段静默忽略并返回 200。实测量子：`reasoning_effort=none` 与 `thinking.type=disabled` 使 Hy4/DeepSeek 的 reasoning_tokens 归零；`reasoning_effort=high/low` 只证明思考开启，Hy4 的 high 相对默认强度提升未证实；`enable_thinking=false` 对本网关无效。改字段后必须用真模型核对 usage，HTTP 状态不足以证明字段生效。
