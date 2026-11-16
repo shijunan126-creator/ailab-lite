@@ -212,7 +212,7 @@ export function Frame({ title, unit, children }: { title: string; unit?: unknown
           {typeof unit === "string" && unit ? <span className="gu-chart-unit">{unit}</span> : null}
         </figcaption>
       ) : null}
-      {children}
+      <div className="gu-chart-body">{children}</div>
     </figure>
   );
 }

@@ -182,3 +182,32 @@ test("readout keeps its text width and stays inside the plot near either edge", 
   assert.equal(value(31.2, "%"), "31.2%");
   assert.equal(value(160, "万元"), "160 万元");
 });
+
+test("a chart's screen-reader table stays inside the chart's layout box", async () => {
+  const source = block(
+    "root = Stack([chart])",
+    "labels = [1, 2, 3]",
+    'chart = BarChart("数据", labels, [Series("数值", [10, 20, 30])])',
+  );
+  const { container } = render(<Answer text={source} />);
+  await waitFor(() => assert.ok(container.querySelector("table.sr-only")));
+  const chart = container.querySelector<HTMLElement>(".gu-chart")!;
+  const table = chart.querySelector<HTMLElement>("table.sr-only")!;
+  assert.equal(table.parentElement, chart.querySelector(".gu-chart-body"));
+});
+
+test("every GenUI screen-reader table sits inside the chart's positioned body", async () => {
+  const source = block(
+    "root = Stack([bar, gantt])",
+    'bar = BarChart("图", ["甲"], [Series("值", [1])])',
+    'gantt = Gantt("排期", [{name: "任务", start: "2026-01-01", end: "2026-01-02"}])',
+  );
+  const { container } = render(<Answer text={source} />);
+  await waitFor(() => assert.ok(container.querySelectorAll(".gu-chart-body").length >= 2));
+  const bodies = [...container.querySelectorAll(".gu-chart-body")];
+  for (const body of bodies) {
+    const table = body.querySelector("table.sr-only");
+    assert.ok(table, "every chart body must carry a screen-reader table");
+    assert.ok(body.closest(".gu-chart"), "the positioned body must belong to a chart");
+  }
+});
