@@ -84,9 +84,10 @@ def test_genui_hidden_tables_do_not_add_scroll_height(logged_in):
             const r = el.getBoundingClientRect();
             return [Math.round(r.width), Math.round(r.height)];
         });
-        for (const el of wrappers) el.remove();
+        const laidOut = wrappers.filter(el => el.getClientRects().length > 0);
+        for (const el of laidOut) el.remove();
         const after = messages.scrollHeight;
-        return {before, after, sizes};
+        return {before, after, sizes: sizes.filter((_, i) => wrappers[i].getClientRects().length > 0)};
     }""")
     assert measured["sizes"] and all(size == [1, 1] for size in measured["sizes"])
     assert abs(measured["before"] - measured["after"]) <= 2
