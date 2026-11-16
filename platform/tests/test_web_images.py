@@ -156,7 +156,8 @@ def test_read_url_returns_page_pictures_as_signed_references(monkeypatch):
         return {
             "url": "https://www.example.com/news/story",
             "status": 200,
-            "text": html,
+            "body": html.encode(),
+            "encoding": "utf-8",
             "content_type": "text/html",
             "truncated": False,
         }

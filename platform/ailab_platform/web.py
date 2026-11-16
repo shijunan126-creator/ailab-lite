@@ -687,9 +687,9 @@ _EXTRACT_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="web-extrac
 _MALLOC_TRIM = getattr(ctypes.CDLL(None), "malloc_trim", None)
 
 
-def _extract_and_release(html: str, base: str) -> dict:
+def _extract_and_release(body: bytes, encoding: str, base: str) -> dict:
     try:
-        return _extract_document(html, base, recover=True)
+        return _extract_document(body.decode(encoding, "replace"), base, recover=True)
     finally:
         if _MALLOC_TRIM is not None:
             _MALLOC_TRIM(0)
@@ -757,7 +757,10 @@ async def _fetch_page(url: str, headers: dict[str, str], deadline: float, max_by
                     "status": response.status_code,
                     "content_type": ctype,
                     "location": response.headers.get("location"),
-                    "text": body.decode(response.encoding or "utf-8", "replace"),
+                    # Raw bytes, decoded where they are used: a decoded page is up to 4 bytes per character (one emoji
+                    # widens the whole str), and reads queued behind the one extraction thread would each hold one.
+                    "body": body,
+                    "encoding": response.encoding or "utf-8",
                     "truncated": truncated,
                 }
             finally:
@@ -781,6 +784,10 @@ def _is_ip_literal(host: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _decoded(fetched: dict) -> str:
+    return fetched["body"].decode(fetched["encoding"], "replace")
 
 
 async def _fetch_follow(url: str, headers: dict[str, str], deadline: float) -> dict:
@@ -809,7 +816,7 @@ async def fetch_html(url: str) -> dict:
     ctype = page["content_type"]
     if ctype and ctype not in TEXT_TYPES:
         raise WebError(f"unsupported content type: {ctype}; use download_url for files")
-    text = page["text"]
+    text = _decoded(page)
     title = ""
     if m := re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S):
         title = _clean(unescape(m[1]))[:300]
@@ -822,15 +829,15 @@ async def fetch_html(url: str) -> dict:
     }
 
 
-async def _extract_bounded(html: str, base: str) -> dict:
-    return await asyncio.get_running_loop().run_in_executor(_EXTRACT_POOL, partial(_extract_and_release, html, base))
+async def _extract_bounded(body: bytes, encoding: str, base: str) -> dict:
+    return await asyncio.get_running_loop().run_in_executor(_EXTRACT_POOL, partial(_extract_and_release, body, encoding, base))
 
 
 async def _page_from(fetched: dict) -> dict:
     """Turn a fetched body into the read_url result shape; HTML extraction runs in a bounded thread."""
-    final, ctype, raw, truncated = fetched["url"], fetched["content_type"], fetched["text"], fetched["truncated"]
-    if ctype in ("text/html", "application/xhtml+xml") or (not ctype and raw.lstrip().startswith("<")):
-        document = await _extract_bounded(raw, final)
+    final, ctype, body, truncated = fetched["url"], fetched["content_type"], fetched["body"], fetched["truncated"]
+    if ctype in ("text/html", "application/xhtml+xml") or (not ctype and body.lstrip().startswith(b"<")):
+        document = await _extract_bounded(body, fetched["encoding"], final)
         page = {
             "url": final,
             "title": document["title"] or urlsplit(final).netloc,
@@ -844,10 +851,10 @@ async def _page_from(fetched: dict) -> dict:
             **({"images": document["images"]} if document["images"] else {}),
         }
         return page
-    text = raw
+    text = _decoded(fetched)
     if ctype == "application/json":
         with contextlib.suppress(ValueError):
-            text = json.dumps(json.loads(raw), ensure_ascii=False, indent=1)
+            text = json.dumps(json.loads(text), ensure_ascii=False, indent=1)
     text = _markdown(text)
     heading = re.match(r"#\s+(.+)", text)
     return {

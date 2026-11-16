@@ -17,7 +17,8 @@ def html_page(body: str, title: str = "Article") -> dict:
         "url": "https://example.com/a",
         "status": 200,
         "content_type": "text/html",
-        "text": f"<html><head><title>{title}</title></head><body>{body}</body></html>",
+        "body": f"<html><head><title>{title}</title></head><body>{body}</body></html>".encode(),
+        "encoding": "utf-8",
         "truncated": False,
     }
 
@@ -33,7 +34,7 @@ def test_a_blocked_page_becomes_a_wayback_snapshot(monkeypatch):
         calls.append(url)
         if url.startswith("https://web.archive.org/web/"):
             return {**html_page(f"<article><p>{ARTICLE}</p></article>", "Archived"), "url": url}
-        return {"url": url, "status": 403, "content_type": "text/html", "text": "denied", "truncated": False}
+        return {"url": url, "status": 403, "content_type": "text/html", "body": b"denied", "encoding": "utf-8", "truncated": False}
 
     async def available(url, max_bytes, headers=None):
         return {"archived_snapshots": {"closest": {"available": True, "timestamp": "20240102030405"}}}
@@ -63,7 +64,7 @@ def test_a_challenge_page_also_uses_a_wayback_snapshot(monkeypatch):
 
 def test_no_snapshot_is_a_defined_error_that_tells_the_model_to_switch_sources(monkeypatch):
     async def fetch(url, headers, deadline):
-        return {"url": url, "status": 429, "content_type": "text/html", "text": "slow down", "truncated": False}
+        return {"url": url, "status": 429, "content_type": "text/html", "body": b"slow down", "encoding": "utf-8", "truncated": False}
 
     async def available(url, max_bytes, headers=None):
         return {"archived_snapshots": {}}
@@ -77,7 +78,7 @@ def test_no_snapshot_is_a_defined_error_that_tells_the_model_to_switch_sources(m
 
 def test_a_short_deadline_skips_the_archive_lookup(monkeypatch):
     async def fetch(url, headers, deadline):
-        return {"url": url, "status": 403, "content_type": "text/html", "text": "denied", "truncated": False}
+        return {"url": url, "status": 403, "content_type": "text/html", "body": b"denied", "encoding": "utf-8", "truncated": False}
 
     async def available(url, max_bytes, headers=None):
         raise AssertionError("no time left for archive lookup")
@@ -138,7 +139,7 @@ def test_text_is_a_character_window_with_next_start(monkeypatch):
 
     async def fetch(url, headers, deadline):
         calls.append(url)
-        return {"url": url, "status": 200, "content_type": "text/markdown", "text": full, "truncated": False}
+        return {"url": url, "status": 200, "content_type": "text/markdown", "body": full.encode(), "encoding": "utf-8", "truncated": False}
 
     monkeypatch.setattr(web, "_fetch_page", fetch)
     first = read(max_chars=1000)
@@ -189,12 +190,12 @@ def test_cancelled_reads_cannot_push_extraction_past_one_thread(monkeypatch):
     monkeypatch.setattr(web, "_extract_document", slow_extract)
 
     async def scenario():
-        first = [asyncio.create_task(web._extract_bounded("<p>x</p>", "")) for _ in range(2)]
+        first = [asyncio.create_task(web._extract_bounded(b"<p>x</p>", "utf-8", "")) for _ in range(2)]
         await asyncio.sleep(0.05)
         for task in first:  # an excerpt deadline abandons both extractions while the first one's thread still runs
             task.cancel()
         await asyncio.gather(*first, return_exceptions=True)
-        later = [asyncio.create_task(web._extract_bounded("<p>y</p>", "")) for _ in range(2)]
+        later = [asyncio.create_task(web._extract_bounded(b"<p>y</p>", "utf-8", "")) for _ in range(2)]
         await asyncio.sleep(0.2)
         peak = running["peak"]
         gate.set()
@@ -214,7 +215,7 @@ def test_extraction_returns_freed_heap_even_when_parsing_fails(monkeypatch):
 
     monkeypatch.setattr(web, "_extract_document", broken)
     with pytest.raises(web.WebError):
-        asyncio.run(web._extract_bounded("<p>x</p>", ""))
+        asyncio.run(web._extract_bounded(b"<p>x</p>", "utf-8", ""))
     assert trims == [0]
 
 
