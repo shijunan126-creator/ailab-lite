@@ -67,7 +67,7 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 1. `web.read_url` 在 Agent 进程内用 curl_cffi 的 Chrome 指纹抓取；每次解析（含每次跳转）都用 `public_addresses` 检查全部地址，再用 libcurl `RESOLVE` 连接到检查过的 IP。总时限 `AILAB_WEB_READ_DEADLINE_SECONDS`（默认 12 秒），DNS 单独最多 3 秒。
 2. 请求带 Markdown 协商；`text/markdown` 直接作为正文，否则交给 Trafilatura。403 会用普通 HTML Accept 重试一次。
 3. 空壳页先取 JSON-LD `articleBody`、`__NEXT_DATA__` 长文本或 meta description；401/403/429 或验证页再查 Wayback，快照读 `id_` 原始页面并标 `archived_at`。读不到时错误提示换来源。
-4. 结果携带正文链接（优先正文、上限 12）和 `next_start`；`start` 用于按字符偏移续读，同一 URL 每次重新抓取。HTML 抽取在单个专用线程里完成，标题和正文共用一次解析，抽完把释放的堆还给系统。
+4. 结果携带正文链接（优先正文、上限 12）和 `next_start`；`start` 用于按字符偏移续读，同一 URL 每次重新抓取。HTML 抽取在单个专用线程里完成，标题和正文共用一次解析，抽完把释放的堆还给系统；正文以字节排队，全进程同时持有正文的读取不超过 `web.py::READS_IN_FLIGHT` 个，等位计入读取截止时间。
 
 ### 上下文、压缩与恢复
 1. `messages[0]` 是按模式与能力生成的平台规则，`messages[1]` 是会话上下文（工作区说明、记忆快照、资料索引、过期提示）。之后只有用户消息、assistant、工具结果和平台提示依次追加。
