@@ -7,12 +7,18 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 // bottom, by wheel, touch, keys or the scrollbar, stops following; coming back to the bottom resumes it. Driven by
 // content size changes, so nothing runs per frame once the bottom is reached.
 //
+// Only the reader's own input stops following. The browser also moves the view: scroll anchoring shifts it when content
+// above grows (a chart in the history rendering after the conversation opened), and a shrink clamps it. Judged by
+// position alone, such a move reads as the reader leaving the bottom and the view stays short of it.
+//
 // A stop (a new answer's start) caps the following: the view moves with the answer until that start reaches the top and
 // then stays, so a long answer is read from its beginning. Once the reader scrolls to the bottom past the stop, the stop
 // is dropped and the view sticks to the bottom again.
 
 const EASE_MS = 110; // time constant: about 90% of the gap closes in a quarter second
 const JUMP_SCREENS = 1.5; // farther than this (opening a conversation, a large insert) is not animated
+const INPUT_MS = 400; // a scroll this soon after the reader's wheel, key or touch is theirs (smooth key scrolls included)
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
 
 export type Follow = {
   /** Whether the container follows new content; set it to resume following (after a send) or stop (prepend). */
@@ -38,6 +44,11 @@ export function useFollow(scroller: React.RefObject<HTMLElement | null>, { slack
   const frame = useRef(0);
   const placed = useRef<number | null>(null); // the last scrollTop this hook wrote, to tell its own scrolls from the reader's
   const stopRef = useRef<(() => number | null) | null>(null);
+  const input = useRef(-Infinity); // when the reader last wheeled, touched or pressed a scroll key
+  // a finger or the scrollbar thumb is down: every scroll until release is the reader's. Kept apart because a touch pan
+  // cancels its pointer while the finger is still down.
+  const touching = useRef(false);
+  const dragging = useRef(false);
 
   // the scrollTop following heads for: the bottom, or the stop when that comes first
   const target = useCallback((el: HTMLElement) => {
@@ -102,7 +113,14 @@ export function useFollow(scroller: React.RefObject<HTMLElement | null>, { slack
     // a scroll this hook made reports the position it wrote (browsers round it)
     if (placed.current !== null && Math.abs(el.scrollTop - placed.current) < 2) return;
     placed.current = null;
-    following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= slack;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= slack;
+    if (!touching.current && !dragging.current && performance.now() - input.current > INPUT_MS) {
+      // the browser moved the view: it never stops following, and the bottom it reaches resumes it
+      if (atBottom) following.current = true;
+      if (following.current) settle();
+      return;
+    }
+    following.current = atBottom;
     if (!following.current) stop();
     // at the bottom with the stop reached: from here on the newest content is followed. A short answer that has not
     // reached its stop keeps it, so scrolling up and back down does not lose the place it will stop at.
@@ -110,7 +128,7 @@ export function useFollow(scroller: React.RefObject<HTMLElement | null>, { slack
       const at = stopRef.current();
       if (at == null || at <= el.scrollTop + 1) stopRef.current = null;
     }
-  }, [slack]);
+  }, [slack, settle]);
 
   const heading = useCallback(() => {
     const el = scroller.current;
@@ -130,10 +148,48 @@ export function useFollow(scroller: React.RefObject<HTMLElement | null>, { slack
     observer.current.observe(node);
   }, [settle]);
 
-  useEffect(() => () => {
-    observer.current?.disconnect();
-    stop();
-  }, []);
+  // listened on the window: scroll keys reach the body when the reader clicked into the text, not the scroller
+  useEffect(() => {
+    const inside = (e: Event) => e.target instanceof Node && !!scroller.current?.contains(e.target);
+    const mark = (e: Event) => {
+      if (inside(e)) input.current = performance.now();
+    };
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (SCROLL_KEYS.has(e.key) && !t?.isContentEditable && !t?.closest?.("input, textarea, select")) input.current = performance.now();
+    };
+    // a press on the scroller itself, not its content, is on its scrollbar
+    const drag = (e: Event) => {
+      if (e.target === scroller.current) dragging.current = true;
+    };
+    const drop = () => {
+      if (dragging.current) input.current = performance.now();
+      dragging.current = false;
+    };
+    const touch = (e: Event) => {
+      if (inside(e)) touching.current = true;
+    };
+    const lift = () => {
+      if (touching.current) input.current = performance.now(); // a flick keeps scrolling after the finger lifts
+      touching.current = false;
+    };
+    const on: [string, EventListener][] = [
+      ["wheel", mark],
+      ["keydown", key as EventListener],
+      ["pointerdown", drag],
+      ["pointerup", drop],
+      ["pointercancel", drop],
+      ["touchstart", touch],
+      ["touchend", lift],
+      ["touchcancel", lift],
+    ];
+    for (const [type, fn] of on) window.addEventListener(type, fn, { capture: true, passive: true });
+    return () => {
+      for (const [type, fn] of on) window.removeEventListener(type, fn, { capture: true });
+      observer.current?.disconnect();
+      stop();
+    };
+  }, [scroller]);
 
   return useMemo(() => ({ following, settle, toBottom, stopAt, heading, onScroll, content }), [settle, toBottom, stopAt, heading, onScroll, content]);
 }

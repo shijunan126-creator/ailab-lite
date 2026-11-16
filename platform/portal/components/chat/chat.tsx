@@ -380,7 +380,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         controller = follow(last);
       }
       else if (target && d && !d.turns.some((t) => t.id === target)) await switchRef.current(target, d.branch_revision ?? 0);
-      if (target && !disposed) requestAnimationFrame(() => reveal(target));
+      if (target && !disposed) requestAnimationFrame(() => {
+        stick.current = false; // the found turn is what the reader came for: content settling below must not pull them away
+        reveal(target);
+      });
     });
     return () => {
       disposed = true;
