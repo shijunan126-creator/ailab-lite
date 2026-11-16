@@ -141,7 +141,7 @@ test("decimals fix the digits a number shows, on screen and in the copied Markdo
   await screen.findByText("转化率");
   const text = container.textContent || "";
   assert.ok(text.includes("12.50") && text.includes("+1.3%") && text.includes("0.3") && text.includes("2.0"), text);
-  assert.equal(answerForCopy(block), "- 转化率：12.50 %（+1.3%）\n\n- 留存：40 %（-4.3%）\n\n| 地区 | 占比 |\n| --- | --- |\n| 华东 | 0.3 |\n| 华北 | 2.0 |");
+  assert.equal(answerForCopy(block), "- 转化率：12.50%（+1.3%）\n\n- 留存：40%（-4.3%）\n\n| 地区 | 占比 |\n| --- | --- |\n| 华东 | 0.3 |\n| 华北 | 2.0 |");
 });
 
 const stores = [

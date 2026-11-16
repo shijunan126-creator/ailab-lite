@@ -45,6 +45,9 @@ BASE_PORT = int(os.environ.get("AILAB_E2E_BASE_PORT", "18080"))
 PORTAL_PORT = int(os.environ.get("AILAB_E2E_PORTAL_PORT", "13000"))
 REDIS_URL = os.environ.get("AILAB_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
 LOG_DIR = Path(os.environ.get("AILAB_E2E_LOG_DIR", PLATFORM / "e2e-logs"))
+# The whole stack is on loopback. On macOS httpx picks up the system proxy without its bypass list, so every
+# test request to 127.0.0.1 would go through the proxy and never arrive.
+os.environ["NO_PROXY"] = ",".join(filter(None, [os.environ.get("NO_PROXY"), "127.0.0.1", "localhost"]))
 
 
 def pytest_collection_modifyitems(config, items):

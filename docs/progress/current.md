@@ -4,7 +4,7 @@
 
 ## 进行中
 
-无。
+- `fix/genui-tooltip-hy4`（base `main`，PR #207）：图表读数定位与单位格式、加入 hy4-flash-free。下一步：等 CI 绿后合并；本机栈的 VM 上的 `models.local.toml` 需要和 Mac 上的副本同步后才会出现 hy4。
 
 ## 等用户决定
 

@@ -274,7 +274,7 @@
 - **旧 kustomize 会在 lite overlay 的顶层 `$patch: delete` 上崩溃**。用 `kubectl kustomize` 的内嵌版本渲染，或升级 kustomize；不要改清单迁就旧工具。代码：`platform/deploy/overlays/lite/kustomization.yaml`。
 - **每个服务只挂自己的 `platform-<svc>-identity` 和共享 verifier**。模型 Secret 只给 API/Agent，OpenSandbox key 只给 Broker；不要给被调方分发调用方原始令牌。代码：`platform/deploy/base/apps/services.yaml`。
 - **所有 uvicorn 入口加 `--no-proxy-headers`，应用按 `trusted_proxies` 从右向左验证**。只改登录 handler 不够，Uvicorn 会先解释 XFF 并改写 peer。代码：`platform/deploy/base/apps/services.yaml`、`platform/ailab_platform/config.py::Settings.trusted_proxies`。
-- **内部 httpx 必须 `trust_env=False`**。本机系统代理会截走内部请求，表现为 E2E 的 `httpx.ReadError`。代码：`platform/ailab_platform/clients.py`。
+- **内部 httpx 必须 `trust_env=False`；E2E 进程对回环地址设 `NO_PROXY`**。macOS 上 httpx 读系统代理却不读它的例外列表，本机请求会被代理截走，表现为 `httpx.ReadError` 或 E2E 等不到 healthz。代码：`platform/ailab_platform/clients.py`、`platform/e2e/conftest.py`。
 - **导入 k3s 后按配置 digest 核对镜像，不要只看 tag**。Docker 的 `.Id` 是配置 digest，containerd 的 `ctr images ls` 展示 manifest digest；两者都对上才部署。代码：`deploy.sh::build_images`。
 - **Portal 镜像的 COPY 源路径保持稳定，依赖层放在源码前**。每次变化的版本号路径会丢缓存；只改 Portal 时复用后端和沙箱镜像，只重建 Portal。代码：`platform/deploy/portal.Dockerfile`。
 - **standalone 运行包必须带 `.next/static`**；`public/` 存在时也要一起复制。代码：`platform/deploy/portal.Dockerfile`。

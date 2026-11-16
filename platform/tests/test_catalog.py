@@ -31,6 +31,8 @@ def test_the_shipped_catalog_is_valid_and_keyless() -> None:
     shipped = Path(__file__).resolve().parents[1] / "models.toml"  # the file the repo and the image ship
     cat = load_catalog(shipped)
     assert cat.get("deepseek-v4.1-flash").upstream_model == "deepseek-flash"
+    hy4 = cat.get("hy4-flash-free")  # OpenCode Go routes by session; its thinking has no adjustable strength
+    assert hy4.session_header == "x-opencode-session" and hy4.supports({"tools", "vision"}) and cat.reasoning_for(hy4) is None
     text = shipped.read_text()
     assert "sk-" not in text, "a key must never be written into the catalog"
 

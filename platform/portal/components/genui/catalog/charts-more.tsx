@@ -75,7 +75,7 @@ function ScatterView({ p }: { p: P }) {
           {labelled ? points.map((pt, i) => (pt.name != null ? <text key={`n${i}`} x={X(pt.x) > width - 60 ? X(pt.x) - radius(i) - 4 : X(pt.x) + radius(i) + 4} y={Y(pt.y) + 4} textAnchor={X(pt.x) > width - 60 ? "end" : "start"} className="gu-axis">{fit(text(pt.name), 96)}</text> : null)) : null}
         </svg>
         {focus ? (
-          <Readout x={X(focus.x)} y={Y(focus.y)} flip={X(focus.x) > width * 0.6} title={text(focus.name) || text(focus.group)}
+          <Readout x={X(focus.x)} y={Y(focus.y)} title={text(focus.name) || text(focus.group)}
             rows={[
               { name: text(opt.xLabel) || "x", value: value(focus.x, opt.xUnit, opt.decimals) },
               { name: text(opt.yLabel) || "y", value: value(focus.y, opt.yUnit, opt.decimals) },
@@ -129,7 +129,7 @@ function RadarView({ p, sid }: { p: P; sid?: string }) {
               stroke={color(s.i)} strokeWidth={2} strokeLinejoin="round" className={at != null && at !== s.i ? "gu-dim" : undefined} onPointerEnter={() => setAt(s.i)} />
           ))}
         </svg>
-        {at != null && series[at] ? <Readout x={8} y={8} flip={false} title={series[at].name} rows={axes.map((a, k) => ({ name: a, value: formatNumber(series[at].values[k], opt.decimals) }))} /> : null}
+        {at != null && series[at] ? <Readout x={8} y={8} title={series[at].name} rows={axes.map((a, k) => ({ name: a, value: formatNumber(series[at].values[k], opt.decimals) }))} /> : null}
       </div>
       <Legend items={series.map((s, i) => ({ name: s.name, color: color(i) }))} hidden={hidden} onToggle={toggle} />
       <SrTable title={text(p.title)} head={["", ...series.map((s) => s.name)]} rows={axes.map((a, k) => [a, ...series.map((s) => formatNumber(s.values[k], opt.decimals))])} />
@@ -172,7 +172,7 @@ function HistogramView({ p }: { p: P }) {
           {edges.map((edge, k) => (k % gap === 0 || (k === bins.length && (k % gap) * bw >= textWidth(tick(edge)) + 10))
             ? <text key={`e${k}`} x={pad.left + k * bw} y={H - 8} textAnchor={k === 0 ? "start" : k === bins.length ? "end" : "middle"} className="gu-axis">{tick(edge)}</text> : null)}
         </svg>
-        {at != null ? <Readout x={pad.left + (at + 0.5) * bw} y={pad.top} flip={(at + 0.5) * bw > iw * 0.6} title={`${formatNumber(bins[at].from)} – ${formatNumber(bins[at].to)}${opt.unit ? ` ${text(opt.unit)}` : ""}`} rows={[{ name: "个数", value: formatNumber(bins[at].n) }, { name: "占比", value: formatShare(bins[at].n, values.length) }]} /> : null}
+        {at != null ? <Readout x={pad.left + (at + 0.5) * bw} y={pad.top} title={`${formatNumber(bins[at].from)} – ${formatNumber(bins[at].to)}${opt.unit ? ` ${text(opt.unit)}` : ""}`} rows={[{ name: "个数", value: formatNumber(bins[at].n) }, { name: "占比", value: formatShare(bins[at].n, values.length) }]} /> : null}
       </div>
       <div className="gu-caption">共 {formatNumber(values.length)} 个值</div>
       <SrTable title={text(p.title)} head={["区间", "个数"]} rows={bins.map((b) => [`${formatNumber(b.from)}–${formatNumber(b.to)}`, b.n])} />
@@ -220,7 +220,7 @@ function BoxPlotView({ p }: { p: P }) {
           })}
         </svg>
         {at != null ? (
-          <Readout x={X(stats[at].b!.median)} y={pad.top + rowH * at} flip={X(stats[at].b!.median) > width * 0.6} title={stats[at].name}
+          <Readout x={X(stats[at].b!.median)} y={pad.top + rowH * at} title={stats[at].name}
             rows={[["中位数", stats[at].b!.median], ["四分位", null], ["最小", stats[at].b!.min], ["最大", stats[at].b!.max]].map(([name, v]) => ({
               name: String(name),
               value: v === null ? `${formatNumber(stats[at].b!.q1, opt.decimals)} – ${formatNumber(stats[at].b!.q3, opt.decimals)}` : value(v as number, opt.unit, opt.decimals),
@@ -279,7 +279,7 @@ function HeatmapView({ p }: { p: P }) {
             </g>
           ))}
         </svg>
-        {at ? <Readout x={labelRoom + cell * (at[1] + 0.5)} y={head + ch * at[0]} flip={labelRoom + cell * (at[1] + 0.5) > width * 0.6} title={`${rows[at[0]]} · ${cols[at[1]]}`} rows={[{ name: "数值", value: value(values[at[0]][at[1]], opt.unit, opt.decimals) }]} /> : null}
+        {at ? <Readout x={labelRoom + cell * (at[1] + 0.5)} y={head + ch * at[0]} title={`${rows[at[0]]} · ${cols[at[1]]}`} rows={[{ name: "数值", value: value(values[at[0]][at[1]], opt.unit, opt.decimals) }]} /> : null}
       </div>
       <div className="gu-heat-scale" aria-hidden="true"><span>{formatNumber(lo, opt.decimals)}</span><i style={{ background: `linear-gradient(to right, ${shade(opt.better === "low" ? hi : lo)}, ${shade(opt.better === "low" ? lo : hi)})` }} /><span>{formatNumber(hi, opt.decimals)}</span></div>
       <SrTable title={text(p.title)} head={["", ...cols]} rows={rows.map((r, i) => [r, ...cols.map((_, j) => formatNumber(values[i]?.[j], opt.decimals))])} />
@@ -330,7 +330,7 @@ function WaterfallView({ p }: { p: P }) {
             );
           })}
         </svg>
-        {at != null && steps[at] ? <Readout x={pad.left + bw * (at + 0.5)} y={pad.top} flip={bw * (at + 0.5) > iw * 0.6} title={steps[at].label}
+        {at != null && steps[at] ? <Readout x={pad.left + bw * (at + 0.5)} y={pad.top} title={steps[at].label}
           rows={steps[at].kind === "start" || steps[at].kind === "end" ? [{ name: "数值", value: value(steps[at].to, opt.unit, opt.decimals) }] : [{ name: "变化", value: `${formatSigned(steps[at].to - steps[at].from, opt.decimals)}${opt.unit ? ` ${text(opt.unit)}` : ""}` }, { name: "累计", value: value(steps[at].to, opt.unit, opt.decimals) }]} /> : null}
       </div>
       <SrTable title={text(p.title)} head={["", "变化", "累计"]} rows={steps.map((s) => [s.label, s.kind === "start" || s.kind === "end" ? "" : formatSigned(s.to - s.from, opt.decimals), formatNumber(s.to, opt.decimals)])} />
@@ -434,7 +434,7 @@ function TreemapView({ p }: { p: P }) {
             );
           })}
         </svg>
-        {at != null && list[at] ? <Readout x={rects[at].x + rects[at].w / 2} y={rects[at].y + 8} flip={rects[at].x + rects[at].w / 2 > width * 0.6} title={text(list[at].name)} rows={[{ name: "数值", value: value(list[at].value, opt.unit, opt.decimals) }, { name: "占比", value: formatShare(list[at].value, total) }]} /> : null}
+        {at != null && list[at] ? <Readout x={rects[at].x + rects[at].w / 2} y={rects[at].y + 8} title={text(list[at].name)} rows={[{ name: "数值", value: value(list[at].value, opt.unit, opt.decimals) }, { name: "占比", value: formatShare(list[at].value, total) }]} /> : null}
       </div>
       {groups.length > 1 ? <Legend items={groups.map((g, i) => ({ name: g || "其它", color: color(i) }))} /> : null}
       <SrTable title={text(p.title)} head={["", "数值", "占比"]} rows={list.map((it) => [text(it.name), formatNumber(it.value, opt.decimals), formatShare(it.value, total)])} />
@@ -516,7 +516,7 @@ function SankeyView({ p }: { p: P }) {
             );
           })}
         </svg>
-        {at != null ? <Readout x={width / 2} y={8} flip={false} title={`${ls[at].from} → ${ls[at].to}`} rows={[{ name: "数量", value: value(ls[at].value, opt.unit, opt.decimals) }, { name: "占来源", value: formatShare(ls[at].value, size.get(ls[at].from)!) }]} /> : null}
+        {at != null ? <Readout x={width / 2} y={8} title={`${ls[at].from} → ${ls[at].to}`} rows={[{ name: "数量", value: value(ls[at].value, opt.unit, opt.decimals) }, { name: "占来源", value: formatShare(ls[at].value, size.get(ls[at].from)!) }]} /> : null}
       </div>
       <SrTable title={text(p.title)} head={["来源", "去向", "数量"]} rows={ls.map((l) => [l.from, l.to, formatNumber(l.value, opt.decimals)])} />
     </Frame>
@@ -568,7 +568,7 @@ function CandlestickView({ p }: { p: P }) {
         {at != null ? (() => {
           const [op, hi, lo, cl] = prices[at];
           const prev = at ? prices[at - 1][3] : null;
-          return <Readout x={pad.left + bw * (at + 0.5)} y={pad.top} flip={bw * (at + 0.5) > iw * 0.6} title={dates[at]}
+          return <Readout x={pad.left + bw * (at + 0.5)} y={pad.top} title={dates[at]}
             rows={[["开", op], ["高", hi], ["低", lo], ["收", cl]].map(([name, v]) => ({ name: String(name), value: formatNumber(v, opt.decimals) })).concat(prev ? [{ name: "涨跌", value: `${formatSigned(Math.round(((cl - prev) / prev) * 1000) / 10)}%` }] : [])} />;
         })() : null}
       </div>
@@ -621,7 +621,7 @@ function DumbbellView({ p }: { p: P }) {
             );
           })}
         </svg>
-        {at != null ? <Readout x={X(Math.max(from.values[at] || 0, to.values[at] || 0))} y={pad.top + rowH * at} flip={X(Math.max(from.values[at] || 0, to.values[at] || 0)) > width * 0.6} title={cats[at]}
+        {at != null ? <Readout x={X(Math.max(from.values[at] || 0, to.values[at] || 0))} y={pad.top + rowH * at} title={cats[at]}
           rows={[{ name: from.name, value: value(from.values[at], opt.unit, opt.decimals), color: color(0) }, { name: to.name, value: value(to.values[at], opt.unit, opt.decimals), color: color(1) }]} /> : null}
       </div>
       <Legend items={[{ name: from.name, color: color(0) }, { name: to.name, color: color(1) }]} />

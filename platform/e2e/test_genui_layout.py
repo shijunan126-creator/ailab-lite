@@ -88,6 +88,13 @@ def test_genui_controls_recompute_in_place_and_send_their_values(logged_in):
     page.mouse.move(box["x"] + box["width"] - 14, box["y"] + box["height"] / 2)
     expect(block.locator(".gu-tip")).to_contain_text("10月")
     expect(block.locator(".gu-tip")).to_contain_text("26")
+    # at the right edge it moves left of the point instead of squeezing: inside the plot, every value on one line
+    assert block.locator(".gu-tip").evaluate("""tip => {
+        const t = tip.getBoundingClientRect(), p = tip.offsetParent.getBoundingClientRect();
+        const lines = [...tip.querySelectorAll('b, .gu-tip-name')].map(el => el.getClientRects().length);
+        return t.left >= p.left && t.right <= p.right && lines.every(n => n === 1);
+    }""")
+    block.locator(".gu-plot").screenshot(path=str(OUT / "chart-tip-edge.png"), animations="disabled")
     block.get_by_role("button", name="新增").click()  # legend hides a series
     expect(block.get_by_role("button", name="新增")).to_have_attribute("aria-pressed", "false")
     block.get_by_role("button", name="按这个方案出报价单").click()
