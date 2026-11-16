@@ -14,7 +14,7 @@
 | Portal 镜像 | `platform/deploy/portal.Dockerfile` |
 | 沙箱镜像 | `images/sbx-office/Dockerfile` |
 | 配置模型与安全门禁 | `platform/ailab_platform/config.py::Settings`、`::validate_secrets` |
-| 模型目录与思考档位 | `platform/ailab_platform/catalog.py::load_catalog`、`::parse_reasoning`、`::reasoning_path`、`platform/models.toml`、`platform/reasoning.toml` |
+| 模型目录与思考档位 | `platform/ailab_platform/catalog.py::load_catalog`、`::parse_reasoning`、`::reasoning_path`、`platform/ailab_platform/model_providers.py::PROVIDERS`、`platform/models.toml`、`platform/reasoning.toml` |
 | 目录校验与发布 | `platform/scripts/make_catalog.py`、`platform/scripts/k8s_models.sh`、`platform/scripts/k8s_secrets.sh` |
 | 请求 ID、日志、指标 | `platform/ailab_platform/obs.py::RequestContextMiddleware`、`platform/ailab_platform/metrics.py::metrics_response`、`platform/deploy/observability/` |
 | 备份与恢复 | `platform/ailab_platform/ops/backup.py::create`、`::verify`、`::restore` |
@@ -114,9 +114,9 @@ lite 的应用与基础设施 request 合计约 0.56 CPU / 2.2 GiB（不含仅 d
 5. 加测试：配置校验用 `platform/tests/test_service_identity.py` 或对应模块测试；改变部署行为时加 `platform/tests/test_deploy_review.py` 的脚本级断言。
 
 ### 加或换一个模型
-1. 在 `platform/models.toml`（或本机的 `models.local.toml`）加一个 `[[models]]`，填 `id`、`name`、`provider`、`base_url`；OpenAI 兼容接口用 `provider = "openai"`，`upstream_model` 不填时发送 `id`。
+1. 在 `platform/models.toml`（或本机的 `models.local.toml`）加一个 `[[models]]`，填 `id`、`name`、`provider`、`base_url`；`provider` 选 `opencode-go`（会话头、回传思考）、`deepseek`（官方 API、回传思考）或 `openai`（通用兼容接口），`upstream_model` 不填时发送 `id`。provider 提供请求形状默认值，逐模型字段可覆盖。
 2. 需要 Key 时填 `api_key_env = "AILAB_KEY_..."`，把值放进 `platform/.env` 或 k8s Secret，绝不写进目录。`secure` 下公开模型主机还要 `AILAB_ALLOW_EXTERNAL_MODELS=true`，否则启动门禁拒绝。
-3. 思考模型按上游字段配置：要求回传 `reasoning_content` 的设 `echo_reasoning = true`；上游把思考混在正文时设 `think_tag`，模板预先打开思考块时再加 `think_prefilled = true`；需要关闭思考的 quiet 调用才设 `disable_reasoning_for_quiet`。
+3. 思考模型按上游字段配置：provider 已设好 `echo_reasoning` 与 quiet 关思考默认值，特殊网关才逐个覆盖；上游把思考混在正文时设 `think_tag`，模板预先打开思考块时再加 `think_prefilled = true`。关思考档位与 quiet 调用都用 `thinking.type=disabled`。
 4. 提供可选思考档位时，在 `platform/reasoning.toml` 定义 profile，并在模型上写 `reasoning = "<profile>"`；每个 level 的 `body` 只能追加请求字段，不能覆盖 `model`、`messages`、`tools` 等请求骨架。
 5. 本机重启 API/Agent；k3s 执行 `bash platform/scripts/k8s_models.sh`。用 `python platform/scripts/make_catalog.py check <目录>`、`GET /v1/models` 和一次真实 Run 验证；`default = true` 最多一个，没有则使用第一个可用模型。
 
@@ -165,7 +165,7 @@ lite 的应用与基础设施 request 合计约 0.56 CPU / 2.2 GiB（不含仅 d
 | `AILAB_ALLOW_EXTERNAL_MODELS` | secure 下允许公网模型主机 | `false` |
 
 ### `models.toml` 与 `reasoning.toml`
-目录字段分四组：展示与计量（`id`、`name`、`description`、`weight`、`default`、`enabled`）；路由（`provider`、`base_url`、`upstream_model`、`api_key_env`、`fallback`、`session_header`）；容量（`context_tokens`、`max_output_tokens`、`capabilities` 或 `tools`）；思考（`echo_reasoning`、`disable_reasoning_for_quiet`、`reasoning`、`think_tag`、`think_prefilled`）。
+目录字段分四组：展示与计量（`id`、`name`、`description`、`weight`、`default`、`enabled`）；路由（`provider`、`base_url`、`upstream_model`、`api_key_env`、`fallback`、`session_header`）；容量（`context_tokens`、`max_output_tokens`、`capabilities` 或 `tools`）；思考（`echo_reasoning`、`disable_reasoning_for_quiet`、`reasoning`、`think_tag`、`think_prefilled`）。`echo_reasoning`、`disable_reasoning_for_quiet`、`session_header` 的默认值由 `platform/ailab_platform/model_providers.py` 的 provider 提供，目录里只在需要覆盖时写出。`AILAB_LLM_ECHO_REASONING=true` 是全局下发的回传开关，与模型值按或运算生效；开启后逐模型写 `echo_reasoning = false` 无法关闭，需要同时关掉全局开关。
 
 `reasoning.toml` 的每个 profile 有 `default` 和按弱到强排列的 `levels`；每个 level 的 `body` 会合并进该次请求。请求骨架字段不能由 profile 覆盖。目录只在模型声明了 `reasoning` 时加载旁边的 `reasoning.toml`，找不到时回退到 `platform/reasoning.toml`。
 
