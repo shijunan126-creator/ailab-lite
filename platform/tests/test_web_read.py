@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import weakref
 
 import pytest
 
@@ -235,3 +236,56 @@ def test_page_title_comes_from_one_parse_without_metadata_date_search(monkeypatc
     assert "Paragraph text" in page["text"]
     plain = web._extract_document(f"<html><head><title>Only tab title</title></head><body>{body}</body></html>", "https://example.com/b")
     assert plain["title"] == "Headline"
+
+
+def test_reads_holding_page_bodies_are_capped_across_runs(monkeypatch):
+    """Every read holds up to web_max_bytes; three runs fanning out reads must not stack bodies past the agent's limit."""
+    monkeypatch.setattr(web, "READS_IN_FLIGHT", 2)
+    monkeypatch.setattr(web, "_read_slots", weakref.WeakKeyDictionary())
+    gate = asyncio.Event()
+    running = {"now": 0, "peak": 0}
+
+    async def fetch(url, headers, deadline):
+        running["now"] += 1
+        running["peak"] = max(running["peak"], running["now"])
+        await gate.wait()
+        running["now"] -= 1
+        return html_page(f"<article><p>{ARTICLE}</p></article>")
+
+    monkeypatch.setattr(web, "_fetch_page", fetch)
+
+    async def scenario():
+        reads = [asyncio.create_task(web.read_url(f"https://example.com/{i}")) for i in range(5)]
+        await asyncio.sleep(0.05)
+        peak = running["peak"]
+        gate.set()
+        pages = await asyncio.gather(*reads)
+        return peak, pages
+
+    peak, pages = asyncio.run(scenario())
+    assert peak == 2
+    assert all(ARTICLE[:20] in page["text"] for page in pages)
+
+
+def test_waiting_for_a_read_slot_spends_the_read_deadline(monkeypatch):
+    monkeypatch.setattr(web, "READS_IN_FLIGHT", 1)
+    monkeypatch.setattr(web, "_read_slots", weakref.WeakKeyDictionary())
+    monkeypatch.setattr(web.settings, "web_read_deadline_seconds", 0.2)
+    release = asyncio.Event()
+
+    async def fetch(url, headers, deadline):
+        if url.endswith("/slow"):
+            await release.wait()
+        return html_page(f"<article><p>{ARTICLE}</p></article>")
+
+    monkeypatch.setattr(web, "_fetch_page", fetch)
+
+    async def scenario():
+        slow = asyncio.create_task(web.read_url("https://example.com/slow"))
+        await asyncio.sleep(0.01)
+        with pytest.raises(web.WebError, match="超时"):
+            await web.read_url("https://example.com/queued")
+        release.set()
+        return await slow
+
+    assert ARTICLE[:20] in asyncio.run(scenario())["text"]

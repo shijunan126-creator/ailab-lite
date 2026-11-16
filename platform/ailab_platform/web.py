@@ -34,6 +34,7 @@ import socket
 import ssl
 import tempfile
 import time
+import weakref
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -687,6 +688,28 @@ _EXTRACT_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="web-extrac
 _MALLOC_TRIM = getattr(ctypes.CDLL(None), "malloc_trim", None)
 
 
+# Reads that hold a page body (fetching it, or waiting for the extraction thread), across every run in the process: each
+# holds up to web_max_bytes plus libcurl's buffers. Three concurrent runs can each fan out several reads per step and
+# search excerpts read pages too, so without a cap the bodies alone can push the agent past its 256 MiB limit. A cancelled
+# read frees its body with its coroutine, so releasing the slot on cancellation keeps the bound honest. Waiting spends
+# the read's own deadline: under overload a read times out and the model switches sources instead of the agent dying.
+READS_IN_FLIGHT = 12
+_read_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
+
+
+async def _take_read_slot(deadline: float) -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    slots = _read_slots.get(loop)
+    if slots is None:
+        slots = _read_slots[loop] = asyncio.Semaphore(READS_IN_FLIGHT)
+    try:
+        async with asyncio.timeout(_remaining(deadline)):
+            await slots.acquire()
+    except TimeoutError as exc:
+        raise WebError(TIMEOUT_MESSAGE) from exc
+    return slots
+
+
 def _extract_and_release(body: bytes, encoding: str, base: str) -> dict:
     try:
         return _extract_document(body.decode(encoding, "replace"), base, recover=True)
@@ -932,8 +955,9 @@ async def read_url(url: str, max_chars: int | None = None, start: int = 0) -> di
     if issue:
         return _window(await read_github_issue(*issue.groups(), start + limit), start, limit)
     deadline = time.monotonic() + settings.web_read_deadline_seconds
-    started, path, outcome = time.monotonic(), "static", "error"
+    started, path, outcome, slots = time.monotonic(), "static", "error", None
     try:
+        slots = await _take_read_slot(deadline)
         fetched = await _fetch_follow(current, {"Accept": BROWSER_ACCEPT, **BROWSER_HEADERS}, deadline)
         if fetched["status"] == 403:  # some sites (openai.com) reject Markdown negotiation but serve HTML
             fetched = await _fetch_follow(current, {"Accept": HTML_ACCEPT, **BROWSER_HEADERS}, deadline)
@@ -978,4 +1002,6 @@ async def read_url(url: str, max_chars: int | None = None, start: int = 0) -> di
     except WebFetchError as exc:
         raise WebError(f"{exc}；请换其他来源") from exc
     finally:
+        if slots is not None:
+            slots.release()
         metrics.observe_web_read(path, outcome, time.monotonic() - started)
