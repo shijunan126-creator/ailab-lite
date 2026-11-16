@@ -128,6 +128,7 @@
 
 /* charts */
 .gu-chart { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 0; }
+.gu-chart-body { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .gu-chart figcaption { font-size: var(--text-ui); font-weight: 600; overflow-wrap: anywhere; }
 .gu-plot { position: relative; min-width: 0; }
 .gu-plot svg { display: block; max-width: 100%; height: auto; border-radius: var(--radius-xs); }

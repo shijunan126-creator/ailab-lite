@@ -268,6 +268,7 @@
 - **`white-space: pre-wrap` 的 contenteditable 末尾 `\n` 是占位符**。Shift+Enter 插入的是文本不是 `<br>`；删到只剩末尾 `\n` 时要像末尾 `<br>` 一样丢掉，否则空消息会多一行。代码：`platform/portal/components/chat/rich-input.tsx`。
 - **聊天首包不要从 `catalog/schema.ts` 取常量**。取一个数字会把 zod 和 lang-core 拉进对话页首包；聊天侧只从 `catalog/limits.ts` 取常量。代码：`platform/portal/components/genui/catalog/limits.ts`。
 - **滚动跟随统一用 `lib/use-follow.ts`**。`stopAt` 只允许向下跟随，停点在视图上方视为已过；“回到底部”按钮在内容变化时按 `heading()` 重算，按当前 `scrollTop` 算会在滑行中闪现。代码：`platform/portal/lib/use-follow.ts`。
+- **GenUI 图表的 `sr-only` 数据表必须有图表内的定位包含块**。Tailwind 的 `sr-only` 是 `absolute`，长表若以 `.genui-block` 为包含块会撑大 `.messages` 的滚动高度，让最后一条消息不能贴底；把表格放进 `position: relative` 的图表内层。代码：`platform/portal/components/genui/catalog/kit.tsx::Frame`、`platform/portal/styles/genui.css`。
 - **同源代理要透传 API 的缓存头**。`cache-control`、`etag`、`if-none-match` 必须转发，否则 API 的 immutable 缩略图在 Portal 侧全被 `no-store`；API 未声明时仍保持 `no-store`。代码：`platform/portal/app/api/v1/[...path]/route.ts`。
 
 ## 部署
