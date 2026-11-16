@@ -9,7 +9,6 @@
 ## 等用户决定
 
 - Compare/Highlights 工具是否改成按需加载：要先拿真实模型做对比。
-- 部署 PR #209 的模型 provider 拆分与思考档位：需要更新镜像（含 `model_providers.py` 与两个 toml）并用 `k8s_models.sh` 发布 ConfigMap；本机私有 `models.local.toml` 已同步，等用户确认部署窗口。
 
 ## 已知未覆盖
 
