@@ -42,6 +42,7 @@
 - **CPU 重活放进有固定线程数的专用池（`run_in_executor`），不要用“信号量 + `asyncio.to_thread`”限并发**。取消 await 停不了已在跑的线程，信号量却随取消释放，被摘录/运行截止放弃的抽取会越堆越多，挤满 Agent 的 0.3 CPU，连模型 TLS 握手都会超时。代码：`platform/ailab_platform/web.py::_extract_bounded`。
 - **网页抽取只解析一次、只取要用的元数据，线程数不超过 CPU 配额，抽完 `malloc_trim`**。`trafilatura.extract_metadata` 的日期搜索在 2 MiB 页面上要约 1.9 CPU 秒和 90 MiB；0.3 CPU 下多一个抽取线程只多一棵树不多吞吐；glibc 不归还释放的小块，常驻内存会一路涨到 256 MiB 被 OOM。代码：`platform/ailab_platform/web.py::_page_title`、`::_extract_and_release`。
 - **链接同时保留正文链接和整页 `<a>` 兜底**。Trafilatura 的 `include_links` 会丢掉只有一行的链接段；只取正文链接会让后续 `read_url`/`download_url` 的来源白名单漏掉真正的引用。代码：`platform/ailab_platform/web.py::_extract_document`、`platform/ailab_platform/agent/net_tools.py::sources_from`。
+- **来源白名单按百分号编码后的形式比较 URL，并同时识别含中文路径的 URL**。只认 ASCII 时，用户贴的 `zh.wikipedia.org/wiki/日本` 只记下 `/wiki/` 前缀，模型无论读原文还是编码形式都被拒，整个 Run 失败。代码：`platform/ailab_platform/agent/net_tools.py::sources_from`、`::_normal`。
 - **Wayback 只用 14 位时间戳拼 `/{stamp}id_/{url}`，剩余不足 3 秒就放弃**。直接信 API 返回的 `url` 会带工具栏和重写；兜底不能吃掉整个读页预算。代码：`platform/ailab_platform/web.py::_wayback`。
 
 ### 消息、图像与上下文

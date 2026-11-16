@@ -43,6 +43,10 @@ OPEN_HOSTS = {
     "files.pythonhosted.org",
 }
 URL_RE = re.compile(r"https?://[A-Za-z0-9\-._~:/?#@!$&*+,;=%]+")  # ASCII only: CJK punctuation ends a URL
+# People paste the readable form of non-ASCII paths (zh.wikipedia.org/wiki/日本). Whitespace and CJK or full-width
+# punctuation still end the URL; URL_RE's ASCII-only match is kept beside it for text glued straight after a URL.
+UNICODE_URL_RE = re.compile(r"https?://(?:[A-Za-z0-9\-._~:/?#@!$&*+,;=%]|[^\x00-\x7f\s\u2018-\u201f\u2026\u3000-\u303f\uff00-\uffef])+")
+_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
 _ATTACHMENT_BLOCK = re.compile(r"<!-- AILAB_ATTACHMENT_START -->.*?<!-- AILAB_ATTACHMENT_END -->", re.S)
 WEB_RESULT_TOOLS = {"web_search", "read_url"}
 DOWNLOADS = f"{WORKSPACE}/downloads"
@@ -58,7 +62,10 @@ class NetToolError(RuntimeError):
 
 
 def _normal(url: str) -> str:
-    return url.rstrip(".,;:!?").split("#")[0]
+    """One spelling per URL: the readable and the percent-encoded form of a non-ASCII path compare equal."""
+    url = url.rstrip(".,;:!?").split("#")[0]
+    url = _ESCAPE.sub(lambda m: m[0].upper(), url)
+    return quote(url, safe="".join(map(chr, range(0x21, 0x7F))))
 
 
 def sources_from(messages: list[dict]) -> set[str]:
@@ -75,7 +82,8 @@ def sources_from(messages: list[dict]) -> set[str]:
             # Attachment text is untrusted content, not a user-authored URL list.
             clean_text = _ATTACHMENT_BLOCK.sub("", str(text))
             # tool results are JSON, where "/" may be escaped
-            found.update(_normal(m) for m in URL_RE.findall(clean_text.replace("\\/", "/")))
+            clean_text = clean_text.replace("\\/", "/")
+            found.update(_normal(m) for pattern in (URL_RE, UNICODE_URL_RE) for m in pattern.findall(clean_text))
     return found
 
 
