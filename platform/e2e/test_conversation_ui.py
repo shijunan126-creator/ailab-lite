@@ -9,7 +9,7 @@ import sys
 import httpx
 import pytest
 
-from .conftest import PASSWORD, PLATFORM, SERVICE_TOKENS, USERNAME, confirm_action, login
+from .conftest import PASSWORD, PLATFORM, SERVICE_TOKENS, USERNAME, confirm_action, login, reader_scroll
 
 pytestmark = pytest.mark.e2e
 _seeded = []
@@ -147,7 +147,7 @@ def test_older_page_keeps_the_visible_turn_and_refresh_keeps_history(page, stack
     login(page, stack, path="/c/" + conv["id"])
     page.wait_for_function("() => document.querySelectorAll('.turn').length===20")
     # Keep the first visible turn as an anchor while new content is prepended.
-    page.locator(".messages").evaluate("(el)=>el.scrollTop=100")
+    reader_scroll(page.locator(".messages"), "100")
     anchor = page.locator(".turn").first
     before = anchor.bounding_box()["y"]
     page.get_by_role("button", name="更早的消息").evaluate("(el)=>el.click()")
@@ -155,7 +155,7 @@ def test_older_page_keeps_the_visible_turn_and_refresh_keeps_history(page, stack
     # The formerly first turn is now the 21st; its screen coordinate must be stable.
     after = page.locator(".turn").nth(20).bounding_box()["y"]
     assert abs(after - before) < 3, (before, after)
-    page.locator(".messages").evaluate("(el)=>el.scrollTop=0")
+    reader_scroll(page.locator(".messages"), "0")
     page.wait_for_function("() => document.querySelectorAll('.turn').length===45")
     assert page.get_by_role("button", name="更早的消息").count() == 0
     page.screenshot(path=str(stack.log_dir / "history-desktop.png"))

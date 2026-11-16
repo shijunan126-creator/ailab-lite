@@ -365,6 +365,11 @@ def page(context):
     return context.new_page()
 
 
+def reader_scroll(locator, top: str) -> None:
+    """Scroll as the reader would: chat following stops only after reader input, so a bare scrollTop write is the page's own move."""
+    locator.evaluate(f"el => {{ el.dispatchEvent(new WheelEvent('wheel', {{ bubbles: true }})); el.scrollTop = {top}; }}")
+
+
 def login(page, stack: Stack, username: str = USERNAME, password: str = PASSWORD, path: str = "/") -> None:
     page.goto(stack.portal + path)
     page.fill("input[name=username]", username)
