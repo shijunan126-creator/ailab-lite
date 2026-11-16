@@ -102,14 +102,16 @@
 | 设计决策与取舍 | `docs/architecture/adr/NNNN-*.md` + [ADR 索引](docs/architecture/adr/README.md) | 做出或推翻决策时；被取代的旧 ADR 只改状态行 |
 | 能力状态 | `docs/architecture/status-matrix.md` | 能力状态变化时，改对应那一行 |
 | 未完成的目标与验收标准 | `docs/progress/roadmap.md` | 目标增加、完成或调整时 |
-| 进行中的工作与下一步 | `docs/progress/current.md` | 每次停下或交接前覆盖写 |
+| 跨会话的未完成工作与下一步 | `docs/progress/current.md` | 有需要恢复的工作、阻塞或待决定事项变化时更新 |
 | 一次改动的验证细节 | PR 描述 | 不另写会话记录 |
 
 写法：
 - 写现在的样子，不写历史和过程。不写“本轮/之前/已修复/改为”，不写日期标题，不贴测试计数、日志、原始 JSON。历史在 git 里。
 - 代码引用写 `路径::符号`，不写行号；写之前用 rg 确认它存在。
 - 一句话能说清就不写一段。删掉不影响读者行动的句子。
-- `current.md` 不超过 40 行，只写进行中、暂停、阻塞和下一步具体动作（含分支和 base）；做完的事从里面删掉，结论落到上表其他位置。
+- `current.md` 不超过 40 行，只写跨会话需要恢复的未完成工作、暂停、阻塞、待用户决定事项和下一步具体动作（含分支和 base）；长期结论落到上表其他位置。
+- PR 开放状态、CI 结果和合并状态以 GitHub 为准，不在仓库重复记录“等待 CI／等待合并／已合并”。实现交给 PR、后续只剩 CI 和合并时，在原 PR 内移除对应进行中条目；仍需继续的实际工作保留。
+- 不得仅为同步合并状态、CI 结果或清空进行中事项另建 PR 或提交。发现旧条目时核实 GitHub，随下一次相关改动清理；本机部署结果只在对话中汇报，有明确后续任务才保留交接记录。
 - HANDOFF 每条不超过 4 行：先写规则（祈使句），再写原因，附代码位置。
 - 不在仓库保存运行输出（日志、trace、采样、生成文件、重复截图）。最小回归 fixture、独有复现脚本和能证明 UI 问题的代表截图可以保留，但要有文档引用它。
 - 永远不写 token、cookie、签名 URL、个人路径或个人数据。
@@ -124,7 +126,7 @@
   - 删除 `build/`、`.next/`、`__pycache__/`、`*.egg-info/`、`.pytest_cache/`、临时 venv、解压的上游副本和 `.local/` 草稿目录。
   - 存过凭据（token 文件、`.env`、kubeconfig）的临时目录，调查结束就删。
   - Docker 空间紧张时按时间或镜像回收，不要 prune 测试环境数据库或工作区所在的 volume。
-- 交接时 `git status`、`git branch -vv`、`git worktree list` 只显示进行中的工作，`current.md` 写清下一步。
+- 交接时 `git status`、`git branch -vv`、`git worktree list` 只显示进行中的工作；需要跨会话恢复的实际工作在 `current.md` 写清下一步，仅等待 CI 或合并的事项留在 PR 中。
 
 ## 10. Pull Request
 

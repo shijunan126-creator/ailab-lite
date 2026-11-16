@@ -19,6 +19,7 @@
 - **Agent、Broker、Worker 的鉴权依赖只从 `service_auth` 取，不要从 `deps`/`security` 导入**。这两个模块会拉进 `models`、SQLAlchemy 和 Alembic，256 MiB 的 Pod 平白多出约 30 MiB 常驻。代码：`platform/ailab_platform/service_auth.py::metrics_auth`；测试：`platform/tests/test_service_imports.py`。
 
 ### 协作与本机环境
+- **PR 与 CI 状态以 GitHub 为准，不为清空进行中事项另提 PR 或提交**。把“等待合并”写进仓库会在合并后立即过期，形成重复收尾；交接规则见 [AGENTS.md §8](AGENTS.md#8-文档怎么维护)。
 - **`gh pr merge --auto` 不是等待器**。仓库没有 required checks 时它会立即合并，即使检查还在跑；要“绿了再合”，先自己确认最终 head 的检查全部通过。
 - **同一分支不能由两个 worktree 并发提交**。另一处推进 HEAD 后，本地旧 index 看起来像反向暂存；发现时立即隔离到新分支，不要提交那些反向差异。
 - **用 `git hash-object -w` + `update-index --cacheinfo` 部分暂存时，路径相对仓库根**。在子目录执行会在根目录生成错误的索引项。
