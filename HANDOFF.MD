@@ -301,6 +301,7 @@
 ## 测试
 
 ### 隔离与并发
+- **按图表实际语义断言读屏表数量**。压力样本只有柱状图使用隐藏表，饼图通过可见图例呈现数据；等待当前面板的隐藏表，不用固定延时或假定每张图都有一张表。测试：`platform/e2e/test_genui_layout.py::test_genui_hidden_tables_do_not_add_scroll_height`。
 - **autouse 清理 fixture 只比较少量活行**。每个测试都 `select` 全部 Run id 再 `NOT IN` 会随全套增长，最终撞上 PostgreSQL 的 CI 时限；只查运行中 Run、有租约或 pending 的整理任务。代码：`platform/tests/conftest.py::release_test_memory_jobs`。
 - **不带 `with` 的 `TestClient(app)` 不跑启动钩子**。存储目录不会 `ensure_dirs()`，第一个 `/readyz` 用例会因 `storage: False` 得到 503；要么用上下文管理器，要么显式建目录。代码：`platform/tests/test_review_regressions.py::test_api_stays_ready_but_degraded_without_redis`。
 - **查询次数测试只监听被测 session 的连接**。在 `Engine` 上挂监听会把 API 后台 outbox 和 reaper 的查询算进来；用 `db.connection()`，并只计调用线程。代码：`platform/tests/test_conversation_paging.py::test_detail_batches_related_rows_instead_of_querying_each_turn`。

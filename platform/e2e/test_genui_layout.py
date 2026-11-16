@@ -74,8 +74,8 @@ def test_genui_hidden_tables_do_not_add_scroll_height(logged_in):
     page.keyboard.press("Enter")
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
     page.locator(".genui-block[data-state='ok']").wait_for(timeout=60000)
-    page.wait_for_timeout(300)
-    assert page.locator(".gu-sr-table").count() >= 2
+    # This fixture has one hidden table: the bar chart. The pie exposes its values in a visible legend.
+    expect(page.get_by_role("tabpanel").locator(".gu-sr-table")).to_have_count(1)
     measured = page.evaluate("""() => {
         const messages = document.querySelector('.messages');
         const wrappers = [...document.querySelectorAll('.gu-sr-table')];
