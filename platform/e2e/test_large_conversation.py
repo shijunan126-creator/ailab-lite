@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from .conftest import PLATFORM, login
+from .conftest import PLATFORM, login, reader_scroll
 from .test_conversation_ui import seed
 
 pytestmark = pytest.mark.e2e
@@ -100,7 +100,7 @@ def test_500_loaded_turns_keep_only_nearby_content_mounted_and_composer_responsi
     for expected in range(40, 501, 20):
         page.locator(".older-turns").evaluate("el => el.click()")
         page.wait_for_function("n => document.querySelectorAll('.turn').length >= n", arg=expected)
-    page.locator(".messages").evaluate("el => el.scrollTop = 0")
+    reader_scroll(page.locator(".messages"), "0")
     page.locator("#turn-" + page.locator(".turn").first.get_attribute("id").removeprefix("turn-")).wait_for()
     page.wait_for_timeout(200)
     mounted = page.locator(".turn[data-mounted=true]").count()

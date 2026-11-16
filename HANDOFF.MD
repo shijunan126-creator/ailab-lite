@@ -268,7 +268,7 @@
 - **容器查询不能作用于容器自身**。`.gu-imagetext` 设了 `container-type`，栅格和查询变量要放在内层 `.gu-imagetext-inner`。代码：`platform/portal/styles/genui.css`。
 - **`white-space: pre-wrap` 的 contenteditable 末尾 `\n` 是占位符**。Shift+Enter 插入的是文本不是 `<br>`；删到只剩末尾 `\n` 时要像末尾 `<br>` 一样丢掉，否则空消息会多一行。代码：`platform/portal/components/chat/rich-input.tsx`。
 - **聊天首包不要从 `catalog/schema.ts` 取常量**。取一个数字会把 zod 和 lang-core 拉进对话页首包；聊天侧只从 `catalog/limits.ts` 取常量。代码：`platform/portal/components/genui/catalog/limits.ts`。
-- **滚动跟随统一用 `lib/use-follow.ts`**。`stopAt` 只允许向下跟随，停点在视图上方视为已过；“回到底部”按钮在内容变化时按 `heading()` 重算，按当前 `scrollTop` 算会在滑行中闪现。代码：`platform/portal/lib/use-follow.ts`。
+- **滚动跟随统一用 `lib/use-follow.ts`，只有读者输入能停止跟随**。浏览器的滚动锚定和收缩夹紧也会改 `scrollTop`：打开会话后历史图表晚渲染，按位置判断会误判成读者上滑，停在底部上方；滚轮、按键、触摸、拖滚动条才算读者。`stopAt` 只允许向下跟随；“回到底部”按钮按 `heading()` 重算。代码：`platform/portal/lib/use-follow.ts::useFollow`。
 - **GenUI 的读屏数据表必须由 1×1 的包裹层隐藏**。Tailwind 的 `sr-only` 放在 `<table>` 上时，表格实际尺寸会覆盖 1px 并继续撑大 `.messages` 的滚动高度；隐藏样式放在 `.gu-sr-table` 包裹层，表格保留原生语义。代码：`platform/portal/components/genui/catalog/kit.tsx::SrTable`、`platform/portal/styles/genui.css`。
 - **同源代理要透传 API 的缓存头**。`cache-control`、`etag`、`if-none-match` 必须转发，否则 API 的 immutable 缩略图在 Portal 侧全被 `no-store`；API 未声明时仍保持 `no-store`。代码：`platform/portal/app/api/v1/[...path]/route.ts`。
 
