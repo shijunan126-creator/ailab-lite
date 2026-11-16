@@ -97,11 +97,15 @@ async def read_page(ctx, url: str, *, start: int = 0, max_chars: int | None = No
     page = {**await web.read_url(url, **kwargs), "ok": True}
     if via_search:
         page["via_search"] = True
+    _remember_read(ctx, url, start, page.get("next_start"))
+    return page
+
+
+def _remember_read(ctx, url: str, start: int, next_start: int | None) -> None:
     reads = ctx.web_reads
-    reads[_read_key(url, start)] = {"step": ctx.step + 1, "next_start": page.get("next_start")}
+    reads[_read_key(url, start)] = {"step": ctx.step + 1, "next_start": next_start}
     for key in list(reads)[: max(0, len(reads) - MAX_WEB_READS)]:
         reads.pop(key, None)
-    return page
 
 
 async def search(ctx, query: str, count: int, kind: str) -> list[dict]:
@@ -109,20 +113,29 @@ async def search(ctx, query: str, count: int, kind: str) -> list[dict]:
     ctx.budget.request()
     found = await web.search(query, count, kind)
     if kind == "web" and found and settings.web_search_provider != "mock":
-        await _add_excerpts(found, query, ctx.budget, ctx=ctx)
+        await _add_excerpts(found, query, ctx)
     return found
 
 
+# Only real language codes count as a locale root: a short path such as /go or /faq is often the very page asked about.
+_LANGUAGES = frozenset(
+    "ar bg cs da de el en es et fa fi fr he hi hu id it ja ko lt lv ms nb nl no pl pt ro ru sk sl sr sv th tr uk vi zh".split()
+)
+_LOCALE = re.compile(r"([a-z]{2})(?:[-_](?:[a-z]{2}|hans|hant))?")
+
+
 def _homepage(hit: dict) -> bool:
-    path = urlsplit(str(hit.get("url") or "")).path.strip("/")
-    return not path or re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z]{2,4})?", path) is not None
+    """A site root or a bare locale root (/zh, /en-us, /zh-hans) rarely answers a query, so it is excerpted last."""
+    path = urlsplit(str(hit.get("url") or "")).path.strip("/").lower()
+    match = _LOCALE.fullmatch(path)
+    return not path or (match is not None and match.group(1) in _LANGUAGES)
 
 
-async def _add_excerpts(results: list[dict], query: str, budget: net_tools.Budget, *, ctx=None) -> None:
+async def _add_excerpts(results: list[dict], query: str, ctx) -> None:
     candidates = iter(sorted(results, key=_homepage))
 
     async def one(hit: dict) -> bool:
-        budget.request()
+        ctx.budget.request()
         page = await web.read_url(str(hit["url"]), max_chars=EXCERPT_PAGE_CHARS)
         text = str(page.get("text") or "")
         if page.get("challenged") or not text.strip():
@@ -134,11 +147,7 @@ async def _add_excerpts(results: list[dict], query: str, budget: net_tools.Budge
         hit["excerpt"] = excerpt
         if full:
             hit["full_text"] = True
-            if ctx is not None:
-                reads = ctx.web_reads
-                reads[_read_key(str(hit["url"]), 0)] = {"step": ctx.step + 1, "next_start": None}
-                for key in list(reads)[: max(0, len(reads) - MAX_WEB_READS)]:
-                    reads.pop(key, None)
+            _remember_read(ctx, str(hit["url"]), 0, None)
         return True
 
     pending = set()

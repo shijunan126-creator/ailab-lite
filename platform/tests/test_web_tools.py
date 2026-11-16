@@ -164,7 +164,7 @@ def test_the_excerpt_deadline_is_range_checked():
         Settings(profile="dev", service_name="agent", web_excerpt_deadline_seconds=31)
 
 
-@pytest.mark.parametrize("path", ["", "/", "/zh", "/en", "/zh-CN", "/ja"])
+@pytest.mark.parametrize("path", ["", "/", "/zh", "/en", "/zh-CN", "/ja", "/zh-hans", "/pt_BR"])
 def test_homepages_are_last_candidates_without_reordering_results(monkeypatch, path):
     hits = [_hit("https://example.com" + path)] + [_hit(f"https://example.com/article/{i}") for i in range(3)]
     reads = []
@@ -174,9 +174,14 @@ def test_homepages_are_last_candidates_without_reordering_results(monkeypatch, p
         return _page(url, "正文")
 
     monkeypatch.setattr(web, "read_url", read)
-    asyncio.run(web_tools._add_excerpts(hits, "正文", tools.ToolContext().budget))
+    asyncio.run(web_tools._add_excerpts(hits, "正文", tools.ToolContext()))
     assert reads == [hit["url"] for hit in hits[1:]]
     assert "excerpt" not in hits[0]
+
+
+@pytest.mark.parametrize("path", ["/go", "/faq", "/api", "/docs"])
+def test_short_paths_that_are_not_locales_keep_their_rank(path):
+    assert not web_tools._homepage(_hit("https://example.com" + path))
 
 
 def test_short_full_text_is_recorded_and_not_fetched_again(monkeypatch):
@@ -212,7 +217,7 @@ def test_empty_excerpt_slots_are_replenished(monkeypatch, failure):
         return _page(url, "正文")
 
     monkeypatch.setattr(web, "read_url", read)
-    asyncio.run(web_tools._add_excerpts(hits, "正文", tools.ToolContext().budget))
+    asyncio.run(web_tools._add_excerpts(hits, "正文", tools.ToolContext()))
     assert "excerpt" not in hits[0]
     assert all(hit["excerpt"] == "正文" for hit in hits[1:])
 
@@ -225,6 +230,6 @@ def test_truncated_short_text_is_not_marked_full(monkeypatch):
 
     monkeypatch.setattr(web, "read_url", read)
     ctx = tools.ToolContext()
-    asyncio.run(web_tools._add_excerpts(hits, "正文", ctx.budget, ctx=ctx))
+    asyncio.run(web_tools._add_excerpts(hits, "正文", ctx))
     assert hits[0]["excerpt"] == "正文"
     assert "full_text" not in hits[0] and not ctx.web_reads
