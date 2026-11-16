@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ctypes
 import hashlib
 import ipaddress
 import json
@@ -48,6 +49,7 @@ import trafilatura
 from curl_cffi import CurlOpt
 from curl_cffi.requests import AsyncSession
 from curl_cffi.requests.exceptions import CertificateVerifyError, RequestException, Timeout
+from trafilatura.metadata import examine_meta, extract_meta_json, extract_title
 
 from . import metrics
 from .config import settings
@@ -439,11 +441,23 @@ def _content_links(text: str, base: str) -> list[str]:
     return links
 
 
+def _page_title(tree) -> str:
+    """Trafilatura's title choice (meta tags, then JSON-LD, then <h1>/<title>) without the rest of extract_metadata: its
+    date search alone costs ~1.9 CPU-seconds and ~90 MiB on a 2 MiB page, and only the title is used. Runs before
+    extract(), which prunes the tree in place."""
+    meta = examine_meta(tree)
+    with contextlib.suppress(Exception):  # trafilatura guards its JSON-LD parser the same way
+        meta = extract_meta_json(tree, meta)
+    return meta.title or extract_title(tree) or ""
+
+
 def _extract_document(html: str, base: str, recover: bool = False) -> dict:
     """Title, main Markdown, links, pictures and weakness for one HTML page. CPU-bound: callers run it in a thread."""
     try:
+        tree = trafilatura.load_html(html)
+        title = _page_title(tree) if tree is not None else ""
         text = trafilatura.extract(
-            html,
+            tree if tree is not None else html,
             url=base or None,
             output_format="markdown",
             include_tables=True,
@@ -453,10 +467,8 @@ def _extract_document(html: str, base: str, recover: bool = False) -> dict:
             include_comments=False,
             favor_recall=True,
         )
-        meta = trafilatura.extract_metadata(html, default_url=base or None)
     except Exception as exc:  # malformed HTML must not fail the whole tool
         raise WebError(f"could not parse HTML: {type(exc).__name__}") from exc
-    title = (meta.title if meta and meta.title else "") or ""
     if not title and (m := re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)):
         title = unescape(m[1])
     text = _markdown(text or "")
@@ -664,11 +676,23 @@ async def read_github_issue(owner: str, repo: str, number: str, limit: int) -> d
     }
 
 
-# Extraction runs on its own two threads. A cancelled await cannot stop a running thread, so a semaphore released on
+# Extraction runs on one dedicated thread. A cancelled await cannot stop a running thread, so a semaphore released on
 # cancellation (excerpt and run deadlines) would let abandoned extractions pile up past any bound: each holds a parsed
 # tree and competes for the agent's small CPU quota, which starves the event loop (model connects time out) and memory.
-# Queued jobs whose caller was cancelled are dropped before they start.
-_EXTRACT_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web-extract")
+# Queued jobs whose caller was cancelled are dropped before they start. One thread, not more: the agent's quota is
+# 0.3 CPU, so a second extraction adds no throughput, only a second 2 MiB page's tree (~60 MiB) to the peak.
+_EXTRACT_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="web-extract")
+# A parsed page frees tens of MiB in small chunks that glibc keeps mapped (thread arenas and the main heap only shrink
+# from their top), so resident memory ratchets up to the agent's limit. malloc_trim hands the free pages back (~3 ms).
+_MALLOC_TRIM = getattr(ctypes.CDLL(None), "malloc_trim", None)
+
+
+def _extract_and_release(html: str, base: str) -> dict:
+    try:
+        return _extract_document(html, base, recover=True)
+    finally:
+        if _MALLOC_TRIM is not None:
+            _MALLOC_TRIM(0)
 
 
 def _remaining(deadline: float) -> float:
@@ -799,7 +823,7 @@ async def fetch_html(url: str) -> dict:
 
 
 async def _extract_bounded(html: str, base: str) -> dict:
-    return await asyncio.get_running_loop().run_in_executor(_EXTRACT_POOL, partial(_extract_document, html, base, recover=True))
+    return await asyncio.get_running_loop().run_in_executor(_EXTRACT_POOL, partial(_extract_and_release, html, base))
 
 
 async def _page_from(fetched: dict) -> dict:

@@ -170,7 +170,7 @@ def test_resolve_pins_every_checked_address_in_one_entry_ipv4_first():
     assert entries == [b"example.com:443:104.26.13.77,172.67.68.3,[2606:4700::1]"]
 
 
-def test_cancelled_reads_cannot_push_extraction_past_two_threads(monkeypatch):
+def test_cancelled_reads_cannot_push_extraction_past_one_thread(monkeypatch):
     """A cancelled await leaves its thread running; the bound must hold for the threads, not for the awaiters."""
     import threading
 
@@ -191,7 +191,7 @@ def test_cancelled_reads_cannot_push_extraction_past_two_threads(monkeypatch):
     async def scenario():
         first = [asyncio.create_task(web._extract_bounded("<p>x</p>", "")) for _ in range(2)]
         await asyncio.sleep(0.05)
-        for task in first:  # an excerpt deadline abandons both extractions while their threads still run
+        for task in first:  # an excerpt deadline abandons both extractions while the first one's thread still runs
             task.cancel()
         await asyncio.gather(*first, return_exceptions=True)
         later = [asyncio.create_task(web._extract_bounded("<p>y</p>", "")) for _ in range(2)]
@@ -201,4 +201,36 @@ def test_cancelled_reads_cannot_push_extraction_past_two_threads(monkeypatch):
         await asyncio.gather(*later)
         return peak
 
-    assert asyncio.run(scenario()) == 2
+    assert asyncio.run(scenario()) == 1
+
+
+def test_extraction_returns_freed_heap_even_when_parsing_fails(monkeypatch):
+    """A parsed page's freed chunks stay resident unless trimmed; resident memory then ratchets up to the agent's limit."""
+    trims = []
+    monkeypatch.setattr(web, "_MALLOC_TRIM", trims.append)
+
+    def broken(html, base, recover=False):
+        raise web.WebError("could not parse HTML: ValueError")
+
+    monkeypatch.setattr(web, "_extract_document", broken)
+    with pytest.raises(web.WebError):
+        asyncio.run(web._extract_bounded("<p>x</p>", ""))
+    assert trims == [0]
+
+
+def test_page_title_comes_from_one_parse_without_metadata_date_search(monkeypatch):
+    """extract_metadata's date search costs ~1.9 CPU-seconds and ~90 MiB on a 2 MiB page; only the title is used."""
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("extract_metadata parses the page a second time")
+
+    monkeypatch.setattr(web.trafilatura, "extract_metadata", forbidden)
+    body = "<article><h1>Headline</h1>" + "<p>Paragraph text that is long enough to keep as content.</p>" * 20 + "</article>"
+    page = web._extract_document(
+        f'<html><head><title>Site | Tab</title><meta property="og:title" content="Shared title"></head><body>{body}</body></html>',
+        "https://example.com/a",
+    )
+    assert page["title"] == "Shared title"
+    assert "Paragraph text" in page["text"]
+    plain = web._extract_document(f"<html><head><title>Only tab title</title></head><body>{body}</body></html>", "https://example.com/b")
+    assert plain["title"] == "Headline"
