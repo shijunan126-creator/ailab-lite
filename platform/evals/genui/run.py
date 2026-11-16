@@ -9,7 +9,6 @@ import json
 import os
 import sys
 import time
-import tomllib
 from pathlib import Path
 
 PLATFORM = Path(__file__).resolve().parents[2]
@@ -18,6 +17,7 @@ from cases import CASES
 
 from ailab_platform.agent.prompts import system_prompt_for
 from ailab_platform.agent.tools import UI_COMPONENTS, ToolError, tool_result_message, ui_components
+from ailab_platform.catalog import load_catalog
 from ailab_platform.config import settings
 from ailab_platform.domain.answer_parts import for_history
 from ailab_platform.llm import MockLLM, ModelCall, model_call
@@ -81,10 +81,11 @@ async def answer_with_tools(client, messages, model, record):
 
 
 async def main(args):
-    specs = tomllib.loads(Path(args.models_file or PLATFORM / "models.toml").read_text())["models"]
-    spec = next(x for x in specs if x["id"] == args.model)
-    if spec["provider"] != "mock" and not load_key(spec["api_key_env"], args.env_file):
-        raise SystemExit(f"Missing {spec['api_key_env']} in process environment or the given env file")
+    spec = load_catalog(Path(args.models_file or PLATFORM / "models.toml")).get(args.model)
+    if spec is None:
+        raise SystemExit(f"{args.model} is not in the catalog")
+    if spec.provider != "mock" and not load_key(spec.api_key_env, args.env_file):
+        raise SystemExit(f"Missing {spec.api_key_env} in process environment or the given env file")
     settings.genui_enabled = settings.genui_html_enabled = True
     settings.llm_idle_timeout_seconds = 90
     settings.llm_total_timeout_seconds = 240
@@ -93,13 +94,13 @@ async def main(args):
     system = system_prompt_for(mode="chat", genui=True, deferred=True, genui_tools=True)
     client = (
         MockLLM()
-        if spec["provider"] == "mock"
+        if spec.provider == "mock"
         else ModelTransport(
-            spec["base_url"],
-            os.environ[spec["api_key_env"]],
-            spec["upstream_model"],
-            echo_reasoning=spec.get("echo_reasoning", False),
-            session_header=spec.get("session_header", ""),
+            spec.base_url,
+            os.environ[spec.api_key_env],
+            spec.upstream_model or None,
+            echo_reasoning=spec.echo_reasoning,
+            session_header=spec.session_header,
         )
     )
     output = Path(args.output).resolve()
@@ -110,9 +111,9 @@ async def main(args):
     if answer_file.exists():
         raise SystemExit("Refusing to overwrite an existing run")
     metadata = dict(
-        model=spec["id"],
-        upstream_model=spec.get("upstream_model"),
-        provider=spec["provider"],
+        model=spec.id,
+        upstream_model=spec.upstream_model or spec.id,
+        provider=spec.provider,
         temperature=0.2,
         system_sha256=hashlib.sha256(system.encode()).hexdigest(),
         system_chars=len(system),
@@ -136,10 +137,10 @@ async def main(args):
                 token = model_call.set(
                     ModelCall(f"eval-{args.label}-{case['id']}-{turn}", "", 32768, session=f"eval-{args.label}-{case['id']}")
                 )
-                row = dict(case=case["id"], kind=case["kind"], turn=turn, model=spec["id"])
+                row = dict(case=case["id"], kind=case["kind"], turn=turn, model=spec.id)
                 try:
                     async with asyncio.timeout(245):
-                        response = await answer_with_tools(client, [dict(m) for m in messages], spec["id"], row)
+                        response = await answer_with_tools(client, [dict(m) for m in messages], spec.id, row)
                     row.update(answer=response.content, finish_reason=response.finish_reason)
                     # Same recent-turn history policy as prompts.history: no reasoning or tool transcript.
                     messages.append(dict(role="assistant", content=for_history(response.content, keep_ui=True, limit=16000)))

@@ -48,6 +48,23 @@ reasoning = "deepseek-v4"
 default = true
 
 [[models]]
+id = "hy4-flash-free"
+name = "Hy4 Flash"
+description = "腾讯混元 Hy4 Flash 免费版（OpenCode Go），支持思考、图片和工具调用。"
+provider = "openai"
+base_url = "https://opencode.ai/inference/go/openai/v1"
+api_key_env = "AILAB_KEY_OPENCODE"
+session_header = "x-opencode-session"
+weight = 1
+fallback = []
+# https://models.dev (opencode-go/hy4-flash-free). reasoning_effort does not change how long it thinks, so no
+# strength choice; tool turns work without reasoning_content echoed back.
+context_tokens = 1048576
+max_output_tokens = 65536
+capabilities = ["tools", "vision", "genui"]
+disable_reasoning_for_quiet = true
+
+[[models]]
 id = "ailab-demo"
 name = "离线演示"
 description = "不调用任何模型，按固定脚本演示完整链路；不花 token，可离线使用。"
