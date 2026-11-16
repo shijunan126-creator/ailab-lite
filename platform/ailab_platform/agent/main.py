@@ -18,11 +18,11 @@ from ..catalog import get_catalog
 from ..clients import AsyncPlatformClient, ClientError
 from ..config import settings
 from ..contracts.jobs import JobEnvelope, RunStatus
-from ..deps import metrics_auth
 from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import Message, get_queue, run_lock_key
 from ..runtime_context import attempt_id_var
+from ..service_auth import metrics_auth
 from .loop import AgentLoop
 from .prompts import system_prompt
 

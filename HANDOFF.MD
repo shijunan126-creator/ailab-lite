@@ -16,6 +16,7 @@
 ### 验证与进程
 - **健康探针通过不代表端口属于本次启动的进程**。旧 Portal、SSH 转发或残留服务也可能返回健康；重启前核对 pidfile、命令行和监听端口。代码：`platform/scripts/dev_up.sh::start`。
 - **期限算术用虚拟时钟，性能边界用行数或语句数证明**。共享 runner 上的绝对墙钟会把相邻 worker 的负载算进产品。测试：`platform/tests/faults/test_job_heartbeat.py::VirtualTimeLoop`。
+- **Agent、Broker、Worker 的鉴权依赖只从 `service_auth` 取，不要从 `deps`/`security` 导入**。这两个模块会拉进 `models`、SQLAlchemy 和 Alembic，256 MiB 的 Pod 平白多出约 30 MiB 常驻。代码：`platform/ailab_platform/service_auth.py::metrics_auth`；测试：`platform/tests/test_service_imports.py`。
 
 ### 协作与本机环境
 - **`gh pr merge --auto` 不是等待器**。仓库没有 required checks 时它会立即合并，即使检查还在跑；要“绿了再合”，先自己确认最终 head 的检查全部通过。

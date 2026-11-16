@@ -36,7 +36,8 @@ from ..models import ApiToken, OIDCFlow, User, utcnow
 from ..passwords import MAX_PASSWORD_LENGTH
 from ..ports.identity import IdentityError
 from ..schemas import LoginRequest, PasswordChange, RegisterRequest
-from ..security import bearer_token, client_address
+from ..security import client_address
+from ..service_auth import bearer_token
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"], route_class=AuditedRoute)
 log = logging.getLogger("ailab.api.auth")

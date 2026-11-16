@@ -20,11 +20,10 @@ from .. import metrics, obs
 from ..clients import ClientError, PlatformClient
 from ..config import settings
 from ..contracts.jobs import JobEnvelope
-from ..deps import metrics_auth
 from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import get_queue, job_topic
-from ..service_auth import require_scope
+from ..service_auth import metrics_auth, require_scope
 from ..storage import close_storage
 from .ocr import process_ocr
 from .pipeline import ScanUnavailable, process_file

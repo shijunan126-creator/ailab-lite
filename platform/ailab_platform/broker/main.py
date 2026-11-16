@@ -13,7 +13,6 @@ from fastapi.responses import JSONResponse
 
 from ..config import settings
 from ..contracts.files import FILE_NOT_FOUND, FILE_TOO_LARGE, FILE_UNREADABLE
-from ..deps import metrics_auth
 from ..metrics import BrokerStateCollector, metrics_response, register_once
 from ..obs import RequestContextMiddleware, setup_logging
 from ..runtime_context import RuntimeContextMiddleware
@@ -21,7 +20,7 @@ from ..sandbox import SandboxError
 from ..sandbox.base import LeaseHandle, SandboxFileNotFound
 from ..sandbox.transfer import TransferLimitError
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
-from ..service_auth import require_scope
+from ..service_auth import metrics_auth, require_scope
 from ..storage import close_storage
 from .render import LibraryRenderer
 from .service import ArtifactRejected, BrokerOwnershipError, CapacityError, LeaseCanceledError, LeaseError, LeaseLostError, LeaseManager

@@ -6,7 +6,7 @@ import hashlib
 import hmac
 from functools import lru_cache
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.routing import APIRoute
 
 from .config import settings
@@ -78,6 +78,30 @@ class CredentialAuthenticator:
 
 
 authenticator: ServiceAuthenticator = CredentialAuthenticator()
+
+
+def bearer_token(request: Request) -> str | None:
+    """The Bearer token from the Authorization header, and nowhere else.
+
+    Query-string tokens are not accepted: URLs end up in browser history, proxy and access
+    logs. The Portal keeps the token in an httpOnly cookie and adds the header server-side.
+    """
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("bearer "):
+        return header[7:].strip()
+    return None
+
+
+def _metrics_reader(token: str | None) -> bool:
+    principal = authenticator.authenticate(token)
+    return principal is not None and "metrics:read" in principal.scopes
+
+
+def metrics_auth(request: Request, x_service_token: str | None = Header(default=None)) -> None:
+    """/metrics shows traffic and queue sizes: guard it with the service token, in either of the two forms.
+    Lives here, not in deps, so the Agent, Broker and Worker never import the database layer."""
+    if not (_metrics_reader(x_service_token) or _metrics_reader(bearer_token(request))):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="service token required")
 
 
 @lru_cache
