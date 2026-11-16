@@ -60,10 +60,36 @@ def test_visual(logged_in, tmp_path):
 def _escapes(page) -> list[str]:
     """Text boxes inside answers whose content is wider than the box (clipped or overflowing), as class names."""
     return page.evaluate("""() => [...document.querySelectorAll('.genui-block *')].filter(el => {
-        if (el.closest('.gu-table, svg, .sr-only')) return false;
+        if (el.closest('.gu-table, svg, .sr-only, .gu-sr-table')) return false;
         const r = el.getBoundingClientRect(), p = el.parentElement.getBoundingClientRect();
         return r.width > 0 && (el.scrollWidth > el.clientWidth + 1 || r.right > p.right + 1 || r.left < p.left - 1);
     }).map(el => el.className.baseVal ?? el.className)""")
+
+
+def test_genui_hidden_tables_do_not_add_scroll_height(logged_in):
+    page = logged_in
+    wait_models(page)
+    select_model(page, "test-fast")
+    page.get_by_role("textbox", name="消息", exact=True).fill("[[genui-stress]] 长表")
+    page.keyboard.press("Enter")
+    page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
+    page.locator(".genui-block[data-state='ok']").wait_for(timeout=60000)
+    page.wait_for_timeout(300)
+    assert page.locator(".gu-sr-table").count() >= 2
+    measured = page.evaluate("""() => {
+        const messages = document.querySelector('.messages');
+        const wrappers = [...document.querySelectorAll('.gu-sr-table')];
+        const before = messages.scrollHeight;
+        const sizes = wrappers.map(el => {
+            const r = el.getBoundingClientRect();
+            return [Math.round(r.width), Math.round(r.height)];
+        });
+        for (const el of wrappers) el.remove();
+        const after = messages.scrollHeight;
+        return {before, after, sizes};
+    }""")
+    assert measured["sizes"] and all(size == [1, 1] for size in measured["sizes"])
+    assert abs(measured["before"] - measured["after"]) <= 2
 
 
 def test_genui_controls_recompute_in_place_and_send_their_values(logged_in):

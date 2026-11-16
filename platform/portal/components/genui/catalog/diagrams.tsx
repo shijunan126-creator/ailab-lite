@@ -8,7 +8,7 @@ import { cn } from "../../../lib/cn";
 import CopyButton from "../../copy-button";
 import { IconChevronRight, IconFile, IconFolder } from "../../icons";
 import { dayOf, lineDiff, objects, pathTree, strings, text, treeOf, type PathNode, type TreeNode } from "./data";
-import { Frame, Legend, Malformed, color, fit, textWidth, useWidth, wrap } from "./kit";
+import { Frame, Legend, Malformed, SrTable, color, fit, textWidth, useWidth, wrap } from "./kit";
 
 type P = Record<string, any>;
 const o = (p: P): P => p.opts || {};
@@ -326,7 +326,7 @@ function GanttView({ p }: { p: P }) {
         </svg>
       </div>
       {groups.length > 1 ? <Legend items={groups.map((g, i) => ({ name: g || "其它", color: color(i) }))} /> : null}
-      <table className="sr-only"><caption>{text(p.title)}</caption><tbody>{rows.map((r, i) => <tr key={i}><th>{r.name}</th><td>{r.start}</td><td>{r.end}</td></tr>)}</tbody></table>
+      <SrTable title={text(p.title)} head={["", "开始", "结束"]} rows={rows.map((r) => [r.name, r.start, r.end])} />
     </Frame>
   );
 }

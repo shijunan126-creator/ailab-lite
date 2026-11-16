@@ -133,6 +133,7 @@
 .gu-plot { position: relative; min-width: 0; }
 .gu-plot svg { display: block; max-width: 100%; height: auto; border-radius: var(--radius-xs); }
 .gu-plot svg:focus-visible { outline-offset: 4px; }
+.gu-sr-table { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: 0; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .gu-axis { fill: var(--faint-foreground); font-size: 12px; font-variant-numeric: tabular-nums; }
 .gu-grid-line { stroke: var(--border); stroke-width: 1; }
 .gu-zero { stroke: var(--border-strong); stroke-width: 1; }
