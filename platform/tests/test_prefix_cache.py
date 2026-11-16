@@ -3012,13 +3012,16 @@ def test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary(
     assert ("agent.context_boundary", {"reason": "tool_catalog_changed"}) in platform.events
 
 
-def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
+def test_a_chat_conversation_keeps_its_prefix_across_this_deploy(monkeypatch):
     """A rules-version deploy rewrites Chat's rules once; the bytes are pinned here so the next change is deliberate."""
     import hashlib
 
+    from ailab_platform.config import settings
+
+    monkeypatch.setattr(settings, "web_search_provider", "mock")
     chat = system_prompt_for("chat")
-    assert len(chat) == 1502
-    assert hashlib.sha256(chat.encode()).hexdigest() == "24b14ac944700a6e15755626e481308d09b284468bc4575b9c4dcda400c54494"
+    assert len(chat) == 1779
+    assert hashlib.sha256(chat.encode()).hexdigest() == "1c0f1dfb825c360457aa155de419501f03b4e29e6bd4bf5c6f72b57e4f261b7b"
     assert prompt_version("chat") != prompt_version("work")
 
     from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
