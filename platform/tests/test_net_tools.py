@@ -317,6 +317,22 @@ def test_only_urls_from_the_user_or_web_results_can_be_fetched() -> None:
             net_tools.check_source(refused, sources)
 
 
+def test_a_pasted_non_ascii_url_matches_its_readable_and_encoded_forms() -> None:
+    messages = [
+        {"role": "user", "content": "读 https://zh.wikipedia.org/wiki/日本 和 https://zh.wikipedia.org/wiki/美国，再看https://a.test/x这页"}
+    ]
+    sources = net_tools.sources_from(messages)
+    for ok in [
+        "https://zh.wikipedia.org/wiki/日本",
+        "https://zh.wikipedia.org/wiki/%E6%97%A5%E6%9C%AC",
+        "https://zh.wikipedia.org/wiki/%e7%be%8e%e5%9b%bd",
+        "https://a.test/x",
+    ]:
+        net_tools.check_source(ok, sources)
+    with pytest.raises(net_tools.NetToolError):
+        net_tools.check_source("https://zh.wikipedia.org/wiki/中国", sources)
+
+
 def test_read_url_with_an_invented_url_returns_the_search_results_instead(monkeypatch) -> None:
     """One search replaces the extra model round trip, and the model still chooses the final URL."""
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")

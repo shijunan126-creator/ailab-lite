@@ -72,7 +72,8 @@ class AuditedRoute(APIRoute):
         async def handle(request: Request):
             from .db import SessionLocal
             from .models import utcnow
-            from .security import authenticate, bearer_token
+            from .security import authenticate
+            from .service_auth import bearer_token
 
             started = utcnow()
             try:

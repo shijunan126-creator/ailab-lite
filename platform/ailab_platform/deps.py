@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .models import User
-from .security import authenticate, bearer_token, service_token_ok
+from .security import authenticate
+from .service_auth import bearer_token
 
 
 def get_db() -> Iterator[Session]:
@@ -51,10 +52,3 @@ def current_user_short(request: Request) -> User:
             )
         db.expunge(user)  # detached before close; scalar attributes are already loaded
         return user
-
-
-def metrics_auth(request: Request, x_service_token: str | None = Header(default=None)) -> None:
-    """/metrics shows traffic and queue sizes: guard it with the service token, in either of the two forms."""
-    bearer = bearer_token(request)
-    if not (service_token_ok(x_service_token) or service_token_ok(bearer)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="service token required")

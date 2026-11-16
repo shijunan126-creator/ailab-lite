@@ -14,13 +14,14 @@ from sqlalchemy import text
 from ..catalog import get_catalog
 from ..config import settings
 from ..db import SessionLocal, init_db
-from ..deps import current_user, metrics_auth
+from ..deps import current_user
 from ..memory_dream.service import dream_forever
 from ..memory_recall.embeddings import embed_forever
 from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
+from ..service_auth import metrics_auth
 from ..skill_drafts.service import draft_forever
 from ..storage import close_storage
 from . import process_snapshots as process_snapshots

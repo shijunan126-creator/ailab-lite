@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ctypes
 import hashlib
 import ipaddress
 import json
@@ -33,6 +34,7 @@ import socket
 import ssl
 import tempfile
 import time
+import weakref
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -48,6 +50,7 @@ import trafilatura
 from curl_cffi import CurlOpt
 from curl_cffi.requests import AsyncSession
 from curl_cffi.requests.exceptions import CertificateVerifyError, RequestException, Timeout
+from trafilatura.metadata import examine_meta, extract_meta_json, extract_title
 
 from . import metrics
 from .config import settings
@@ -439,11 +442,23 @@ def _content_links(text: str, base: str) -> list[str]:
     return links
 
 
+def _page_title(tree) -> str:
+    """Trafilatura's title choice (meta tags, then JSON-LD, then <h1>/<title>) without the rest of extract_metadata: its
+    date search alone costs ~1.9 CPU-seconds and ~90 MiB on a 2 MiB page, and only the title is used. Runs before
+    extract(), which prunes the tree in place."""
+    meta = examine_meta(tree)
+    with contextlib.suppress(Exception):  # trafilatura guards its JSON-LD parser the same way
+        meta = extract_meta_json(tree, meta)
+    return meta.title or extract_title(tree) or ""
+
+
 def _extract_document(html: str, base: str, recover: bool = False) -> dict:
     """Title, main Markdown, links, pictures and weakness for one HTML page. CPU-bound: callers run it in a thread."""
     try:
+        tree = trafilatura.load_html(html)
+        title = _page_title(tree) if tree is not None else ""
         text = trafilatura.extract(
-            html,
+            tree if tree is not None else html,
             url=base or None,
             output_format="markdown",
             include_tables=True,
@@ -453,10 +468,8 @@ def _extract_document(html: str, base: str, recover: bool = False) -> dict:
             include_comments=False,
             favor_recall=True,
         )
-        meta = trafilatura.extract_metadata(html, default_url=base or None)
     except Exception as exc:  # malformed HTML must not fail the whole tool
         raise WebError(f"could not parse HTML: {type(exc).__name__}") from exc
-    title = (meta.title if meta and meta.title else "") or ""
     if not title and (m := re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)):
         title = unescape(m[1])
     text = _markdown(text or "")
@@ -664,11 +677,45 @@ async def read_github_issue(owner: str, repo: str, number: str, limit: int) -> d
     }
 
 
-# Extraction runs on its own two threads. A cancelled await cannot stop a running thread, so a semaphore released on
+# Extraction runs on one dedicated thread. A cancelled await cannot stop a running thread, so a semaphore released on
 # cancellation (excerpt and run deadlines) would let abandoned extractions pile up past any bound: each holds a parsed
 # tree and competes for the agent's small CPU quota, which starves the event loop (model connects time out) and memory.
-# Queued jobs whose caller was cancelled are dropped before they start.
-_EXTRACT_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web-extract")
+# Queued jobs whose caller was cancelled are dropped before they start. One thread, not more: the agent's quota is
+# 0.3 CPU, so a second extraction adds no throughput, only a second 2 MiB page's tree (~60 MiB) to the peak.
+_EXTRACT_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="web-extract")
+# A parsed page frees tens of MiB in small chunks that glibc keeps mapped (thread arenas and the main heap only shrink
+# from their top), so resident memory ratchets up to the agent's limit. malloc_trim hands the free pages back (~3 ms).
+_MALLOC_TRIM = getattr(ctypes.CDLL(None), "malloc_trim", None)
+
+
+# Reads that hold a page body (fetching it, or waiting for the extraction thread), across every run in the process: each
+# holds up to web_max_bytes plus libcurl's buffers. Three concurrent runs can each fan out several reads per step and
+# search excerpts read pages too, so without a cap the bodies alone can push the agent past its 256 MiB limit. A cancelled
+# read frees its body with its coroutine, so releasing the slot on cancellation keeps the bound honest. Waiting spends
+# the read's own deadline: under overload a read times out and the model switches sources instead of the agent dying.
+READS_IN_FLIGHT = 12
+_read_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
+
+
+async def _take_read_slot(deadline: float) -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    slots = _read_slots.get(loop)
+    if slots is None:
+        slots = _read_slots[loop] = asyncio.Semaphore(READS_IN_FLIGHT)
+    try:
+        async with asyncio.timeout(_remaining(deadline)):
+            await slots.acquire()
+    except TimeoutError as exc:
+        raise WebError(TIMEOUT_MESSAGE) from exc
+    return slots
+
+
+def _extract_and_release(body: bytes, encoding: str, base: str) -> dict:
+    try:
+        return _extract_document(body.decode(encoding, "replace"), base, recover=True)
+    finally:
+        if _MALLOC_TRIM is not None:
+            _MALLOC_TRIM(0)
 
 
 def _remaining(deadline: float) -> float:
@@ -733,7 +780,10 @@ async def _fetch_page(url: str, headers: dict[str, str], deadline: float, max_by
                     "status": response.status_code,
                     "content_type": ctype,
                     "location": response.headers.get("location"),
-                    "text": body.decode(response.encoding or "utf-8", "replace"),
+                    # Raw bytes, decoded where they are used: a decoded page is up to 4 bytes per character (one emoji
+                    # widens the whole str), and reads queued behind the one extraction thread would each hold one.
+                    "body": body,
+                    "encoding": response.encoding or "utf-8",
                     "truncated": truncated,
                 }
             finally:
@@ -757,6 +807,10 @@ def _is_ip_literal(host: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _decoded(fetched: dict) -> str:
+    return fetched["body"].decode(fetched["encoding"], "replace")
 
 
 async def _fetch_follow(url: str, headers: dict[str, str], deadline: float) -> dict:
@@ -785,7 +839,7 @@ async def fetch_html(url: str) -> dict:
     ctype = page["content_type"]
     if ctype and ctype not in TEXT_TYPES:
         raise WebError(f"unsupported content type: {ctype}; use download_url for files")
-    text = page["text"]
+    text = _decoded(page)
     title = ""
     if m := re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S):
         title = _clean(unescape(m[1]))[:300]
@@ -798,15 +852,15 @@ async def fetch_html(url: str) -> dict:
     }
 
 
-async def _extract_bounded(html: str, base: str) -> dict:
-    return await asyncio.get_running_loop().run_in_executor(_EXTRACT_POOL, partial(_extract_document, html, base, recover=True))
+async def _extract_bounded(body: bytes, encoding: str, base: str) -> dict:
+    return await asyncio.get_running_loop().run_in_executor(_EXTRACT_POOL, partial(_extract_and_release, body, encoding, base))
 
 
 async def _page_from(fetched: dict) -> dict:
     """Turn a fetched body into the read_url result shape; HTML extraction runs in a bounded thread."""
-    final, ctype, raw, truncated = fetched["url"], fetched["content_type"], fetched["text"], fetched["truncated"]
-    if ctype in ("text/html", "application/xhtml+xml") or (not ctype and raw.lstrip().startswith("<")):
-        document = await _extract_bounded(raw, final)
+    final, ctype, body, truncated = fetched["url"], fetched["content_type"], fetched["body"], fetched["truncated"]
+    if ctype in ("text/html", "application/xhtml+xml") or (not ctype and body.lstrip().startswith(b"<")):
+        document = await _extract_bounded(body, fetched["encoding"], final)
         page = {
             "url": final,
             "title": document["title"] or urlsplit(final).netloc,
@@ -820,10 +874,10 @@ async def _page_from(fetched: dict) -> dict:
             **({"images": document["images"]} if document["images"] else {}),
         }
         return page
-    text = raw
+    text = _decoded(fetched)
     if ctype == "application/json":
         with contextlib.suppress(ValueError):
-            text = json.dumps(json.loads(raw), ensure_ascii=False, indent=1)
+            text = json.dumps(json.loads(text), ensure_ascii=False, indent=1)
     text = _markdown(text)
     heading = re.match(r"#\s+(.+)", text)
     return {
@@ -901,8 +955,9 @@ async def read_url(url: str, max_chars: int | None = None, start: int = 0) -> di
     if issue:
         return _window(await read_github_issue(*issue.groups(), start + limit), start, limit)
     deadline = time.monotonic() + settings.web_read_deadline_seconds
-    started, path, outcome = time.monotonic(), "static", "error"
+    started, path, outcome, slots = time.monotonic(), "static", "error", None
     try:
+        slots = await _take_read_slot(deadline)
         fetched = await _fetch_follow(current, {"Accept": BROWSER_ACCEPT, **BROWSER_HEADERS}, deadline)
         if fetched["status"] == 403:  # some sites (openai.com) reject Markdown negotiation but serve HTML
             fetched = await _fetch_follow(current, {"Accept": HTML_ACCEPT, **BROWSER_HEADERS}, deadline)
@@ -947,4 +1002,6 @@ async def read_url(url: str, max_chars: int | None = None, start: int = 0) -> di
     except WebFetchError as exc:
         raise WebError(f"{exc}；请换其他来源") from exc
     finally:
+        if slots is not None:
+            slots.release()
         metrics.observe_web_read(path, outcome, time.monotonic() - started)
