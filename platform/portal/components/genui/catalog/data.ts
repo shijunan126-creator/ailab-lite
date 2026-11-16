@@ -20,7 +20,8 @@ export const formatNumber = (v: unknown, decimals?: unknown) => {
 export const formatRate = (rate: number) => `${rate > 0 ? "+" : ""}${formatNumber((Math.sign(rate) * Math.round(Math.abs(rate) * 10)) / 10)}%`;
 /** A signed amount: +12 / -3.5. */
 export const formatSigned = (v: number, decimals?: unknown) => `${v > 0 ? "+" : ""}${formatNumber(v, decimals)}`;
-export const withUnit = (s: string, unit?: unknown) => (s && typeof unit === "string" && unit ? `${s} ${unit}` : s);
+// a symbol unit sits on its number (12.5%, 30°); a word unit keeps its space (160 万元, 3 GB)
+export const withUnit = (s: string, unit?: unknown) => (s && typeof unit === "string" && unit ? `${s}${/^[%‰‱°℃℉′″]/.test(unit) ? "" : " "}${unit}` : s);
 /** A share of a whole in %, one decimal. */
 export const formatShare = (part: number, whole: number) => `${formatNumber(whole ? Math.round((part / whole) * 1000) / 10 : 0)}%`;
 

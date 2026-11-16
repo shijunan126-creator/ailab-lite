@@ -6,7 +6,7 @@ import { afterEach, test, vi } from "vitest";
 import Answer from "../components/chat/answer";
 import { answerForCopy } from "../components/genui/markdown-bridge";
 import { facts, funnel, histogram, ranking, waterfall, winners, box, lineDiff } from "../components/genui/catalog/data";
-import { niceScale } from "../components/genui/catalog/kit";
+import { Readout, niceScale, value } from "../components/genui/catalog/kit";
 import { toProgram } from "../components/genui/catalog/program";
 
 vi.mock("../components/genui/telemetry", () => ({ report: () => undefined }));
@@ -79,7 +79,7 @@ test("Segments shows each tier's tag, figure and explanation, toned; copy keeps 
   assert.equal(rows[0].querySelector(".gu-card-title")!.textContent, "收入稳定");
   assert.equal(rows[1].querySelector(".gu-segment-body")!.textContent, "");
   const copy = answerForCopy(source);
-  assert.ok(copy.includes("**A类** 优质客户 · 12 % 假设贷款利率"), copy);
+  assert.ok(copy.includes("**A类** 优质客户 · 12% 假设贷款利率"), copy);
   assert.ok(copy.includes("**收入稳定**：低利率也有利润"));
 });
 
@@ -153,4 +153,32 @@ test("quotes inside prose stay in the string; escaped quotes and code are untouc
   const view = render(<Answer text={quoted} />);
   await screen.findByText("这更像\"积压订单\"，不是需求下滑");
   await waitFor(() => assert.ok((view.container.textContent || "").includes("1.8 万元"), view.container.textContent || ""));
+});
+
+test("readout keeps its text width and stays inside the plot near either edge", () => {
+  // jsdom has no layout: a 300x200 plot and a 150x60 readout
+  const size = (el: HTMLElement, w: number, h: number) => {
+    Object.defineProperty(el, "clientWidth", { value: w });
+    Object.defineProperty(el, "clientHeight", { value: h });
+  };
+  const place = (x: number, y: number) => {
+    const plot = document.createElement("div");
+    size(plot, 300, 200);
+    document.body.append(plot);
+    const offsetParent = vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockReturnValue(plot);
+    const offsetWidth = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(150);
+    const offsetHeight = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(60);
+    const view = render(<Readout x={x} y={y} title="Terminal-Bench 4.0" rows={[{ name: "V4.1 Flash", value: value(31.2, "%"), color: "red" }, { name: "离线", value: "7" }]} />, { container: plot });
+    const tip = view.container.querySelector<HTMLElement>(".gu-tip")!;
+    const at = [tip.style.left, tip.style.top, tip.style.visibility];
+    [offsetParent, offsetWidth, offsetHeight].forEach((s) => s.mockRestore());
+    cleanup();
+    plot.remove();
+    return at;
+  };
+  assert.deepEqual(place(40, 10), ["52px", "10px", "visible"]); // right of the point
+  assert.deepEqual(place(250, 180), ["88px", "140px", "visible"]); // left of it, lifted off the bottom
+  assert.deepEqual(place(140, 0), ["65px", "0px", "visible"]); // neither side fits: centred on it, inside the plot
+  assert.equal(value(31.2, "%"), "31.2%");
+  assert.equal(value(160, "万元"), "160 万元");
 });

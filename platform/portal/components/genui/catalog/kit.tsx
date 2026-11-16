@@ -144,14 +144,31 @@ export function SrTable({ title, head, rows }: { title: string; head: string[]; 
 }
 
 export type ReadoutRow = { name: string; value: string; color?: string };
-export function Readout({ x, y, flip, title, rows }: { x: number; y: number; flip: boolean; title: string; rows: ReadoutRow[] }) {
+/** The value box beside the item at (x, y) in its plot. It takes the width its text needs, then measures itself and
+ * sits right of the point, else left of it, else wherever it fits, so it never squeezes or spills out of the plot. */
+export function Readout({ x, y, title, rows }: { x: number; y: number; title: string; rows: ReadoutRow[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useIso(() => {
+    const tip = ref.current;
+    const plot = tip?.offsetParent as HTMLElement | null;
+    if (!tip || !plot) return;
+    const gap = 12;
+    const w = tip.offsetWidth;
+    const h = tip.offsetHeight;
+    const room = plot.clientWidth;
+    const left = x + gap + w <= room ? x + gap : x - gap - w >= 0 ? x - gap - w : Math.max(0, Math.min(room - w, x - w / 2));
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(0, Math.min(y, plot.clientHeight - h))}px`;
+    tip.style.visibility = "visible";
+  });
+  const swatches = rows.some((r) => r.color);
   return (
-    <div className="gu-tip" style={{ left: x, top: y, translate: flip ? "calc(-100% - 12px) 0" : "12px 0" }} role="status">
+    <div ref={ref} className="gu-tip" data-swatches={swatches || undefined} style={{ left: 0, top: 0, visibility: "hidden" }} role="status">
       {title ? <div className="gu-tip-title">{title}</div> : null}
       {rows.map((r, i) => (
         <div key={i} className="gu-tip-row">
-          {r.color ? <span className="gu-swatch" style={{ background: r.color }} /> : null}
-          <span className="truncate">{r.name}</span>
+          {swatches ? <span className="gu-swatch" style={r.color ? { background: r.color } : { visibility: "hidden" }} /> : null}
+          <span className="gu-tip-name">{r.name}</span>
           <b>{r.value}</b>
         </div>
       ))}

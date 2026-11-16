@@ -191,7 +191,7 @@ export function CartesianChart(props: CartesianProps) {
           ) : null}
         </svg>
         {at != null && categories[at] != null ? (
-          <Readout x={x(at)} y={pad.top} flip={x(at) > width * 0.6} title={categories[at]}
+          <Readout x={x(at)} y={pad.top} title={categories[at]}
             rows={visible.map((s) => ({ name: s.name, value: shown(stacking && !s.right ? span(s, at)[1] - span(s, at)[0] : s.values[at], s), color: color(s.i) }))} />
         ) : null}
       </div>
@@ -276,7 +276,7 @@ export function HBarChart({ sid, title, categories: raw, series: rawSeries, unit
           ) : null}
         </svg>
         {at != null && categories[at] != null && !single ? (
-          <Readout x={pad.left + iw * 0.5} y={pad.top + rowH * at} flip={false} title={categories[at]}
+          <Readout x={pad.left + iw * 0.5} y={pad.top + rowH * at} title={categories[at]}
             rows={visible.map((s, k) => ({ name: s.name, value: shown(stacking ? span(k, at)[1] - span(k, at)[0] : s.values[at]), color: color(s.i) }))} />
         ) : null}
       </div>

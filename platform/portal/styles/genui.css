@@ -146,12 +146,15 @@
 .gu-legend button[aria-pressed="false"] { color: var(--faint-foreground); text-decoration: line-through; }
 .gu-legend button[aria-pressed="false"] .gu-swatch { opacity: .3; }
 .gu-tip {
-  position: absolute; z-index: 5; min-width: 120px; max-width: min(240px, 70%); padding: 8px 10px; border-radius: var(--radius-sm);
+  position: absolute; z-index: 5; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 8px;
+  width: max-content; min-width: 120px; max-width: min(280px, 100%); padding: 8px 10px; border-radius: var(--radius-sm);
   background: var(--popover); border: 1px solid var(--border); box-shadow: var(--shadow-overlay); font-size: var(--text-xs); pointer-events: none;
 }
-.gu-tip-title { margin-bottom: 4px; color: var(--muted-foreground); overflow-wrap: anywhere; }
-.gu-tip-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.gu-tip-row b { margin-left: auto; padding-left: 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.gu-tip[data-swatches] { grid-template-columns: 10px minmax(0, 1fr) auto; }
+.gu-tip-title { grid-column: 1 / -1; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.gu-tip-row { display: contents; }
+.gu-tip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gu-tip-row b { justify-self: end; padding-left: 8px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .gu-pie { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; min-width: 0; }
 .gu-pie-svg { flex: none; width: 168px; height: 168px; }
 .gu-pie-value { fill: var(--foreground); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
