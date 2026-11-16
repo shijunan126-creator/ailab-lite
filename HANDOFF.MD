@@ -268,7 +268,7 @@
 - **`white-space: pre-wrap` 的 contenteditable 末尾 `\n` 是占位符**。Shift+Enter 插入的是文本不是 `<br>`；删到只剩末尾 `\n` 时要像末尾 `<br>` 一样丢掉，否则空消息会多一行。代码：`platform/portal/components/chat/rich-input.tsx`。
 - **聊天首包不要从 `catalog/schema.ts` 取常量**。取一个数字会把 zod 和 lang-core 拉进对话页首包；聊天侧只从 `catalog/limits.ts` 取常量。代码：`platform/portal/components/genui/catalog/limits.ts`。
 - **滚动跟随统一用 `lib/use-follow.ts`**。`stopAt` 只允许向下跟随，停点在视图上方视为已过；“回到底部”按钮在内容变化时按 `heading()` 重算，按当前 `scrollTop` 算会在滑行中闪现。代码：`platform/portal/lib/use-follow.ts`。
-- **GenUI 图表的 `sr-only` 数据表必须有图表内的定位包含块**。Tailwind 的 `sr-only` 是 `absolute`，长表若以 `.genui-block` 为包含块会撑大 `.messages` 的滚动高度，让最后一条消息不能贴底；把表格放进 `position: relative` 的图表内层。代码：`platform/portal/components/genui/catalog/kit.tsx::Frame`、`platform/portal/styles/genui.css`。
+- **GenUI 的读屏数据表必须由 1×1 的包裹层隐藏**。Tailwind 的 `sr-only` 放在 `<table>` 上时，表格实际尺寸会覆盖 1px 并继续撑大 `.messages` 的滚动高度；隐藏样式放在 `.gu-sr-table` 包裹层，表格保留原生语义。代码：`platform/portal/components/genui/catalog/kit.tsx::SrTable`、`platform/portal/styles/genui.css`。
 - **同源代理要透传 API 的缓存头**。`cache-control`、`etag`、`if-none-match` 必须转发，否则 API 的 immutable 缩略图在 Portal 侧全被 `no-store`；API 未声明时仍保持 `no-store`。代码：`platform/portal/app/api/v1/[...path]/route.ts`。
 
 ## 部署
@@ -301,6 +301,7 @@
 ## 测试
 
 ### 隔离与并发
+- **按图表实际语义断言读屏表数量**。压力样本只有柱状图使用隐藏表，饼图通过可见图例呈现数据；等待当前面板的隐藏表，不用固定延时或假定每张图都有一张表。测试：`platform/e2e/test_genui_layout.py::test_genui_hidden_tables_do_not_add_scroll_height`。
 - **autouse 清理 fixture 只比较少量活行**。每个测试都 `select` 全部 Run id 再 `NOT IN` 会随全套增长，最终撞上 PostgreSQL 的 CI 时限；只查运行中 Run、有租约或 pending 的整理任务。代码：`platform/tests/conftest.py::release_test_memory_jobs`。
 - **不带 `with` 的 `TestClient(app)` 不跑启动钩子**。存储目录不会 `ensure_dirs()`，第一个 `/readyz` 用例会因 `storage: False` 得到 503；要么用上下文管理器，要么显式建目录。代码：`platform/tests/test_review_regressions.py::test_api_stays_ready_but_degraded_without_redis`。
 - **查询次数测试只监听被测 session 的连接**。在 `Engine` 上挂监听会把 API 后台 outbox 和 reaper 的查询算进来；用 `db.connection()`，并只计调用线程。代码：`platform/tests/test_conversation_paging.py::test_detail_batches_related_rows_instead_of_querying_each_turn`。

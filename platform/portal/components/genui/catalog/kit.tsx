@@ -135,11 +135,13 @@ export function Legend({ items, hidden, onToggle }: { items: LegendItem[]; hidde
 /** The chart's numbers for screen readers. */
 export function SrTable({ title, head, rows }: { title: string; head: string[]; rows: React.ReactNode[][] }) {
   return (
-    <table className="sr-only">
-      <caption>{title}</caption>
-      <thead><tr>{head.map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
-      <tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => (j ? <td key={j}>{c}</td> : <th key={j}>{c}</th>))}</tr>)}</tbody>
-    </table>
+    <div className="gu-sr-table">
+      <table>
+        <caption>{title}</caption>
+        <thead><tr>{head.map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
+        <tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => (j ? <td key={j}>{c}</td> : <th key={j}>{c}</th>))}</tr>)}</tbody>
+      </table>
+    </div>
   );
 }
 
