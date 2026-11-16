@@ -3017,8 +3017,8 @@ def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
     import hashlib
 
     chat = system_prompt_for("chat")
-    assert len(chat) == 1504
-    assert hashlib.sha256(chat.encode()).hexdigest() == "fda4f7091a042539a1e5378e5853471ac3d8efeed0abec65451198c57ce533be"
+    assert len(chat) == 1502
+    assert hashlib.sha256(chat.encode()).hexdigest() == "24b14ac944700a6e15755626e481308d09b284468bc4575b9c4dcda400c54494"
     assert prompt_version("chat") != prompt_version("work")
 
     from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
@@ -3042,6 +3042,10 @@ def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
     with scripted_server([{"content": "same"}]) as (url, requests):
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("next", attempt_id="next"))
     assert requests[0]["messages"][0]["content"] == chat
+    descriptions = {tool["function"]["name"]: tool["function"]["description"] for tool in requests[0]["tools"]}
+    for name in ("web_search", "read_url"):
+        assert "full_text 为 true" in descriptions[name]
+        assert "一起调用" in descriptions[name]
     assert not any(kind == "agent.context_boundary" for kind, _ in platform.events)
 
 

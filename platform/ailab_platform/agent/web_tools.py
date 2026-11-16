@@ -11,6 +11,7 @@ web.py owns the public-only transport. This module owns what the Agent adds on t
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -108,26 +109,58 @@ async def search(ctx, query: str, count: int, kind: str) -> list[dict]:
     ctx.budget.request()
     found = await web.search(query, count, kind)
     if kind == "web" and found and settings.web_search_provider != "mock":
-        await _add_excerpts(found, query, ctx.budget)
+        await _add_excerpts(found, query, ctx.budget, ctx=ctx)
     return found
 
 
-async def _add_excerpts(results: list[dict], query: str, budget: net_tools.Budget) -> None:
-    targets = results[:EXCERPT_RESULTS]
+def _homepage(hit: dict) -> bool:
+    path = urlsplit(str(hit.get("url") or "")).path.strip("/")
+    return not path or re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z]{2,4})?", path) is not None
 
-    async def one(hit: dict) -> str:
+
+async def _add_excerpts(results: list[dict], query: str, budget: net_tools.Budget, *, ctx=None) -> None:
+    candidates = iter(sorted(results, key=_homepage))
+
+    async def one(hit: dict) -> bool:
         budget.request()
         page = await web.read_url(str(hit["url"]), max_chars=EXCERPT_PAGE_CHARS)
-        return web_excerpts.excerpt(str(page.get("text") or ""), query)
+        text = str(page.get("text") or "")
+        if page.get("challenged") or not text.strip():
+            return False
+        full = len(text) <= web_excerpts.FULL_TEXT_CHARS and not page.get("truncated") and page.get("next_start") is None
+        excerpt = text if full else web_excerpts.excerpt(text, query)
+        if not excerpt:
+            return False
+        hit["excerpt"] = excerpt
+        if full:
+            hit["full_text"] = True
+            if ctx is not None:
+                reads = ctx.web_reads
+                reads[_read_key(str(hit["url"]), 0)] = {"step": ctx.step + 1, "next_start": None}
+                for key in list(reads)[: max(0, len(reads) - MAX_WEB_READS)]:
+                    reads.pop(key, None)
+        return True
 
-    tasks = [asyncio.create_task(one(hit)) for hit in targets]
-    done, pending = await asyncio.wait(tasks, timeout=settings.web_excerpt_deadline_seconds)
-    for task in pending:
-        task.cancel()
-    if pending:
+    pending = set()
+    successes = 0
+    deadline = asyncio.get_running_loop().time() + settings.web_excerpt_deadline_seconds
+    try:
+        while successes < EXCERPT_RESULTS and asyncio.get_running_loop().time() < deadline:
+            while len(pending) < EXCERPT_RESULTS - successes:
+                hit = next(candidates, None)
+                if hit is None:
+                    break
+                pending.add(asyncio.create_task(one(hit)))
+            remaining = deadline - asyncio.get_running_loop().time()
+            if not pending or remaining <= 0:
+                break
+            done, pending = await asyncio.wait(pending, timeout=remaining, return_when=asyncio.FIRST_COMPLETED)
+            if not done:
+                break
+            for task in done:
+                if not task.cancelled() and task.exception() is None and task.result():
+                    successes += 1
+    finally:
+        for task in pending:
+            task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
-    for hit, task in zip(targets, tasks, strict=True):
-        if task not in done or task.cancelled() or task.exception() is not None:
-            continue
-        if excerpt := task.result():
-            hit["excerpt"] = excerpt

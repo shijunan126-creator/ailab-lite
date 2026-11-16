@@ -1,7 +1,6 @@
 """Agent-side web tools: supplemental provenance, per-run dedupe, segmented reads and excerpts."""
 
 import asyncio
-import time
 
 import pytest
 from pydantic import ValidationError
@@ -98,6 +97,7 @@ def test_search_results_carry_bounded_excerpts_from_the_top_three(monkeypatch):
         "https://example.com/0": "导航\n\n猫的饲养需要清水。\n\n无关段落。",
         "https://example.com/1": "无关\n\n猫需要定期打疫苗。",
         "https://example.com/2": "广告",
+        "https://example.com/3": "补位正文",
     }
     reads = []
 
@@ -114,15 +114,16 @@ def test_search_results_carry_bounded_excerpts_from_the_top_three(monkeypatch):
     monkeypatch.setattr(web, "read_url", read)
     ctx = tools.ToolContext(messages=[{"role": "user", "content": "猫"}])
     found = asyncio.run(web_tools.search(ctx, "猫 疫苗", 4, "web"))
-    assert [hit.get("excerpt") for hit in found] == ["猫的饲养需要清水。", "猫需要定期打疫苗。", None, None]
-    assert reads == ["https://example.com/0", "https://example.com/1", "https://example.com/2"]
-    assert ctx.budget.requests == 4  # one search, three page reads
+    assert [hit.get("excerpt") for hit in found] == [pages["https://example.com/0"], pages["https://example.com/1"], None, "补位正文"]
+    assert reads == [f"https://example.com/{i}" for i in range(4)]
+    assert ctx.budget.requests == 5  # one search, four attempts
     assert all(len(hit.get("excerpt") or "") <= 800 for hit in found)
 
 
 def test_a_slow_excerpt_read_does_not_hold_the_search(monkeypatch):
     monkeypatch.setattr(settings, "web_search_provider", "searxng")
-    monkeypatch.setattr(settings, "web_excerpt_deadline_seconds", 0.05)
+    monkeypatch.setattr(settings, "web_excerpt_deadline_seconds", 0.001)
+    cancelled = []
     hits = [_hit(url=f"https://example.com/{i}", title=f"Hit {i}") for i in range(3)]
 
     async def search(query, count=None, kind="web"):
@@ -130,15 +131,17 @@ def test_a_slow_excerpt_read_does_not_hold_the_search(monkeypatch):
 
     async def read(url, max_chars=None):
         if url.endswith("/2"):
-            await asyncio.sleep(0.4)
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.append(url)
         return _page(url, text="猫的正文。")
 
     monkeypatch.setattr(web, "search", search)
     monkeypatch.setattr(web, "read_url", read)
     ctx = tools.ToolContext(messages=[{"role": "user", "content": "猫"}])
-    started = time.monotonic()
     found = asyncio.run(web_tools.search(ctx, "猫", 3, "web"))
-    assert time.monotonic() - started < 0.3
+    assert cancelled == [hits[2]["url"]]
     assert [hit.get("excerpt") for hit in found] == ["猫的正文。", "猫的正文。", None]
 
 
@@ -159,3 +162,69 @@ def test_the_excerpt_deadline_is_range_checked():
         Settings(profile="dev", service_name="agent", web_excerpt_deadline_seconds=0)
     with pytest.raises(ValidationError):
         Settings(profile="dev", service_name="agent", web_excerpt_deadline_seconds=31)
+
+
+@pytest.mark.parametrize("path", ["", "/", "/zh", "/en", "/zh-CN", "/ja"])
+def test_homepages_are_last_candidates_without_reordering_results(monkeypatch, path):
+    hits = [_hit("https://example.com" + path)] + [_hit(f"https://example.com/article/{i}") for i in range(3)]
+    reads = []
+
+    async def read(url, **kwargs):
+        reads.append(url)
+        return _page(url, "正文")
+
+    monkeypatch.setattr(web, "read_url", read)
+    asyncio.run(web_tools._add_excerpts(hits, "正文", tools.ToolContext().budget))
+    assert reads == [hit["url"] for hit in hits[1:]]
+    assert "excerpt" not in hits[0]
+
+
+def test_short_full_text_is_recorded_and_not_fetched_again(monkeypatch):
+    monkeypatch.setattr(settings, "web_search_provider", "searxng")
+    reads = []
+    text = "正文" * 1000
+
+    async def search(*args):
+        return [_hit()]
+
+    async def read(url, **kwargs):
+        reads.append(url)
+        return _page(url, text)
+
+    monkeypatch.setattr(web, "search", search)
+    monkeypatch.setattr(web, "read_url", read)
+    ctx = tools.ToolContext()
+    found = asyncio.run(web_tools.search(ctx, "无关查询", 1, "web"))
+    assert found[0]["excerpt"] == text and found[0]["full_text"] is True
+    assert asyncio.run(web_tools.read_page(ctx, URL))["duplicate"] is True
+    assert reads == [URL]
+
+
+@pytest.mark.parametrize("failure", ["empty", "challenged", "unmatched", "exception"])
+def test_empty_excerpt_slots_are_replenished(monkeypatch, failure):
+    hits = [_hit(f"https://example.com/article/{i}") for i in range(4)]
+
+    async def read(url, **kwargs):
+        if url.endswith("/0"):
+            if failure == "exception":
+                raise web.WebError("unavailable")
+            return {**_page(url, "" if failure == "empty" else "无关" * 1100), "challenged": failure == "challenged"}
+        return _page(url, "正文")
+
+    monkeypatch.setattr(web, "read_url", read)
+    asyncio.run(web_tools._add_excerpts(hits, "正文", tools.ToolContext().budget))
+    assert "excerpt" not in hits[0]
+    assert all(hit["excerpt"] == "正文" for hit in hits[1:])
+
+
+def test_truncated_short_text_is_not_marked_full(monkeypatch):
+    hits = [_hit()]
+
+    async def read(url, **kwargs):
+        return _page(url, "正文", next_start=2)
+
+    monkeypatch.setattr(web, "read_url", read)
+    ctx = tools.ToolContext()
+    asyncio.run(web_tools._add_excerpts(hits, "正文", ctx.budget, ctx=ctx))
+    assert hits[0]["excerpt"] == "正文"
+    assert "full_text" not in hits[0] and not ctx.web_reads

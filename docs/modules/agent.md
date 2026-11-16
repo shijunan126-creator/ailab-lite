@@ -60,7 +60,7 @@ Agent 消费 Run 队列，组装前缀稳定的模型请求，执行工具，并
 4. `PARALLEL_TOOLS`（`READ_ONLY_TOOLS` 加 `web_search`/`read_url`）同批并行，结果仍按 ordinal 顺序消费；有副作用的工具开始前先写 `tool_log` 并 checkpoint。web 工具不在 `READ_ONLY_TOOLS`，每个结果单独 checkpoint，所以恢复时 `_durable_tool` 直接复用已完成的结果，不再花一次外部请求；同批有调用中断时，已完成 web 结果先写 `tool_log` 再 checkpoint 才抛出。
 5. 工具结果按整批做上下文准入：单个结果放不下时替换成 `cannot_fit` 拒绝，同时为每个待配对调用保留最小结果；连这些也放不下就 `ContextPause`。结果写入 `tool_log`、追加 tool 消息、更新来源/交付/后台句柄，再 checkpoint。
 6. `web_tools.read_page` 以规范化 URL 加 `start` 为键，把成功读取的步号和 `next_start` 记在 `state["web_reads"]`（随 checkpoint 持久化）；同一段再次读取直接返回 `duplicate`，不抓取、不计请求。URL 未通过 `net_tools.check_source` 时先用它搜一次，命中同一规范化 URL 才读（`via_search`）；没命中就把搜索结果放进错误结果，供下一轮选择。
-7. `web_tools.search` 对前 3 条 web 结果并行读正文并附上 `excerpt`（`web_excerpts.excerpt` 按查询词重合度选段，最多 800 字符），整体不超过 `AILAB_WEB_EXCERPT_DEADLINE_SECONDS`；超时或失败的那条不带片段。每个摘录读取各计一次 `ctx.budget` 请求。
+7. `web_tools.search` 用 3 个并发槽按排名补齐 3 条有内容的摘录，首页及语言首页候选排后，返回顺序不变；整体受 `AILAB_WEB_EXCERPT_DEADLINE_SECONDS` 限制，取消并等待未完成任务。完整正文不超过 `web_excerpts.FULL_TEXT_CHARS`（2000 字符）时返回全文并标 `full_text`，记入 `web_reads`；长页按查询选最多 800 字符。每次尝试读取计一次预算请求。
 8. 工具异常转成 `{ok:false, error}` 交给模型；租约 410 向上抛 `LeaseInterrupted`，不伪装成普通工具失败。
 
 ### 网页读取

@@ -90,10 +90,11 @@ function current(items: Item[] | null | undefined, thinking: string): string {
   return "";
 }
 
-export default function WorkProcess({ thoughts, onThought, run, items, live, loading, error, more, onLoad, renderAsk, expanded, onExpanded }: {
+export default function WorkProcess({ thoughts, onThought, run, items, live, loading, error, more, onLoad, renderAsk, answering, expanded, onExpanded }: {
   /** the reader's choice per thought, by model step; a thought without one follows whether it is being written */
   thoughts: Map<number, boolean>;
   onThought: (step: number, open: boolean) => void;
+  answering: boolean;
   expanded: boolean | null;
   onExpanded: (value: boolean) => void;
   run: Run;
@@ -106,7 +107,7 @@ export default function WorkProcess({ thoughts, onThought, run, items, live, loa
   renderAsk: (item: Extract<Item, { kind: "ask" }>) => React.ReactNode;
 }) {
   const active = ["queued", "running", "waiting_user", "interrupted"].includes(run.status);
-  const open = expanded ?? active;
+  const open = expanded ?? (active && !(answering && ["running", "queued"].includes(run.status)));
   const fold = useCollapse(open);
   const chat = run.options?.mode === "chat";
   const thinking = chat ? "思考" : "梳理任务";
