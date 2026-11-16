@@ -19,7 +19,7 @@ const step: Item = {
 };
 const nextThought: Item = { kind: "thinking", step: 1, text: "**写脚本**\n生成文档。", seconds: 1, done: false };
 
-const run = (mode: "work" | "chat", status: "running" | "succeeded") =>
+const run = (mode: "work" | "chat", status: "running" | "queued" | "waiting_user" | "interrupted" | "succeeded") =>
   ({
     id: "run-collapse",
     status,
@@ -32,7 +32,7 @@ const run = (mode: "work" | "chat", status: "running" | "succeeded") =>
     artifacts: [],
   }) as unknown as Run;
 
-function mount(items: Item[], status: "running" | "succeeded" = "running", mode: "work" | "chat" = "work") {
+function mount(items: Item[], status: "running" | "queued" | "waiting_user" | "interrupted" | "succeeded" = "running", mode: "work" | "chat" = "work") {
   return (
     <TurnComponent
       run={run(mode, status)}
@@ -66,8 +66,7 @@ test.each(["work", "chat"] as const)("a %s thought reads live and folds as soon 
   expect(screen.getByText(/先确认依赖/)).toBeTruthy();
 
   view.rerender(mount([thought, answer], "running", mode));
-  expect(thoughtHeads()[0].getAttribute("aria-expanded")).toBe("false");
-  expect(bodies()).toBe(0);
+  expect(head().getAttribute("aria-expanded")).toBe("false");
   expect(screen.getByText("正式回答")).toBeTruthy();
 });
 
@@ -90,6 +89,8 @@ test("the reader's choice on a thought wins over its live state", () => {
   expect(thoughtHeads()[0].getAttribute("aria-expanded")).toBe("false");
 
   fireEvent.click(thoughtHeads()[0]);
+  fireEvent.click(head());
+  fireEvent.click(head());
   view.rerender(mount([thought, answer]));
   expect(thoughtHeads()[0].getAttribute("aria-expanded")).toBe("true");
   expect(bodies()).toBe(1);
@@ -101,4 +102,25 @@ test("a finished run is folded with every thought closed", () => {
   fireEvent.click(head());
   expect(thoughtHeads()[0].getAttribute("aria-expanded")).toBe("false");
   expect(bodies()).toBe(0);
+});
+
+
+test.each(["work", "chat"] as const)("%s process reopens for tools and respects manual expansion", (mode) => {
+  const view = render(mount([thought, step], "running", mode));
+  expect(head().getAttribute("aria-expanded")).toBe("true");
+  view.rerender(mount([thought, answer], "running", mode));
+  expect(head().getAttribute("aria-expanded")).toBe("false");
+  view.rerender(mount([thought, answer, step], "running", mode));
+  expect(head().getAttribute("aria-expanded")).toBe("true");
+  view.rerender(mount([thought, answer], "running", mode));
+  fireEvent.click(head());
+  view.rerender(mount([thought, { ...answer, text: "更多回答" }], "running", mode));
+  expect(head().getAttribute("aria-expanded")).toBe("true");
+});
+
+
+test.each(["waiting_user", "interrupted"] as const)("%s keeps user actions visible with trailing text", (status) => {
+  render(mount([thought, { kind: "ask", id: "question", question: "继续？", options: ["继续"] } as Item, answer], status));
+  expect(head().getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("继续？")).toBeTruthy();
 });

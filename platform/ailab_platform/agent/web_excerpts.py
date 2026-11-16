@@ -11,6 +11,7 @@ import re
 from itertools import pairwise
 
 EXCERPT_CHARS = 800
+FULL_TEXT_CHARS = 2000
 
 _CJK_RUN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+")
 _WORD = re.compile(r"[a-z0-9]{2,}")

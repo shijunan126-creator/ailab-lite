@@ -43,7 +43,7 @@ def test_one_chronological_region_stops_and_reloads_without_raw_reasoning(logged
         httpx.post(stack.agent + "/e2e/release-stream", timeout=5).raise_for_status()
 
 
-def test_thought_folds_when_the_answer_starts_without_a_frame_jump(logged_in, stack):
+def test_process_folds_when_the_answer_starts_without_a_frame_jump(logged_in, stack):
     page = logged_in
     page.set_viewport_size({"width": 900, "height": 600})
     wait_models(page)
@@ -71,7 +71,7 @@ def test_thought_folds_when_the_answer_starts_without_a_frame_jump(logged_in, st
                 const turn = [...el.querySelectorAll('.turn')].at(-1);
                 const assistant = turn.querySelector('.msg.assistant');
                 const process = turn.querySelector('.work-process');
-                const button = process.querySelector('.pr-thought > button');
+                const head = process.querySelector('.steps-head');
                 window.__ailabFrames = [];
                 let folded = -1;
                 const tick = () => {
@@ -81,7 +81,7 @@ def test_thought_folds_when_the_answer_starts_without_a_frame_jump(logged_in, st
                         assistantTop: assistant.getBoundingClientRect().top - box.top,
                         process: process.getBoundingClientRect().height,
                     });
-                    if (folded < 0 && button.getAttribute('aria-expanded') === 'false') folded = window.__ailabFrames.length;
+                    if (folded < 0 && head.getAttribute('aria-expanded') === 'false') folded = window.__ailabFrames.length;
                     if (folded < 0 ? window.__ailabFrames.length < 600 : window.__ailabFrames.length < folded + 40)
                         requestAnimationFrame(tick);
                     else window.__ailabDone = true;
@@ -91,10 +91,8 @@ def test_thought_folds_when_the_answer_starts_without_a_frame_jump(logged_in, st
         )
         httpx.post(stack.agent + "/e2e/release-answer", timeout=5).raise_for_status()
         expect(page.locator(".assistant-body > .md").last).to_have_text(ANSWER_TEXT)
-        expect(thought).to_have_attribute("aria-expanded", "false")
-        expect(region.locator(".pr-thought-body")).to_have_count(0)
-        # Only the thought folds: the process box stays open while the run works.
-        expect(head).to_have_attribute("aria-expanded", "true")
+        # Once the answer streams, the whole process folds while the run still works.
+        expect(head).to_have_attribute("aria-expanded", "false")
         page.wait_for_function("() => window.__ailabDone === true")
         frames = page.evaluate("() => window.__ailabFrames")
         heights = [frame["process"] for frame in frames]

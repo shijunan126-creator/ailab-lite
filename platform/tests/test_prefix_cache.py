@@ -3012,13 +3012,16 @@ def test_a_checkpoint_with_retired_tool_names_is_rebuilt_at_a_recorded_boundary(
     assert ("agent.context_boundary", {"reason": "tool_catalog_changed"}) in platform.events
 
 
-def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
+def test_a_chat_conversation_keeps_its_prefix_across_this_deploy(monkeypatch):
     """A rules-version deploy rewrites Chat's rules once; the bytes are pinned here so the next change is deliberate."""
     import hashlib
 
+    from ailab_platform.config import settings
+
+    monkeypatch.setattr(settings, "web_search_provider", "mock")
     chat = system_prompt_for("chat")
-    assert len(chat) == 1504
-    assert hashlib.sha256(chat.encode()).hexdigest() == "fda4f7091a042539a1e5378e5853471ac3d8efeed0abec65451198c57ce533be"
+    assert len(chat) == 1779
+    assert hashlib.sha256(chat.encode()).hexdigest() == "1c0f1dfb825c360457aa155de419501f03b4e29e6bd4bf5c6f72b57e4f261b7b"
     assert prompt_version("chat") != prompt_version("work")
 
     from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
@@ -3042,6 +3045,10 @@ def test_a_chat_conversation_keeps_its_prefix_across_this_deploy():
     with scripted_server([{"content": "same"}]) as (url, requests):
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("next", attempt_id="next"))
     assert requests[0]["messages"][0]["content"] == chat
+    descriptions = {tool["function"]["name"]: tool["function"]["description"] for tool in requests[0]["tools"]}
+    for name in ("web_search", "read_url"):
+        assert "full_text 为 true" in descriptions[name]
+        assert "一起调用" in descriptions[name]
     assert not any(kind == "agent.context_boundary" for kind, _ in platform.events)
 
 

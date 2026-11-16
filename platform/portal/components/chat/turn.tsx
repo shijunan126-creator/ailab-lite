@@ -345,7 +345,7 @@ export default memo(function Turn({
       <div className="msg assistant">
         <div className="avatar-ai">A</div>
         <div className="assistant-body">
-          {showProcess ? <WorkProcess thoughts={thoughts} onThought={chooseThought} expanded={processExpanded} onExpanded={setProcessExpanded} run={run} items={shown == null ? null : process} live={live}
+          {showProcess ? <WorkProcess answering={!!answer} thoughts={thoughts} onThought={chooseThought} expanded={processExpanded} onExpanded={setProcessExpanded} run={run} items={shown == null ? null : process} live={live}
             loading={loadingHistory} error={historyError} more={moreHistory} onLoad={loadHistory} renderAsk={(item) => <Ask item={item}
               live={(!terminal || run.status === "interrupted") && !!onAnswer}
               onAnswer={(value) => onAnswer!(run, item.id, value)} />} /> : null}
