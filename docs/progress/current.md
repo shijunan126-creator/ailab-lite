@@ -4,11 +4,12 @@
 
 ## 进行中
 
-- 模型 provider 拆分（分支 `main`，base `origin/main`，未提交）：新增 `opencode-go`/`deepseek` provider，请求形状默认值由 `platform/ailab_platform/model_providers.py` 提供；Hy4 与 DeepSeek 的 `reasoning.toml` 加 `none` 档（官方 `thinking.type=disabled`），Hy4 加 `high` 档。已改仓库目录和本机私有 `models.local.toml`；232 项相关测试、ruff、真模型 reasoning_tokens 验证通过。下一步：决定提交/PR 与是否部署。
+无。
 
 ## 等用户决定
 
 - Compare/Highlights 工具是否改成按需加载：要先拿真实模型做对比。
+- 部署 PR #209 的模型 provider 拆分与思考档位：需要更新镜像（含 `model_providers.py` 与两个 toml）并用 `k8s_models.sh` 发布 ConfigMap；本机私有 `models.local.toml` 已同步，等用户确认部署窗口。
 
 ## 已知未覆盖
 
