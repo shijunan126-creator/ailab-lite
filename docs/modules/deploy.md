@@ -1,6 +1,6 @@
 # 部署
 
-本页说明 Linux 上 Docker + k3s 的部署链路；macOS 上独立虚拟机与 Compose 的个人测试环境按本地手册维护。平台部署在一台已安装 Docker 与 k3s 的机器上。本模块负责 `deploy.sh`、k3s 节点、k8s 清单、镜像、配置、模型目录、观测和备份。服务内部的业务行为见 [Agent](agent.md)、[API](api.md)、[文件](files.md)、[沙箱](sandbox.md)；Portal 见 [Portal](portal.md)。
+平台部署在一台已安装 Docker 与 k3s 的 Linux 机器上。本模块负责 `deploy.sh`、k3s 节点、k8s 清单、镜像、配置、模型目录、观测和备份。服务内部的业务行为见 [Agent](agent.md)、[API](api.md)、[文件](files.md)、[沙箱](sandbox.md)；Portal 见 [Portal](portal.md)。
 
 ## 代码地图
 
