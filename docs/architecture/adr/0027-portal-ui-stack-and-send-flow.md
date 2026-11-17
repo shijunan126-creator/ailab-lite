@@ -19,6 +19,8 @@
 - **浏览器 Office 有界准入**（2026-11-06）：复用已由 `docx-preview` 携带的 JSZip 3.10.1，显式锁定为直接依赖；在可取消的临时 Worker 中检查结构与内嵌图片预算，避免首开依赖服务端全文索引，又把整包解析和过大的解码图留在主线程。超限走既有后备，不替代服务端安全扫描。
 - **不采用 assistant-ui**：其消息/runtime 模型与以 Run 为中心的版本、过程、排队、插话、ask_user 和 500 轮卸载机制冲突。
 
+- **数学公式**：`katex` 0.19.1 排版回答与用户消息中的 TeX（`$…$`、`$$…$$`、`\(…\)`、`\[…\]`、行首数学环境）。JS 约 75 KB gzip，首个公式出现时才动态加载；化学式的 mhchem 只在出现 `\ce`/`\pu` 时加载；样式进 `components` 层，字体按字形按需下载。`trust: false`，模型写的 TeX 不能生成链接、图片或任意 HTML。
+
 当前**未引入**（没有使用点就不加依赖）：Streamdown（自研 Markdown 已满足 40 万字分块、`ailab-file://`、来源 pill；替换需先做 HLD Spike A 对比）、Recharts（GenUI 图表用自绘 SVG，见 ADR 0028）、Motion、shadcn/Base UI 组件、TanStack Query。各自在对应屏幕重建且有具体行为需要时再引入。
 
 ## 流式管线

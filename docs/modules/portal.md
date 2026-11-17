@@ -12,6 +12,7 @@ Portal 是浏览器里的界面与同源入口：负责页面、发送队列、S
 | 输入框、附件、技能、模板、排队与插话 | `platform/portal/components/chat/composer.tsx::Composer` |
 | 单轮消息、过程、回答、分支/重试/编辑 | `platform/portal/components/chat/turn.tsx::Turn` |
 | 回答中的 Markdown 与 GenUI 分片 | `platform/portal/components/chat/answer.tsx::Answer` |
+| Markdown 中的数学公式 | `platform/portal/lib/math.ts`、`platform/portal/components/math.tsx::TexMath` |
 | 侧栏标签、预览、来源、网页阅读器 | `platform/portal/components/chat/preview-pane.tsx::PreviewPane` |
 | 发送队列 | `platform/portal/lib/outbox.ts` |
 | 附件上传与扫描轮询 | `platform/portal/lib/uploads.ts` |

@@ -58,6 +58,14 @@ export function cellText(cell: Element): string {
       return;
     }
     if (!(node instanceof Element)) return;
+    // a typeset formula reads as its TeX, not as the glyphs and MathML it is drawn with
+    if (node.classList.contains("katex")) {
+      const tex = node.querySelector("annotation")?.textContent;
+      if (tex != null) {
+        out += node.closest(".katex-display") ? `$$${tex}$$` : `$${tex}$`;
+        return;
+      }
+    }
     if (node.classList.contains("sr-only") || node.getAttribute("aria-hidden") === "true" || node.tagName === "svg") return;
     const label = node.getAttribute("aria-label");
     if (label && !(node.textContent ?? "").trim()) {

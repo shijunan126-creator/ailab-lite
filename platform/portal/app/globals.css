@@ -7,6 +7,8 @@
 @import "tailwindcss/preflight.css" layer(base);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "../styles/tokens.css";
+/* KaTeX first in components, so the Portal's own rules for formulas come after it */
+@import "katex/dist/katex.min.css" layer(components);
 @import "../styles/base.css" layer(components);
 @import "../styles/shell.css" layer(components);
 @import "../styles/chat.css" layer(components);

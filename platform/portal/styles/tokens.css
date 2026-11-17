@@ -64,6 +64,7 @@
   --text-md: 1rem; /* 16px  reading: answers, messages, input */
   --text-lg: 1.125rem; /* 18px  section titles */
   --text-xl: 1.5rem; /* 24px  page titles, metric values */
+  --text-math: 1.1em; /* formulas, relative to the text around them (KaTeX's own 1.21em towers over CJK) */
   --leading-read: 1.75;
   --leading-ui: 1.5;
 
