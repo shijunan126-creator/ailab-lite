@@ -1,6 +1,6 @@
 # 部署
 
-平台部署在一台已安装 Docker 与 k3s 的机器上。本模块负责 `deploy.sh`、k3s 节点、k8s 清单、镜像、配置、模型目录、观测和备份。服务内部的业务行为见 [Agent](agent.md)、[API](api.md)、[文件](files.md)、[沙箱](sandbox.md)；Portal 见 [Portal](portal.md)。
+本页说明 Linux 上 Docker + k3s 的部署链路；macOS 上独立虚拟机与 Compose 的个人测试环境按本地手册维护。平台部署在一台已安装 Docker 与 k3s 的机器上。本模块负责 `deploy.sh`、k3s 节点、k8s 清单、镜像、配置、模型目录、观测和备份。服务内部的业务行为见 [Agent](agent.md)、[API](api.md)、[文件](files.md)、[沙箱](sandbox.md)；Portal 见 [Portal](portal.md)。
 
 ## 代码地图
 
@@ -88,7 +88,7 @@ lite 的应用与基础设施 request 合计约 0.56 CPU / 2.2 GiB（不含仅 d
 | 部署范围 | `--skip-build`、`--no-portal`、`--listen ADDR`、`--smoke-real`、`--dry-run` |
 
 ### 只改配置或模型
-`sudo ./deploy.sh --skip-build` 复用已导入的平台镜像，重新生成 Secret、模型 ConfigMap 和配置后 apply；沙箱镜像若已过期只会警告并保留旧镜像。改代码、改沙箱镜像不要用这个参数。
+`sudo ./deploy.sh --skip-build` 复用已导入的平台镜像，协调服务身份、模型 Secret、ConfigMap 和配置后 apply；已有凭据保留，仅补齐缺失身份并更新明确指定的 Key。沙箱镜像仍须在 Docker 中存在，过期时只会警告并保留旧镜像。改代码、改沙箱镜像不要用这个参数。
 
 ### 发布模型目录
 本机开发把 `models.toml`/`models.local.toml` 放在 `platform/`，重启 API 和 Agent。k3s 用 `bash platform/scripts/k8s_models.sh` 把目录和旁边的 `reasoning.toml` 发布成 `platform-models` ConfigMap，并重启 API、Agent；`NO_RESTART=1` 只发布不重启。首次部署时，`deploy.sh` 会把默认模型的 Key 写进 `platform-secrets`，再由 `k8s_secrets.sh` 投影到只挂给 API/Agent 的 `platform-model-secrets`。给已有部署增加第二个模型 Key 时，先把 `AILAB_KEY_<NAME>` 按 Secret 运维方式加入 `platform-secrets`（不要把值写进命令行历史），再运行 `k8s_secrets.sh` 重建 `platform-model-secrets`。
@@ -129,7 +129,7 @@ lite 的应用与基础设施 request 合计约 0.56 CPU / 2.2 GiB（不含仅 d
 6. 静态网络/清单测试参照 `platform/tests/test_web_deployment.py`；脚本行为测试参照 `platform/tests/test_deploy_review.py`。
 
 ### 只更新变化的组件
-- 只改配置、Key 或模型目录：`sudo ./deploy.sh --skip-build`；不重建镜像，但会重新创建 Secret/ConfigMap 并重启四个平台服务。
+- 只改配置、Key 或模型目录：`sudo ./deploy.sh --skip-build`；不重建镜像，保留已有凭据并协调 Secret/ConfigMap，再更新或重启四个平台服务。
 - 只改 Portal：Portal 与后端镜像分离，可以只重建/替换 Portal 进程或 `portal.Dockerfile` 镜像，复用平台和 Office 镜像；完整 `deploy.sh` 仍会 apply 平台清单，严格只动 Portal 时走 Portal 自身的 `npm ci && npm run build && next start`。
 - 改平台后端：重建 `ailab-platform:lite` 并导入；API/Agent/Broker/Worker 共用该镜像，四个 Deployment 一起滚动。`--no-portal` 可跳过 Portal。
 - 改沙箱技能或镜像：`images/sbx-office/skills` 同时打进平台镜像和沙箱镜像；必须重建两者，不能只换沙箱。`deploy.sh::build_images` 用内容哈希标签判断沙箱是否变化。
