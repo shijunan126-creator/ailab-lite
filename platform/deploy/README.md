@@ -1,6 +1,6 @@
 # platform/deploy
 
-应用 k8s 清单和镜像定义。部署顺序、配置、模型目录、观测和备份见 [部署模块](../../docs/modules/deploy.md)；这里只说明这个目录的清单结构。
+Linux/k3s 应用清单和镜像定义。部署顺序、配置、模型目录、观测和备份见 [部署模块](../../docs/modules/deploy.md)；这里只说明这个目录的清单结构。
 
 ## 清单
 
@@ -26,7 +26,7 @@ kubectl apply -k platform/deploy/overlays/lite
 | `ailab-portal` | `platform/deploy/portal.Dockerfile` | Next.js standalone；需要独立 Portal 镜像时使用 |
 | `harbor.ailab.local/sandbox/sbx-office:lite` | `images/sbx-office/Dockerfile` | gVisor 下的办公沙箱 |
 
-平台、Portal 和沙箱镜像从仓库根构建。`deploy.sh` 负责构建、导入 k3s containerd 并核对导入的配置 digest。`imagePullPolicy: Never` 的清单只能使用已导入的镜像，未导入时 Pod 不会自动拉取。
+平台、Portal 和沙箱镜像从仓库根构建。`deploy.sh` 构建并导入平台与沙箱镜像；Portal 由宿主 Node 进程启动，独立 Portal 镜像需另行构建。导入校验支持经典 Docker 的配置 digest，以及 Docker containerd image store 的 index/manifest digest。`imagePullPolicy: Never` 的清单只能使用已导入的镜像，未导入时 Pod 不会自动拉取。
 
 ## 运行约束
 
