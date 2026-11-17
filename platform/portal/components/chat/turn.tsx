@@ -289,7 +289,7 @@ export default memo(function Turn({
             if (await onEdit(run, prompt, skills)) setEditing(null);
           }} />
         ) : (
-          <div className="bubble"><MessageText parts={promptParts} /></div>
+          <div className="bubble"><MessageText parts={promptParts} math /></div>
         )}
         {run.template ? (
           <div className="attach-row">

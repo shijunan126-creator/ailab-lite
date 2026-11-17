@@ -13,7 +13,7 @@ export default function PendingMessage({ message }: { message: Pending }) {
   return (
     <div className={`turn pending-turn ${failed ? "failed" : ""}`} data-stage={message.stage}>
       <div className="msg user">
-        <div className="bubble"><MessageText parts={fromPayload(message.prompt, message.options.skills)} /></div>
+        <div className="bubble"><MessageText parts={fromPayload(message.prompt, message.options.skills)} math /></div>
         {message.attachments.length ? (
           <div className="attach-row">
             {message.attachments.map((key) => (

@@ -1,5 +1,6 @@
 // A small Markdown renderer for model answers: headings, paragraphs, lists, quotes, code, tables, links,
-// bold / italic / inline code. It builds React elements (no HTML strings), so model output cannot inject markup.
+// bold / italic / inline code, and TeX math. It builds React elements (no HTML strings), so model output cannot
+// inject markup; the only HTML is KaTeX's own rendering of a formula, typeset without trusted commands.
 "use client";
 
 import { Fragment, memo, ReactNode, useMemo } from "react";
@@ -9,6 +10,8 @@ import CopyButton from "./copy-button";
 import TableFrame from "./table-frame";
 import FileCite from "./file-cite";
 import { urlKey, type Source } from "../lib/work-process";
+import { holdOpenMath, MATH_INLINE, opensMath, readMathBlock, tableCells, texOf } from "../lib/math";
+import TexMath, { PendingMath } from "./math";
 
 const BARE_URL = /https?:\/\/[^\s<>()[\]{}"'，。、；：！？（）《》「」]+[^\s<>()[\]{}"'，。、；：！？（）《》「」.,;:!?]/;
 
@@ -40,7 +43,8 @@ function inline(text: string, key = "i", cites?: Cites, open?: LinkOpener): Reac
     : undefined;
   const out: ReactNode[] = [];
   const re = new RegExp(
-    String.raw`(\`[^\`]+\`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\(((?:https?|ailab-file):\/\/[^)\s]+)(?:\s+"[^"]*")?\))|(` + BARE_URL.source + ")",
+    // code first: `$x$` stays code; math before emphasis and links, whose markers are TeX inside a formula
+    String.raw`(\`[^\`]+\`)|(\\\$)|(` + MATH_INLINE + String.raw`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\(((?:https?|ailab-file):\/\/[^)\s]+)(?:\s+"[^"]*")?\))|(` + BARE_URL.source + ")",
     "g"
   );
   let last = 0;
@@ -50,34 +54,38 @@ function inline(text: string, key = "i", cites?: Cites, open?: LinkOpener): Reac
     if (m.index > last) out.push(text.slice(last, m.index));
     const k = `${key}-${n++}`;
     if (m[1]) out.push(<code key={k}>{m[1].slice(1, -1)}</code>);
-    else if (m[2]) out.push(<strong key={k}>{inline(m[2].slice(2, -2), k, cites, open)}</strong>);
-    else if (m[3]) out.push(<em key={k}>{inline(m[3].slice(1, -1), k, cites, open)}</em>);
-    else if (m[4] && m[5].startsWith("ailab-file://")) {
+    else if (m[2]) out.push("$");
+    else if (m[3]) {
+      const { tex, display } = texOf(m[3]);
+      out.push(<TexMath key={k} tex={tex} display={display} raw={m[3]} />);
+    } else if (m[4]) out.push(<strong key={k}>{inline(m[4].slice(2, -2), k, cites, open)}</strong>);
+    else if (m[5]) out.push(<em key={k}>{inline(m[5].slice(1, -1), k, cites, open)}</em>);
+    else if (m[6] && m[7].startsWith("ailab-file://")) {
       // a library file the answer quotes: its name and page, opening the file at that page
-      const label = m[4].slice(1, m[4].indexOf("](")).trim();
-      const cite = /^ailab-file:\/\/([A-Za-z0-9_-]+)(?:\?page=(\d+))?$/.exec(m[5]);
+      const label = m[6].slice(1, m[6].indexOf("](")).trim();
+      const cite = /^ailab-file:\/\/([A-Za-z0-9_-]+)(?:\?page=(\d+))?$/.exec(m[7]);
       out.push(cite ? <FileCite key={k} fileId={cite[1]} page={cite[2] ? Number(cite[2]) : undefined} label={label} /> : label);
-    } else if (m[4]) {
-      const label = m[4].slice(1, m[4].indexOf("](")).trim();
-      const source = cites?.get(urlKey(m[5]));
+    } else if (m[6]) {
+      const label = m[6].slice(1, m[6].indexOf("](")).trim();
+      const source = cites?.get(urlKey(m[7]));
       // [1](url) is a citation: a small numbered mark, the page on hover
       const cite = /^\[?\d{1,2}\]?$/.test(label);
       if (source && !cite) {
         // a page the turn read, cited after a claim: a small pill named as the answer names it
         out.push(
-          <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className="md-src" title={source.title || m[5]} onClick={click?.(m[5], source.title || m[5])}>
+          <a key={k} href={m[7]} target="_blank" rel="noreferrer noopener" className="md-src" title={source.title || m[7]} onClick={click?.(m[7], source.title || m[7])}>
             {label}
           </a>
         );
       } else out.push(
-        <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className={cite ? "md-cite" : "md-link"} title={m[5]} onClick={click?.(m[5], source?.title || (cite ? m[5] : label))}>
+        <a key={k} href={m[7]} target="_blank" rel="noreferrer noopener" className={cite ? "md-cite" : "md-link"} title={m[7]} onClick={click?.(m[7], source?.title || (cite ? m[7] : label))}>
           {cite ? label.replace(/[[\]]/g, "") : inline(label, k, cites, open)}
         </a>
       );
-    } else if (m[6]) {
+    } else if (m[8]) {
       out.push(
-        <a key={k} href={m[6]} target="_blank" rel="noreferrer noopener" className="md-url" title={m[6]} onClick={click?.(m[6])}>
-          {shortUrl(m[6])}
+        <a key={k} href={m[8]} target="_blank" rel="noreferrer noopener" className="md-url" title={m[8]} onClick={click?.(m[8])}>
+          {shortUrl(m[8])}
         </a>
       );
     }
@@ -87,18 +95,26 @@ function inline(text: string, key = "i", cites?: Cites, open?: LinkOpener): Reac
   return out;
 }
 
-function cells(row: string): string[] {
-  return row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
-}
-
 type Props = { text: string; streaming?: boolean; sources?: Source[]; virtual?: boolean; onOpenLink?: LinkOpener };
 const MarkdownBlock = memo(function MarkdownBlock({ text, streaming, sources, onOpenLink }: Props) {
   const cites: Cites = sources?.length ? new Map(sources.map((s) => [urlKey(s.url), s])) : undefined;
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const normal = text.replace(/\r\n/g, "\n");
+  const lines = (streaming ? holdOpenMath(normal) : normal).split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
   let key = 0;
-  const isBreak = (l: string) => /^(#{1,4}\s|\s*```|>\s?|[-*+]\s|\d+[.)]\s|\|)/.test(l) || /^\s*(---|\*\*\*)\s*$/.test(l);
+  const isBreak = (l: string) => /^(#{1,4}\s|\s*```|>\s?|[-*+]\s|\d+[.)]\s|\|)/.test(l) || /^\s*(---|\*\*\*)\s*$/.test(l) || opensMath(l);
+  /** A display formula starting at line i, typeset or (still streaming) held, with the line to continue from. */
+  const mathAt = (at: number, k: string): { node: ReactNode; next: number } | null => {
+    const math = readMathBlock(lines, at);
+    if (!math || (!math.closed && !streaming)) return null;
+    const all = lines.slice(at, math.next).join("\n");
+    const raw = math.rest ? all.slice(0, all.lastIndexOf(math.rest)).trimEnd() : all;
+    let next = math.next;
+    // text after the closing delimiter on its line reads on as the next line
+    if (math.rest) lines[--next] = math.rest;
+    return { node: math.closed ? <TexMath key={k} tex={math.tex} display block raw={raw} /> : <PendingMath key={k} />, next };
+  };
   while (i < lines.length) {
     const line = lines[i];
     const k = `b${key++}`;
@@ -128,6 +144,12 @@ const MarkdownBlock = memo(function MarkdownBlock({ text, streaming, sources, on
       );
       continue;
     }
+    const math = mathAt(i, k);
+    if (math) {
+      blocks.push(math.node);
+      i = math.next;
+      continue;
+    }
     const h = /^(#{1,4})\s+(.*)$/.exec(line);
     if (h) {
       const level = Math.min(4, h[1].length + 1);
@@ -148,11 +170,11 @@ const MarkdownBlock = memo(function MarkdownBlock({ text, streaming, sources, on
       continue;
     }
     if (line.trim().startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
-      const head = cells(line);
+      const head = tableCells(line);
       const start = i;
       i += 2;
       const rows: string[][] = [];
-      while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(cells(lines[i++]));
+      while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(tableCells(lines[i++]));
       blocks.push(
         <TableFrame key={k} markdown={lines.slice(start, i).map((l) => l.trim()).join("\n")}>
         <div className="md-table">
@@ -173,19 +195,33 @@ const MarkdownBlock = memo(function MarkdownBlock({ text, streaming, sources, on
     }
     const bullet = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
     if (bullet.test(line)) {
-      const ordered = /\d/.test(bullet.exec(line)![2]);
+      const first = bullet.exec(line)![2];
+      const ordered = /\d/.test(first);
       const items: ReactNode[] = [];
       while (i < lines.length && bullet.test(lines[i])) {
         const m = bullet.exec(lines[i])!;
         const nested = m[1].length >= 2;
+        const lk = `${k}l${items.length}`;
+        const body: ReactNode[] = [inline(m[3], lk, cites, onOpenLink)];
+        i++;
+        // an indented display formula under the item, blank lines between allowed, belongs to it
+        for (;;) {
+          let j = i;
+          while (j < lines.length && !lines[j].trim()) j++;
+          if (j >= lines.length || !/^\s{2,}/.test(lines[j])) break;
+          const math = mathAt(j, `${lk}m${body.length}`);
+          if (!math) break;
+          body.push(math.node);
+          i = math.next;
+        }
         items.push(
           <li key={items.length} className={nested ? "nested" : undefined}>
-            {inline(m[3], `${k}l${items.length}`, cites, onOpenLink)}
+            {body}
           </li>
         );
-        i++;
       }
-      blocks.push(ordered ? <ol key={k}>{items}</ol> : <ul key={k}>{items}</ul>);
+      // a list interrupted by other blocks resumes its numbering
+      blocks.push(ordered ? <ol key={k} start={parseInt(first, 10) === 1 ? undefined : parseInt(first, 10)}>{items}</ol> : <ul key={k}>{items}</ul>);
       continue;
     }
     const para: string[] = [];

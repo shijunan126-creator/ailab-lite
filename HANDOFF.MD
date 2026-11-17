@@ -242,6 +242,7 @@
 - **frame ready 只证明握手完成**。加载、准备和渲染器捕获的终态错误必须显式桥接给宿主；全局 error 监听收不到被 `setFailure` 吞掉的异常，索引 unsupported 的用例不能证明握手后失败也会回退。代码：`platform/portal/components/preview/office-view.tsx::OfficeView`。
 
 ### 样式与布局
+- **数学公式先于其他行内标记识别**。`*`、`_`、`|`、`[` 在 TeX 里另有含义；行内正则里公式排在代码之后、强调和链接之前，表格按 `lib/math.ts::tableCells` 拆列（公式内的 `\|` 是范数，不当转义）。单个 `$` 按 Pandoc 规则判定，价格不会被当成公式。代码：`platform/portal/components/markdown.tsx::inline`、`platform/portal/lib/math.ts`。
 - **过程框的收起只认准确信号**。思考之后来了任何非思考事件，思考就 `done`；按“回答已开始”猜会让每步先说一句再调工具时反复开合。最大高度滚动框要平滑框本身的可见高度（`useSmoothShrink`），并在缩小内容的那次 commit 启动。代码：`platform/portal/lib/work-process.ts::reduceEvent`、`platform/portal/components/motion/use-smooth-shrink.ts::useSmoothShrink`。
 - **收起 Grid 侧栏要把 `--side-w` 设为 0**。只隐藏侧栏不会归还列宽。代码：`platform/portal/styles/app.css`、`platform/portal/styles/shell.css`。
 - **不要用 `transform` 定位按钮**。全局 `button:not(:disabled):active { transform: none }` 会在按压时取消定位；改用 inset/margin 或独立的 `translate` 属性。代码：`platform/portal/styles/app.css`。
