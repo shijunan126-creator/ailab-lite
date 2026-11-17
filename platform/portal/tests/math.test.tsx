@@ -124,3 +124,22 @@ test("chemistry loads mhchem on demand", async () => {
   await waitFor(() => assert.ok(container.querySelector(".katex")));
   assert.equal(container.querySelector(".md-math.error"), null);
 });
+
+test("an inline formula piece wider than its line scrolls by itself; the rest of the line wraps as usual", async () => {
+  // jsdom has no layout: a line 343px wide (a phone), and a fraction piece wider than it
+  const width = (el: Element) => (el.matches(".katex-html > .katex-base") ? (el.querySelector(".mfrac") ? 500 : 40) : el.matches("p") ? 343 : 0);
+  const scroll = Object.getOwnPropertyDescriptor(Element.prototype, "scrollWidth")!;
+  const client = Object.getOwnPropertyDescriptor(Element.prototype, "clientWidth")!;
+  Object.defineProperty(Element.prototype, "scrollWidth", { configurable: true, get() { return width(this); } });
+  Object.defineProperty(Element.prototype, "clientWidth", { configurable: true, get() { return width(this); } });
+  try {
+    const { container } = render(<Markdown text={"设 $\\left(\\frac{a_1+a_2}{b}\\right) = x + y$ 成立"} />);
+    await waitFor(() => assert.ok(container.querySelector(".katex")));
+    const pieces = Array.from(container.querySelectorAll(".katex-html > .katex-base"));
+    assert.ok(pieces.length > 1);
+    assert.deepEqual(pieces.map((p) => p.classList.contains("wide")), pieces.map((p) => !!p.querySelector(".mfrac")));
+  } finally {
+    Object.defineProperty(Element.prototype, "scrollWidth", scroll);
+    Object.defineProperty(Element.prototype, "clientWidth", client);
+  }
+});

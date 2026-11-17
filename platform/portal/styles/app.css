@@ -173,6 +173,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 
 /* formulas: KaTeX sized to the text around it; a display formula scrolls sideways on its own rather than the page */
 .md-math .katex { font-size: var(--text-math); }
+/* an inline piece wider than its line scrolls by itself (components/math.tsx::fit); middle, since a scroll box has no baseline */
+.md-math .katex .katex-base.wide { max-width: 100%; overflow-x: auto; overflow-y: hidden; vertical-align: middle; scrollbar-width: thin; }
 .md-math.display { display: block; margin: 0 0 14px; padding: 2px 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
 .md-math.display .katex-display { margin: 0; }
 .md-math.display .katex-display > .katex { padding: 0 1px; }

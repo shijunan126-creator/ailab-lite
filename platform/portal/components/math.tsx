@@ -2,7 +2,7 @@
 // stands in. Its stylesheet is global (app/globals.css) so it sits in the cascade layers and fonts load only when used.
 "use client";
 
-import { memo, useEffect, useSyncExternalStore } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import type { KatexOptions } from "katex";
 
 type Katex = typeof import("katex").default;
@@ -81,6 +81,42 @@ function typeset(tex: string, display: boolean): Rendered {
   return out;
 }
 
+// KaTeX breaks an inline formula only between its top-level pieces (`.katex-base`), after a relation or operator. A piece
+// wider than its line (a long fraction, an inline matrix) would push the page sideways on a phone; it scrolls on its
+// own instead. CSS cannot tell which pieces are too wide, and a scroll container on every piece would lose the
+// baseline, so only those are marked, again when the window or the math fonts change their width.
+const inline = new Set<HTMLElement>();
+let queued = 0;
+
+function fit(el: HTMLElement) {
+  const room = el.parentElement?.closest("p, li, td, th, div, blockquote")?.clientWidth;
+  if (!room) return;
+  for (const piece of el.querySelectorAll<HTMLElement>(".katex-html > .katex-base"))
+    piece.classList.toggle("wide", piece.scrollWidth > room);
+}
+
+function refit() {
+  queued ||= requestAnimationFrame(() => {
+    queued = 0;
+    inline.forEach(fit);
+  });
+}
+
+function watch(el: HTMLElement) {
+  if (!inline.size) {
+    window.addEventListener("resize", refit);
+    document.fonts?.addEventListener("loadingdone", refit);
+  }
+  inline.add(el);
+  fit(el);
+  return () => {
+    inline.delete(el);
+    if (inline.size) return;
+    window.removeEventListener("resize", refit);
+    document.fonts?.removeEventListener("loadingdone", refit);
+  };
+}
+
 type Props = {
   tex: string;
   /** Typeset as a display formula (centred, full size). */
@@ -93,15 +129,18 @@ type Props = {
 
 export default memo(function TexMath({ tex, display = false, block = false, raw }: Props) {
   const level = useSyncExternalStore(subscribe, ready, () => 0);
+  const ref = useRef<HTMLDivElement & HTMLSpanElement>(null);
   useEffect(() => {
     if (!katex || (!chem && CHEM.test(tex))) load(tex);
   }, [tex, level]);
+  const out = !level || (!chem && CHEM.test(tex)) ? null : typeset(tex, display);
+  const html = out && "html" in out ? out.html : null;
+  useLayoutEffect(() => (html && !display && ref.current ? watch(ref.current) : undefined), [html, display]);
   const Tag = block ? "div" : "span";
   const cls = `md-math${display ? " display" : ""}`;
-  if (!level || (!chem && CHEM.test(tex))) return <Tag className={`${cls} source`}>{raw}</Tag>;
-  const out = typeset(tex, display);
+  if (!out) return <Tag className={`${cls} source`}>{raw}</Tag>;
   if ("error" in out) return <Tag className={`${cls} error`} title={out.error}>{raw}</Tag>;
-  return <Tag className={cls} dangerouslySetInnerHTML={{ __html: out.html }} />;
+  return <Tag ref={ref} className={cls} dangerouslySetInnerHTML={{ __html: out.html }} />;
 });
 
 /** A display block whose closing delimiter has not streamed in yet. */

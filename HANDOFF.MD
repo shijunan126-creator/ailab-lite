@@ -243,6 +243,7 @@
 
 ### 样式与布局
 - **数学公式先于其他行内标记识别**。`*`、`_`、`|`、`[` 在 TeX 里另有含义；行内正则里公式排在代码之后、强调和链接之前，表格按 `lib/math.ts::tableCells` 拆列（公式内的 `\|` 是范数，不当转义）。单个 `$` 按 Pandoc 规则判定，价格不会被当成公式。代码：`platform/portal/components/markdown.tsx::inline`、`platform/portal/lib/math.ts`。
+- **行内公式过宽的片段单独横向滚动，不要给所有片段加滚动**。KaTeX 只在顶层片段（0.19 起类名为 `.katex-base`，不是 `.base`）之间断行；滚动容器的 inline-block 没有基线，会让所有行内公式上下错位，所以只给比所在行宽的片段加 `wide`，窗口或数学字体变化时重新判断。代码：`platform/portal/components/math.tsx::fit`。
 - **过程框的收起只认准确信号**。思考之后来了任何非思考事件，思考就 `done`；按“回答已开始”猜会让每步先说一句再调工具时反复开合。最大高度滚动框要平滑框本身的可见高度（`useSmoothShrink`），并在缩小内容的那次 commit 启动。代码：`platform/portal/lib/work-process.ts::reduceEvent`、`platform/portal/components/motion/use-smooth-shrink.ts::useSmoothShrink`。
 - **收起 Grid 侧栏要把 `--side-w` 设为 0**。只隐藏侧栏不会归还列宽。代码：`platform/portal/styles/app.css`、`platform/portal/styles/shell.css`。
 - **不要用 `transform` 定位按钮**。全局 `button:not(:disabled):active { transform: none }` 会在按压时取消定位；改用 inset/margin 或独立的 `translate` 属性。代码：`platform/portal/styles/app.css`。
