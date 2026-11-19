@@ -8,7 +8,7 @@ import { fileStatusText, formatBytes, timeAgo } from "../lib/format";
 import { deleteProject, OPEN_PROJECT_PANEL, renameProject, takeProjectPanel } from "../lib/projects";
 import { conversationsChanged, CONVERSATIONS_CHANGED } from "./app-shell";
 import { IconDownload, IconFolder, IconHistory, IconMore, IconPencil, IconTrash } from "./icons";
-import ConversationMenu from "./conversation-menu";
+import ConversationMenu, { RenameConversationInput } from "./conversation-menu";
 import ProjectBrief from "./project-brief";
 import ProjectMemoryDialog from "./memory/project-memory";
 import FileTile from "./library/file-tile";
@@ -26,6 +26,7 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
   const [memory, setMemory] = useState(false);
   const menuBox = useRef<HTMLDivElement | null>(null);
   const [viewing, setViewing] = useState<FileItem | null>(null);
+  const [renamingChat, setRenamingChat] = useState<string | null>(null);
   const { files, loaded } = useLibrary({ category: "all", projectId: project.id }, tab === "files"); // only once opened
 
   useEffect(() => setName(project.name), [project.name]);
@@ -153,13 +154,15 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
           <div className="project-empty">在上面开始这个项目的第一个对话</div>
         ) : (
           <div className="project-list">
-            {chats.map((c) => (
+            {chats.map((c) => c.id === renamingChat ? (
+              <RenameConversationInput key={c.id} conv={c} className="project-rename" onDone={() => setRenamingChat(null)} />
+            ) : (
               <div key={c.id} className="project-row conv-row">
                 <Link className="grow name" href={`/c/${c.id}`}>
                   {c.title || "新对话"}
                 </Link>
                 <span className="meta">{c.last_status === "running" || c.last_status === "queued" ? "回答中…" : timeAgo(c.updated_at)}</span>
-                <ConversationMenu conv={c} />
+                <ConversationMenu conv={c} onRename={() => setRenamingChat(c.id)} />
               </div>
             ))}
           </div>

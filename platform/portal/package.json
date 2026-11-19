@@ -24,7 +24,7 @@
     "katex": "0.19.1",
     "lucide-react": "1.64.0",
     "modern-screenshot": "4.7.0",
-    "next": "^16.4.3",
+    "next": "^16.4.6",
     "pdfjs-dist": "6.3.289",
     "pdfjs-office": "npm:pdfjs-dist@5.4.296",
     "quickjs-emscripten-core": "0.32.0",

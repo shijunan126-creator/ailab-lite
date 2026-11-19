@@ -7,7 +7,7 @@
 .meter-head span:last-child { color: var(--muted-foreground); }
 .meter-bar { height: 8px; border-radius: 999px; background: var(--subtle); border: 1px solid var(--border); overflow: hidden; }
 .meter-fill { height: 100%; border-radius: 999px; background: var(--primary); transition: width .3s; }
-.meter-fill.warn { background: #f59e0b; }
+.meter-fill.warn { background: var(--warning); }
 .meter-fill.full { background: var(--destructive); }
 .kv-list { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; font-size: var(--text-sm); }
 .kv-list dt { color: var(--muted-foreground); }
@@ -51,7 +51,7 @@ pre.log { background: var(--subtle); border: 1px solid var(--border); border-rad
 .chat-main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 /* Mirrors the nav's 展开侧栏 button: the pane comes back from the corner it collapsed into. */
 .pane-reopen .count { position: absolute; top: 1px; right: 1px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; display: grid; place-items: center; font-weight: 600; line-height: 1; }
-.chat-home { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.chat-home { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .chat-home h1 { text-align: center; }
 .home-hero { display: flex; flex-direction: column; align-items: center; }
 .messages { flex: 1; overflow-y: auto; min-height: 0; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
@@ -144,7 +144,7 @@ button.attach-chip.open:hover { background: var(--popover); color: var(--foregro
 @media (max-width: 760px) {
   .chat-layout, .chat-layout.with-preview { grid-template-columns: minmax(0, 1fr); }
   .preview-pane { position: fixed; inset: 0; z-index: 30; animation-name: sheet-in; padding-bottom: env(safe-area-inset-bottom); }
-  .messages-inner, .composer-dock, .chat-home { padding-left: 12px; padding-right: 12px; }
+  .messages-inner, .composer-dock { padding-left: 12px; padding-right: 12px; }
 }
 label.field .hint { display: block; font-weight: 400; margin-top: 4px; }
 /* composer: mode toggle and skill buttons */
@@ -353,7 +353,7 @@ button.pr-row:active { transform: none; }
 .ctx-meter svg { flex: none; transform: rotate(-90deg); }
 .ctx-track { fill: none; stroke: var(--border); stroke-width: 2.4; }
 .ctx-fill { fill: none; stroke: var(--faint-foreground); stroke-width: 2.4; stroke-linecap: round; transition: stroke-dashoffset var(--t-slow) var(--ease), stroke var(--t); }
-.ctx-meter.warn .ctx-fill { stroke: #f59e0b; }
+.ctx-meter.warn .ctx-fill { stroke: var(--warning); }
 .ctx-meter.full .ctx-fill { stroke: var(--destructive); }
 .ctx-tip { position: absolute; right: -8px; bottom: calc(100% + 8px); z-index: 45; display: flex; flex-direction: column; gap: 2px; width: max-content; max-width: 260px; padding: 8px 10px; border-radius: 10px; background: var(--foreground); color: var(--popover); font-size: var(--text-xs); line-height: 1.5; box-shadow: var(--shadow-overlay); opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity var(--t-fast), transform var(--t-fast) var(--ease), visibility 0s var(--t-fast); pointer-events: none; }
 .ctx-meter:hover .ctx-tip, .ctx-meter:focus-visible .ctx-tip { opacity: 1; visibility: visible; transform: none; transition-delay: .25s, .25s, 0s; }

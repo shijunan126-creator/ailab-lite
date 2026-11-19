@@ -4,9 +4,10 @@ import type { SkillPick } from "../../lib/message-parts";
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Conversation, ConversationDetail, DocRef, downloadUrl, errorCode, errorMessage, EventItem, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
+import { api, Conversation, ConversationDetail, DocRef, downloadUrl, errorMessage, EventItem, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
 import { createBatcher } from "../../lib/stream/batcher";
 import { useFollow } from "../../lib/use-follow";
+import { isPhone } from "../../lib/viewport";
 import { handleClientCall, type ClientCall } from "../../lib/js/client-calls";
 import { extractSkill } from "../../lib/skill-drafts";
 import { useStable } from "../../lib/use-stable";
@@ -15,10 +16,10 @@ import { prependConversationPage, refreshConversation } from "../../lib/conversa
 import { isTerminal } from "../../lib/format";
 import { projectsChanged, useProjects } from "../../lib/projects";
 import { conversationsChanged, conversationTitled } from "../app-shell";
-import { CONVERSATION_MOVED } from "../conversation-menu";
+import { CONVERSATION_MOVED, CONVERSATION_RENAMED } from "../conversation-menu";
 import { IconArrowDown, IconBranch, IconChevronRight, IconFolder, IconPanelRight } from "../icons";
 import ProjectHome from "../project-home";
-import Composer, { Attachment, Outgoing, SendOptions } from "./composer";
+import Composer, { Attachment, Outgoing } from "./composer";
 import PendingMessage from "./pending-message";
 import { enqueue, pendingConversationId, remove as removePending, useOutbox, type Pending } from "../../lib/outbox";
 import { addQuote, quotesKey } from "../../lib/doc-refs";
@@ -148,6 +149,11 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   // messages sent from this page that are not turns yet (files still uploading, or a failed send)
   const pendingProject = id ? null : project?.id || null;
   const pending = useOutbox(useShallow((st) => Object.values(st.pending).filter((p) => pendingConversationId(p) === id && (id || p.projectId === pendingProject)).sort((a, b) => a.created - b.created)));
+  // The first message of a new conversation, sent: it stays on screen until the conversation's page takes over, so the
+  // empty new-chat page does not flash back while the route changes.
+  const [handoff, setHandoff] = useState<Pending | null>(null);
+  useEffect(() => setHandoff(null), [id]);
+  const outgoing = useMemo(() => (handoff ? [...pending, handoff].sort((a, b) => a.created - b.created) : pending), [pending, handoff]);
   const scroller = useRef<HTMLDivElement | null>(null);
   const tail = useFollow(scroller, { slack: 80 });
   const stick = tail.following;
@@ -341,7 +347,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             }
             const finished = d?.turns.find((t) => t.id === run.id);
             if (!file || finished?.status !== "succeeded" || controller.signal.aborted) return;
-            if (!window.matchMedia("(min-width: 761px)").matches) return; // on a phone the pane covers the chat: the file card opens it
+            if (isPhone()) return; // on a phone the pane covers the chat: the file card opens it
             showFileRef.current(file, finished);
           });
           conversationsChanged();
@@ -425,8 +431,16 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       const { id: moved, project_id } = (e as CustomEvent).detail || {};
       if (moved === id) setDetail((d) => (d ? { ...d, project_id } : d));
     };
+    const renamed = (e: Event) => {
+      const { id: target, title } = (e as CustomEvent).detail || {};
+      if (target === id) setDetail((d) => (d ? { ...d, title } : d));
+    };
     window.addEventListener(CONVERSATION_MOVED, moved);
-    return () => window.removeEventListener(CONVERSATION_MOVED, moved);
+    window.addEventListener(CONVERSATION_RENAMED, renamed);
+    return () => {
+      window.removeEventListener(CONVERSATION_MOVED, moved);
+      window.removeEventListener(CONVERSATION_RENAMED, renamed);
+    };
   }, [id]);
 
   // keep the newest message in view while it streams, unless the user scrolled up to read
@@ -541,7 +555,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }
   function showSources(run: Run, sources: PaneSources["sources"], answer: string) {
     const next = { runId: run.id, sources, answer };
-    if (!window.matchMedia("(min-width: 761px)").matches) return setSheetSources(next);
+    if (isPhone()) return setSheetSources(next);
     // the same turn's sources, already shown: the button closes them again
     if (paneOpen && sourcesOn && paneSources?.runId === run.id) return closeSources();
     setPaneSources(next);
@@ -614,6 +628,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
     if (!run) return;
     if (!id && conversation) {
+      setHandoff(p);
       // the conversation page starts from what is already known: the question shows at once and its answer streams in
       cacheConversation({ ...conversation, turns: [run], previews: [], has_more: false });
       startedHere.add(run.id);
@@ -662,71 +677,16 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     ? ([...(items[waiting.id] || [])].reverse().find((it) => it.kind === "ask" && it.answer === undefined) as Extract<Item, { kind: "ask" }> | undefined)
     : undefined;
 
-  async function send(prompt: string, fileIds: string[], options: SendOptions = { mode: "work" }): Promise<boolean> {
+  /** The composer's text answers the question the agent stopped to ask. */
+  async function answerQuestion(prompt: string): Promise<boolean> {
+    if (!waiting || !question) return false;
     setBusy(true);
     setError("");
     try {
-      const signal = actionController.current.signal;
-      if (waiting && question) {
-        await answer(waiting, question.id, prompt);
-        return true;
-      }
-      let created: Conversation | null = null;
-      if (!id)
-        created = await api<Conversation>("/v1/conversations", { method: "POST", signal, body: JSON.stringify({ model, project_id: projectId || undefined }) });
-      const convId = id || created!.id;
-      const run = await api<Run>(`/v1/conversations/${convId}/messages`, {
-        method: "POST", signal,
-        body: JSON.stringify({ prompt, model: model || undefined, reasoning, file_ids: fileIds, ...options, expected_branch_revision: detail?.branch_revision ?? 0 }),
-      });
-      if (created) {
-        // the conversation page starts from what is already known: the question shows at once and its answer streams in
-        cacheConversation({ ...created, turns: [run], previews: [], has_more: false });
-        startedHere.add(run.id);
-        conversationsChanged();
-        if (projectId) projectsChanged();
-        // the blank new-chat page becomes this conversation, so Back leaves it rather than returning to an empty composer;
-        // a project's page is a page of its own and stays behind it
-        if (projectId) router.push(`/c/${convId}`);
-        else router.replace(`/c/${convId}`);
-        return true;
-      }
-      markDetailWrite();
-      setDetail((d) => (d ? { ...d, turns: [...d.turns, run] } : d));
-      answerFrom(run.id);
-      follow(run);
-      conversationsChanged();
-      return true;
-    } catch (err: any) {
-      // the server's conversation_busy message is already the friendly, actionable text
-      setError(errorMessage(err));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function queue(prompt: string, fileIds: string[], options: SendOptions, steer: boolean): Promise<boolean> {
-    if (!id) return false;
-    setBusy(true);
-    setError("");
-    try {
-      const item = await api<QueuedMessage>(`/v1/conversations/${id}/queue`, {
-        method: "POST",
-        signal: actionController.current.signal,
-        body: JSON.stringify({ prompt, file_ids: fileIds, model: model || undefined, reasoning, steer, ...options, expected_branch_revision: detail?.branch_revision ?? 0 }),
-      });
-      markDetailWrite();
-      setDetail((d) => (d ? { ...d, queue: [...(d.queue || []).filter((q) => q.id !== item.id), item] } : d));
+      await answer(waiting, question.id, prompt);
       return true;
     } catch (err) {
-      const message = errorMessage(err);
-      // the answer finished while this was being written: it goes out as a normal message
-      if (errorCode(err) === "conversation_idle") {
-        await loadDetail();
-        return send(prompt, fileIds, options);
-      }
-      setError(message);
+      setError(errorMessage(err));
       return false;
     } finally {
       setBusy(false);
@@ -1016,7 +976,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
    * shows it at once and asks the model only when its files are ready. */
   async function submit(message: Outgoing): Promise<boolean> {
     if (branchMutation.current || (id && !detail)) return false;
-    if (waiting && question && !message.attachments.length && !message.docRefs?.length) return send(message.prompt, [], message.options);
+    if (waiting && question && !message.attachments.length && !message.docRefs?.length) return answerQuestion(message.prompt);
     const info = models.find((m) => m.id === model);
     enqueue({
       expectedBranchRevision: detail?.branch_revision ?? 0,
@@ -1040,8 +1000,6 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     {!id && project ? <div className="composer-mode"><ModeToggle mode={mode} onChange={chooseMode} /></div> : null}
     <Composer
       mode={mode}
-      onMode={chooseMode}
-      modeLocked={!!id}
       models={models}
       model={model}
       levelOf={levelOf}
@@ -1064,12 +1022,12 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   return (
     <div className={`chat-layout ${showPane ? "with-preview" : ""}`}>
       <section className="chat-main">
-        {!id && project && !pending.length ? (
+        {!id && project && !outgoing.length ? (
           <ProjectHome project={project} composer={composer} error={error} />
-        ) : !id && pending.length ? (
+        ) : !id && outgoing.length ? (
           <>
             <div className="messages">
-              <div className="messages-inner">{pending.map((p) => <PendingMessage key={p.id} message={p} />)}</div>
+              <div className="messages-inner">{outgoing.map((p) => <PendingMessage key={p.id} message={p} />)}</div>
             </div>
             <div className="composer-dock">
               {error ? <div className="alert error">{error}</div> : null}
@@ -1077,18 +1035,16 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             </div>
           </>
         ) : !id ? (
-          <>
-            <div className="chat-home">
-              <div className="home-hero">
-                <h1>有什么我能帮你的吗？</h1>
-                <ModeToggle mode={mode} onChange={chooseMode} />
-              </div>
+          <div className="chat-home">
+            <div className="home-hero">
+              <h1>有什么我能帮你的吗？</h1>
+              <ModeToggle mode={mode} onChange={chooseMode} />
             </div>
             <div className="composer-dock">
               {error ? <div className="alert error">{error}</div> : null}
               {composer}
             </div>
-          </>
+          </div>
         ) : (
           <>
             {reopenCount ? (

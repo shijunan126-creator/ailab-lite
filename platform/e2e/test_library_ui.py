@@ -298,6 +298,8 @@ def test_project_folders_keep_files_inside_each_category_and_text_previews(logge
 
 
 def test_reupload_reuses_ready_file_and_explicit_copy_is_independent(logged_in, stack, tmp_path):
+    from playwright.sync_api import expect
+
     page = logged_in
     name = f"identity-{uuid.uuid4().hex[:8]}.txt"
     _upload(page, stack, tmp_path, name, b"immutable content")
@@ -308,9 +310,10 @@ def test_reupload_reuses_ready_file_and_explicit_copy_is_independent(logged_in, 
     assert reused["reused"] is True
     page.get_by_role("button", name="上传", exact=True).wait_for(state="visible")
     assert page.locator(".lib-row", has_text=name).count() == 1
-    with page.expect_file_chooser() as chooser:
-        page.get_by_role("button", name="保存副本", exact=True).click()
-    chooser.value.set_files(str(path))
+    # the identical upload was not stored twice: the toast says so and offers an independent copy of the same file
+    toast = page.locator(".select-bar.toast", has_text="已在资料库中")
+    expect(toast).to_contain_text(name)
+    toast.get_by_role("button", name="仍保存副本", exact=True).click()
     copy_name = name.removesuffix(".txt") + " (2).txt"
     row = page.locator(".lib-row", has_text=copy_name)
     row.get_by_role("link", name=f"下载 {copy_name}", exact=True).wait_for(timeout=30000)
@@ -318,14 +321,11 @@ def test_reupload_reuses_ready_file_and_explicit_copy_is_independent(logged_in, 
     assert len(files) == 2 and len({f["lineage_id"] for f in files}) == 2
     assert len({f["sha256"] for f in files}) == 1
     assert all(f["version"] == 1 for f in files)
-    assert page.get_by_role("button", name="保存副本", exact=True).evaluate(
-        "el => { for (let n = el; n; n = n.parentElement) if (getComputedStyle(n).opacity === '0') return false; return true; }"
-    )
     _shot(page, "file-identity-desktop")
     page.set_viewport_size({"width": 390, "height": 844})
     if page.get_by_role("button", name="收起侧栏", exact=True).is_visible():
         page.get_by_role("button", name="收起侧栏", exact=True).click()
-    page.get_by_role("button", name="保存副本", exact=True).wait_for(state="visible")
+    page.get_by_role("button", name="上传", exact=True).wait_for(state="visible")
     assert page.evaluate("() => document.documentElement.scrollWidth <= innerWidth")
     _shot(page, "file-identity-mobile")
 

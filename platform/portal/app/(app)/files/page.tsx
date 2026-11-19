@@ -157,6 +157,7 @@ function Library() {
       () => batch("trash", list),
       () => {
         setSelected(new Set());
+        setDuplicates(null);
         setUndo(list);
         projectsChanged();
       }
@@ -209,27 +210,43 @@ function Library() {
     window.location.href = ready.length === 1 ? downloadUrl(ready[0].download_url) : archiveUrl(ready.map((f) => f.id));
   }
 
-  const uploadDisposition = useRef<"reuse" | "copy">("reuse");
   const [retryFiles, setRetryFiles] = useState<{ files: File[]; disposition: "reuse" | "copy"; projectId: string | null } | null>(null);
+  // Uploads identical to a file already here were not stored twice; the toast says so and offers a separate copy.
+  const [duplicates, setDuplicates] = useState<{ files: File[]; names: string[]; projectId: string | null } | null>(null);
 
   async function upload(list: FileList | File[], disposition: "reuse" | "copy" = "reuse", targetProject = projectId) {
     setBusy(true);
     setNotice("");
     setRetryFiles(null);
+    setDuplicates(null);
     const picked = Array.from(list);
+    const reused: { file: File; name: string }[] = [];
     let index = 0;
     try {
-      for (; index < picked.length; index++) await uploadFile(picked[index], targetProject, disposition);
+      for (; index < picked.length; index++) {
+        const stored = await uploadFile(picked[index], targetProject, disposition);
+        if (stored.reused) reused.push({ file: picked[index], name: stored.filename });
+      }
       if (projectId) projectsChanged();
     } catch (err: any) {
       setRetryFiles({ files: picked.slice(index), disposition, projectId: targetProject });
       setNotice(errorMessage(err));
     } finally {
       if (inputRef.current) inputRef.current.value = "";
+      if (reused.length) {
+        setUndo(null);
+        setDuplicates({ files: reused.map((r) => r.file), names: reused.map((r) => r.name), projectId: targetProject });
+      }
       setBusy(false);
       reload();
     }
   }
+
+  useEffect(() => {
+    if (!duplicates) return;
+    const timer = setTimeout(() => setDuplicates(null), 8000);
+    return () => clearTimeout(timer);
+  }, [duplicates]);
 
   function onDrop(event: DragEvent) {
     event.preventDefault();
@@ -379,18 +396,17 @@ function Library() {
         ) : showsFiles ? (
           <div className="flex items-center gap-2">
           {retryFiles ? <button className="secondary sm" disabled={busy} onClick={() => upload(retryFiles.files, retryFiles.disposition, retryFiles.projectId)}>重试上传</button> : null}
-          <button className="secondary sm" disabled={busy} onClick={() => { uploadDisposition.current = "copy"; inputRef.current?.click(); }}>保存副本</button>
           <button
             className="sm"
             disabled={busy}
-            onClick={() => { uploadDisposition.current = "reuse"; inputRef.current?.click(); }}
+            onClick={() => inputRef.current?.click()}
             title={maxUpload ? `单个文件最大 ${formatBytes(maxUpload)}` : undefined}
           >
             <IconUpload size={15} /> {busy ? "上传中…" : "上传"}
           </button>
           </div>
         ) : null}
-        <input ref={inputRef} type="file" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files, uploadDisposition.current)} />
+        <input ref={inputRef} type="file" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
       </div>
 
       <div className="library-bar">
@@ -626,6 +642,15 @@ function Library() {
           onPick={(target) => move(moving, target)}
           onClose={() => setMoving(null)}
         />
+      ) : null}
+
+      {duplicates && !undo && !chosen.length ? (
+        <div className="select-bar toast" role="status">
+          <span className="select-count">{duplicates.names.length === 1 ? `「${duplicates.names[0]}」` : `${duplicates.names.length} 个文件`}已在资料库中</span>
+          <button className="select-action" disabled={busy} onClick={() => upload(duplicates.files, "copy", duplicates.projectId)}>
+            仍保存副本
+          </button>
+        </div>
       ) : null}
 
       {undo && !chosen.length ? (

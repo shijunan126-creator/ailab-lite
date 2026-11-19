@@ -12,6 +12,7 @@ import PdfDocument from "../preview/pdf";
 import { HtmlDocView } from "../preview/html-doc";
 import DocLoading, { loadingShape } from "../preview/doc-loading";
 import type { Source } from "../../lib/work-process";
+import { isPhone } from "../../lib/viewport";
 import { SourcesList } from "./sources";
 
 function Pages({ preview }: { preview: Preview }) {
@@ -206,7 +207,7 @@ export default function PreviewPane({
   useLayoutEffect(() => {
     const generation = ++historyGeneration.current;
     const opener = document.activeElement as HTMLElement | null;
-    const mobile = window.matchMedia("(max-width: 760px)").matches;
+    const mobile = isPhone();
     const marker = `preview-${generation}-${Date.now()}`;
     const pop = () => close.current();
     // Install before paint: once the pane is interactive, browser Back must close it.
@@ -286,7 +287,7 @@ export default function PreviewPane({
         {!showSources && !showReader && current && live && !current.libraryFileId ? <span className="live on">实时</span> : null}
         <span className="doc-tools" ref={setToolSlot} />
         {!showSources && !showReader && current && downloads[previewTabKey(current)] ? (
-          <a className="icon-btn" href={downloads[previewTabKey(current)]} target="_blank" rel="noreferrer" aria-label={`下载 ${current.filename}`} title="下载">
+          <a className="icon-btn" href={downloads[previewTabKey(current)]} download={current.filename} aria-label={`下载 ${current.filename}`} title="下载">
             <IconDownload size={16} />
           </a>
         ) : showReader ? (

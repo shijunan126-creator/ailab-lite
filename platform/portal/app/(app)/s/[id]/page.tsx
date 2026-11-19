@@ -37,7 +37,7 @@ function FileCard({ file, onOpen }: { file: ShareFile; onOpen: () => void }) {
         <div className="meta">{formatBytes(file.size)}</div>
       </div>
       <button className="secondary sm" onClick={onOpen}>预览</button>
-      <a className="btn secondary sm" href={downloadUrl(asFile(file).download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${file.filename}`}>
+      <a className="btn secondary sm" href={downloadUrl(asFile(file).download_url)} download={file.filename} aria-label={`下载 ${file.filename}`}>
         <IconDownload size={15} /> <span className="dl-label">下载</span>
       </a>
     </div>

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 import DialogHost from "../components/dialog-host";
+import { PHONE_QUERY } from "../lib/viewport";
 
 export const metadata: Metadata = {
   title: "AILab",
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 // resizes-content: on Android the keyboard shrinks the layout instead of covering the composer
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
 
-const SIDEBAR_STATE = `try{if(innerWidth<760||localStorage.getItem("ailab.sidebar")==="closed")document.documentElement.dataset.sidebar="closed"}catch(e){}`;
+const SIDEBAR_STATE = `try{if(matchMedia(${JSON.stringify(PHONE_QUERY)}).matches||localStorage.getItem("ailab.sidebar")==="closed")document.documentElement.dataset.sidebar="closed"}catch(e){}`;
 // The theme follows the system and is applied before the first paint, so a dark page never flashes light.
 const THEME = `(function(){var q=matchMedia("(prefers-color-scheme: dark)"),r=document.documentElement;function s(){r.classList.toggle("dark",q.matches)}s();q.addEventListener("change",s)})()`;
 

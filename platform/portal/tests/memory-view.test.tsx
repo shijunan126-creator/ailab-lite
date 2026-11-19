@@ -61,7 +61,7 @@ test("every kind shows even when empty; a nearly full document says it will be c
   vi.mocked(api).mockResolvedValue({ ...view, sections: kinds.map((kind) => ({ kind, items: [] })) });
   const first = render(<MemoryPanel projectId={null} title="记忆" />);
   await waitFor(() => assert.equal(screen.getAllByText("暂无").length, 5));
-  assert.deepEqual([...document.querySelectorAll(".memory-section.empty .memory-section-title")].map((h) => h.textContent), ["关于你", "偏好", "在做的事", "关注的话题", "资料"]);
+  assert.deepEqual([...document.querySelectorAll(".memory-section.is-empty .memory-section-title")].map((h) => h.textContent), ["关于你", "偏好", "在做的事", "关注的话题", "资料"]);
   assert.equal(document.querySelectorAll(".memory-count").length, 0);
   assert.equal(document.querySelectorAll(".memory-section-title svg").length, 5);
   first.unmount();

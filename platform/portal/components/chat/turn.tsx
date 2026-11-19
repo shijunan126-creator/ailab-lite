@@ -3,7 +3,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, downloadUrl, errorMessage, ProcessView, quotaMessage, Run } from "../../lib/api";
-import { formatBytes, isTerminal } from "../../lib/format";
+import { formatBytes, formatTokens, isTerminal } from "../../lib/format";
 import { placeMenu } from "../../lib/menu-place";
 import { startingState } from "../../lib/ui-state";
 import { SKILL_TITLES, reconcileTerminal, splitTurn, turnAnswer, turnSources, type Source } from "../../lib/work-process";
@@ -395,7 +395,7 @@ export default memo(function Turn({
                     >
                       预览
                     </button>
-                    <a className="btn secondary sm" href={downloadUrl(a.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${a.filename}`}>
+                    <a className="btn secondary sm" href={downloadUrl(a.download_url)} download={a.filename} aria-label={`下载 ${a.filename}`}>
                       <IconDownload size={15} /> <span className="dl-label">下载</span>
                     </a>
                     <FileMenu fileId={a.file_id} filename={a.filename} projectId={projectId} />
@@ -444,7 +444,7 @@ export default memo(function Turn({
               {done && onFork && forkModes?.length ? <ForkButton modes={forkModes} onFork={(mode) => onFork(run, mode)} /> : null}
               {sources.length && onSources ? <SourcesButton sources={sources} open={sourcesOpen} onOpen={() => onSources(run, sources, answer)} /> : null}
               <span className="meta-text">{modelLabel}</span>
-              {run.usage?.prompt_tokens ? <span className="meta-text">{(run.usage.prompt_tokens || 0) + (run.usage.completion_tokens || 0)} tokens</span> : null}
+              {run.usage?.prompt_tokens ? <span className="meta-text" title={`${((run.usage.prompt_tokens || 0) + (run.usage.completion_tokens || 0)).toLocaleString()} tokens`}>{formatTokens((run.usage.prompt_tokens || 0) + (run.usage.completion_tokens || 0))} tokens</span> : null}
             </div>
           ) : null}
         </div>

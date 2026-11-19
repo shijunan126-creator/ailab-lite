@@ -257,6 +257,9 @@
 - **删除样式块时连带检查 `@keyframes`**。删掉 `@keyframes spin` 会让所有转圈停在第一帧，看起来像卡死；`css-animations.test.mjs` 检查 `globals.css` 里用到的每个动画都有 keyframes。进度类转圈在 `prefers-reduced-motion` 下要豁免为慢速持续转。代码：`platform/portal/tests/css-animations.test.mjs`。
 - **确认、下拉和时间选择不要用浏览器原生控件**。确认用 `platform/portal/lib/dialog.ts::confirmDialog`（根布局挂 `DialogHost`，Escape 在捕获阶段拦截），下拉用 `platform/portal/components/select.tsx`，时间用 `TimeSelect`。代码：`platform/portal/lib/dialog.ts`、`platform/portal/components/select.tsx::TimeSelect`。
 
+- **状态修饰类用 `is-*`，不要复用 `.empty` 之类的通用类名**。`chat.css` 的全局 `.empty` 带居中和 40px 内边距，`.memory-section.empty` 曾因此被撑成大空块；修饰类写成 `.memory-section.is-empty`。代码：`platform/portal/styles/chat.css`、`platform/portal/styles/app.css`。
+- **手机断点在脚本里只经 `lib/viewport.ts` 判断**。CSS 用 `max-width: 760px`，`innerWidth < 760` 和 `min-width: 761px` 会在边界和滚动条宽度上与 CSS 不一致；侧栏收起状态要监听 `PHONE_QUERY` 的 change，否则从手机宽度拉宽后侧栏一直收着。代码：`platform/portal/lib/viewport.ts::isPhone`、`platform/portal/components/app-shell.tsx`。
+
 ### GenUI
 - **OpenUI Lang 只有位置参数**。命名参数（`Metric("营收", 5, unit: "亿")`）会让整句解析失败；可选值放末尾的 `opts` 对象，对象里写错的键会被单独丢弃。主数据不超过 4 个位置参数。代码：`platform/portal/components/genui/catalog/schema.ts`。
 - **任何解析 OpenUI 的地方都先过 `toProgram`**。它的词法器会无报错地吃掉中文语句名、单引号字符串里的反斜杠，以及中文里用 ASCII 引号引词；渲染、复制和评测都走同一入口。代码：`platform/portal/components/genui/catalog/program.ts::toProgram`。
@@ -300,6 +303,7 @@
 ### 本机操作
 - **启动本机栈前确认旧 `next-server` 和 uvicorn 已退出**。端口被占时新进程只在日志里报 `EADDRINUSE`，页面仍由旧构建提供；用 `dev_down.sh` 的 pidfile 或按端口 `lsof -ti` 结束，不要反复重启。代码：`platform/scripts/dev_up.sh`、`platform/scripts/dev_down.sh`。
 - **Redis 健康检查用独立短超时客户端，但不要给连接池设上限**。池满会直接抛错，readiness、liveness、metrics 同时 ping 会把健康 Redis 判成宕机。代码：`platform/ailab_platform/queue.py::RedisQueue._health_client`。
+- **自定义 Prometheus Collector 要实现 `describe()`**。没有它 `register()` 会先调一次 `collect()` 探指标名，API 在迁移前注册时就查库，日志报 `no such table`；`describe()` 只产出空的指标族。代码：`platform/ailab_platform/metrics.py::ApiStateCollector`；测试：`platform/tests/test_observability.py::test_registering_state_collectors_reads_nothing`。
 
 ## 测试
 

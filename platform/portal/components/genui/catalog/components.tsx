@@ -296,7 +296,12 @@ const IMPL: Record<string, ComponentRenderer<P>> = {
     const o = opts(p);
     return <div className={cn("gu-stack", o.direction === "row" && "row")} data-gap={o.gap === "sm" || o.gap === "lg" ? o.gap : "md"} data-align={o.align}>{render(p.children)}</div>;
   }),
-  Grid: r((p, render) => <div className="gu-grid" data-cols={Math.min(4, Math.max(1, Number(opts(p).columns) || 2))}>{render(p.children)}</div>),
+  Grid: r((p, render) => {
+    // Unspecified columns: two, except an odd multiple of three (three KPIs) fills whole rows instead of leaving one alone
+    const count = Array.isArray(p.children) ? p.children.filter((c: unknown) => c != null).length : 1;
+    const fallback = count % 2 === 1 && count % 3 === 0 ? 3 : 2;
+    return <div className="gu-grid" data-cols={Math.min(4, Math.max(1, Number(opts(p).columns) || fallback))}>{render(p.children)}</div>;
+  }),
   Card: r((p, render) => {
     const o = opts(p);
     return (

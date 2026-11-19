@@ -420,7 +420,7 @@ export function MemoryPanel({
           {sections.map((s) => {
             const Icon = KIND_ICON[s.kind];
             return (
-              <section key={s.kind} className={`memory-section${s.items.length ? "" : " empty"}`}>
+              <section key={s.kind} className={`memory-section${s.items.length ? "" : " is-empty"}`}>
                 <h3 className="memory-section-title">
                   <Icon size={18} />
                   {KIND_TITLE[s.kind]}

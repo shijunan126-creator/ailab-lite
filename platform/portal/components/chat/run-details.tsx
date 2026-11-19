@@ -168,7 +168,7 @@ export default function RunDetails({ id }: { id: string }) {
                     <div className="size">{artifact.deleted ? "已删除" : `${formatBytes(artifact.size)} · ${artifact.content_type}`}</div>
                   </div>
                   {artifact.deleted ? null : (
-                    <a className="btn secondary sm" href={downloadUrl(artifact.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${artifact.filename}`}>
+                    <a className="btn secondary sm" href={downloadUrl(artifact.download_url)} download={artifact.filename} aria-label={`下载 ${artifact.filename}`}>
                       <IconDownload size={15} /> 下载
                     </a>
                   )}

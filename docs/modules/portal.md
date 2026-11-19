@@ -8,6 +8,8 @@ Portal 是浏览器里的界面与同源入口：负责页面、发送队列、S
 |---|---|
 | 页面路由、页面级组合 | `platform/portal/app/(app)/`；登录注册在 `platform/portal/app/login/page.tsx`、`platform/portal/app/register/page.tsx` |
 | 全局外壳、侧栏、搜索、账号菜单 | `platform/portal/components/app-shell.tsx::AppShell` |
+| 会话菜单与就地重命名 | `platform/portal/components/conversation-menu.tsx::ConversationMenu`、`platform/portal/components/conversation-menu.tsx::RenameConversationInput` |
+| 手机断点 | `platform/portal/lib/viewport.ts::PHONE_QUERY`（与 CSS 的 `max-width: 760px` 一致） |
 | 会话页、发送、跟随流、侧栏查看器 | `platform/portal/components/chat/chat.tsx::Chat` |
 | 输入框、附件、技能、模板、排队与插话 | `platform/portal/components/chat/composer.tsx::Composer` |
 | 单轮消息、过程、回答、分支/重试/编辑 | `platform/portal/components/chat/turn.tsx::Turn` |

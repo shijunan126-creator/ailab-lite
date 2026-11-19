@@ -58,7 +58,7 @@ export default function ProjectBrief({ project }: { project: Project }) {
 
   if (!editing) {
     return (
-      <button type="button" className={`project-brief ${saved ? "" : "empty"}`} onClick={() => setEditing(true)} aria-label="项目说明">
+      <button type="button" className={`project-brief ${saved ? "" : "is-empty"}`} onClick={() => setEditing(true)} aria-label="项目说明">
         <IconFilePen size={15} />
         <span className="project-brief-text">{saved || "添加项目说明"}</span>
       </button>

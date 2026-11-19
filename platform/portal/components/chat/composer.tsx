@@ -58,8 +58,6 @@ export function offeredSkills(list: Skill[]): Offered[] {
 export default function Composer({
   models,
   mode,
-  onMode: _onMode,
-  modeLocked: _modeLocked,
   model,
   levelOf,
   onModel,
@@ -76,9 +74,6 @@ export default function Composer({
   quotesKey,
 }: {
   mode: Mode;
-  onMode: (next: Mode) => void;
-  // an existing conversation keeps the mode it started with (a fork is how it changes); skills work in both modes
-  modeLocked?: boolean;
   models: ModelInfo[];
   model: string;
   levelOf: (modelId: string) => string | undefined;
