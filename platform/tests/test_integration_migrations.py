@@ -1,5 +1,7 @@
 """The merged feature chain is linear and round-trips existing history."""
 
+from itertools import pairwise
+
 from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
@@ -10,111 +12,17 @@ from tests.test_migrations import engine as engine
 
 def test_integrated_feature_chain_up_down_reup(engine):
     scripts = ScriptDirectory.from_config(alembic_config())
-    assert scripts.get_heads() == ["0071"]
-    revisions = (
-        "0022",
-        "0023",
-        "0024",
-        "0025",
-        "0026",
-        "0027",
-        "0028",
-        "0029",
-        "0030",
-        "0031",
-        "0032",
-        "0033",
-        "0034",
-        "0035",
-        "0036",
-        "0037",
-        "0038",
-        "0039",
-        "0040",
-        "0041",
-        "0042",
-        "0043",
-        "0044",
-        "0045",
-        "0046",
-        "0047",
-        "0048",
-        "0049",
-        "0050",
-        "0051",
-        "0052",
-        "0053",
-        "0054",
-        "0055",
-        "0056",
-        "0057",
-        "0058",
-        "0059",
-        "0060",
-        "0061",
-        "0062",
-        "0063",
-        "0064",
-        "0065",
-        "0066",
-        "0067",
-        "0068",
-        "0069",
-    )
-    assert [scripts.get_revision(rev).down_revision for rev in revisions] == [
-        "0021",
-        "0022",
-        "0023",
-        "0024",
-        "0025",
-        "0026",
-        "0027",
-        "0028",
-        "0029",
-        "0030",
-        "0031",
-        "0032",
-        "0033",
-        "0034",
-        "0035",
-        "0036",
-        "0037",
-        "0038",
-        "0039",
-        "0040",
-        "0041",
-        "0042",
-        "0043",
-        "0044",
-        "0045",
-        "0046",
-        "0047",
-        "0048",
-        "0049",
-        "0050",
-        "0051",
-        "0052",
-        "0053",
-        "0054",
-        "0055",
-        "0056",
-        "0057",
-        "0058",
-        "0059",
-        "0060",
-        "0061",
-        "0062",
-        "0063",
-        "0064",
-        "0065",
-        "0066",
-        "0067",
-        "0068",
-    ]
+    start = "0021"
+    head = scripts.get_current_head()
+    assert head is not None and head != start
+    chain = list(reversed(list(scripts.walk_revisions(base=start, head=head))))
+    assert chain[0].revision == start
+    assert all(child.down_revision == parent.revision for parent, child in pairwise(chain))
+    revisions = [revision.revision for revision in chain]
     if engine.dialect.name == "sqlite":
         with engine.connect() as conn:
             conn.execute(text("PRAGMA foreign_keys=ON"))
-    _upgrade_to(engine, "0021")
+    _upgrade_to(engine, start)
     with engine.begin() as conn:
         _seed_user_and_run(conn)
         conn.execute(
@@ -124,20 +32,20 @@ def test_integrated_feature_chain_up_down_reup(engine):
             )
         )
         conn.execute(text("UPDATE runs SET conversation_id='c1',summary='保留回答' WHERE id='r1'"))
-    for revision in revisions:
+    for revision in revisions[1:]:
         _upgrade_to(engine, revision)
         assert _version(engine) == revision
-    for revision in ("0029", "0028", "0027", "0026", "0025", "0024", "0023", "0022", "0021"):
+    for revision in reversed(revisions[:-1]):
         _downgrade_to(engine, revision)
         assert _version(engine) == revision
     assert "scheduled_tasks" not in inspect(engine).get_table_names()
-    for revision in revisions:
+    for revision in revisions[1:]:
         _upgrade_to(engine, revision)
-    _upgrade_to(engine, "head")
+    assert _version(engine) == head
     with engine.connect() as conn:
         assert conn.execute(text("SELECT conversation_id,summary,parent_run_id FROM runs WHERE id='r1'")).one() == ("c1", "保留回答", None)
         assert conn.execute(text("SELECT active_run_id FROM conversations WHERE id='c1'")).scalar() == "r1"
-        _upgrade_to(engine, "head")
+    _upgrade_to(engine, "head")
     with engine.connect() as conn:
         assert_schema_matches(conn)
         if engine.dialect.name == "sqlite":

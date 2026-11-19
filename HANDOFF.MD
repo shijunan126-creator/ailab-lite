@@ -322,7 +322,7 @@
 - **不带 `with` 的 `TestClient(app)` 不跑启动钩子**。存储目录不会 `ensure_dirs()`，第一个 `/readyz` 用例会因 `storage: False` 得到 503；要么用上下文管理器，要么显式建目录。代码：`platform/tests/test_review_regressions.py::test_api_stays_ready_but_degraded_without_redis`。
 - **查询次数测试只监听被测 session 的连接**。在 `Engine` 上挂监听会把 API 后台 outbox 和 reaper 的查询算进来；用 `db.connection()`，并只计调用线程。代码：`platform/tests/test_conversation_paging.py::test_detail_batches_related_rows_instead_of_querying_each_turn`。
 - **共享测试库的 outbox 会被 API lifespan dispatcher 扫描**。要隔离缩略图或发布测试，在启动 `TestClient` 前替换 `main.dispatch_forever`，不要只替换 `preview_dispatch.get_queue`。代码：`platform/tests/test_library.py::api`。
-- **迁移漂移比较必须在 head 上做**。升到中间 revision 再和最新 ORM 比较会把后续合法表误判为漂移；逐步升、降、再升链另测。代码：`platform/tests/test_migrations.py::assert_schema_matches`。
+- **迁移集成测试从 Alembic 的当前单一 head 推导升级和回退链**。手写终点会在新迁移加入时过期；重新升级到 head 后再与最新 ORM 比较。代码：`platform/tests/test_integration_migrations.py::test_integrated_feature_chain_up_down_reup`、`platform/tests/test_migrations.py::assert_schema_matches`。
 - **EXPLAIN 测试用独立库、有代表性的数据并 ANALYZE**。不要强制索引名或关闭顺序扫描；SQLite 的 skip-scan 和 PostgreSQL 的等价索引都有效。代码：`platform/tests/test_memory_query_plans.py`。
 - **测试 HTTP 服务器统一 `serve_forever(poll_interval=0.01)`**。`shutdown()` 默认要等下一次 0.5 秒轮询；测试里的 `AILAB_LLM_RETRY_BACKOFF_SECONDS` 默认 1ms，测退避节奏的用例自己设置。代码：`platform/tests/conftest.py`、`platform/tests/prefix_harness.py`。
 
