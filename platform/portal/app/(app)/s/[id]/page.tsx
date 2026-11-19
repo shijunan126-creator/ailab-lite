@@ -10,6 +10,7 @@ import { IconDownload, IconFile, IconShare } from "../../../../components/icons"
 import ScheduledMark from "../../../../components/chat/scheduled-mark";
 import { ExtTile } from "../../../../components/library/file-tile";
 import FileViewer, { FileSource, FileSourceContext } from "../../../../components/preview/file-viewer";
+import { usePageTitle } from "../../../../lib/page-title";
 
 /** A shared file in the shape the viewer reads; it is always a finished file. */
 function asFile(f: ShareFile): FileItem {
@@ -37,7 +38,7 @@ function FileCard({ file, onOpen }: { file: ShareFile; onOpen: () => void }) {
         <div className="meta">{formatBytes(file.size)}</div>
       </div>
       <button className="secondary sm" onClick={onOpen}>预览</button>
-      <a className="btn secondary sm" href={downloadUrl(asFile(file).download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${file.filename}`}>
+      <a className="btn secondary sm" href={downloadUrl(asFile(file).download_url)} download={file.filename} aria-label={`下载 ${file.filename}`}>
         <IconDownload size={15} /> <span className="dl-label">下载</span>
       </a>
     </div>
@@ -48,6 +49,7 @@ export default function SharedPage() {
   const params = useParams<{ id: string }>();
   const id = String(params?.id || "");
   const [view, setView] = useState<ShareView | null>(null);
+  usePageTitle(view ? view.title || "分享" : null);
   const [error, setError] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [viewing, setViewing] = useState<{ files: FileItem[]; file: FileItem } | null>(null);
@@ -69,14 +71,12 @@ export default function SharedPage() {
       .then((v) => {
         if (c.signal.aborted) return;
         setView(v);
-        document.title = `${v.title || "分享"} · AILab`;
         if (v.file && !v.file.deleted) setViewing({ files: [asFile(v.file)], file: asFile(v.file) });
       })
       .catch((err) => !c.signal.aborted && setError(/^404 /.test(String(err?.message)) ? "这个分享不存在或已停止" : errorMessage(err)));
     return () => {
       c.abort();
       more.current?.abort();
-      document.title = "AILab";
     };
   }, [id]);
 

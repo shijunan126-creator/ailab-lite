@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { admin, AdminUser, Department, QuotaPolicy, reason, UserUsage } from "../../lib/admin";
 import { Me } from "../../lib/api";
-import { formatTokens, timeAgo } from "../../lib/format";
+import { formatDate, formatTokens, timeAgo } from "../../lib/format";
 import { IconPlus, IconSearch, IconX } from "../icons";
 import Switch from "../switch";
 import Modal from "../library/modal";
@@ -324,7 +324,7 @@ export default function UsersSection({ me, isPlatform }: { me: Me; isPlatform: b
               <span className="col num" title="本月用量（按模型倍率折算）">
                 {formatTokens(u.usage.monthly)}
               </span>
-              <span className="col when">{u.disabled ? <span className="status canceled">已停用</span> : u.last_login_at ? timeAgo(u.last_login_at) : "从未登录"}</span>
+              <span className="col when" title={u.last_login_at ? `最近登录：${formatDate(u.last_login_at)}` : undefined}>{u.disabled ? <span className="status canceled">已停用</span> : u.last_login_at ? timeAgo(u.last_login_at) : "从未登录"}</span>
             </button>
           ))}
         </div>

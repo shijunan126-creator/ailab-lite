@@ -6,7 +6,7 @@ import { api, Conversation, errorMessage } from "../lib/api";
 import { forgetConversation } from "../lib/conversation-cache";
 import { projectsChanged } from "../lib/projects";
 import { conversationsChanged } from "./app-shell";
-import { IconBook, IconCheck, IconFilePen, IconFolderInput, IconMore, IconPin, IconPinOff, IconShare, IconSparkles, IconTrash } from "./icons";
+import { IconBook, IconCheck, IconFilePen, IconFolderInput, IconMessage, IconMore, IconPencil, IconPin, IconPinOff, IconShare, IconSparkles, IconTrash } from "./icons";
 import ShareDialog from "./share-dialog";
 import { MoveDialog } from "./library/projects";
 import { confirmDialog } from "../lib/dialog";
@@ -15,15 +15,72 @@ import { extractSkill } from "../lib/skill-drafts";
 
 /** The open conversation page follows a move made from the sidebar (its breadcrumb, where uploads go). */
 export const CONVERSATION_MOVED = "ailab:conversation-moved";
+/** A conversation was renamed: the sidebar, a project's list and the open page show the new name. */
+export const CONVERSATION_RENAMED = "ailab:conversation-renamed";
+
+/** Renaming in place, where the conversation is listed: Enter or leaving the field saves, Escape keeps the old name.
+ * A name given here is the user's: the automatic title never replaces it. */
+export function RenameConversationInput({ conv, onDone, className = "" }: { conv: Conversation; onDone: () => void; className?: string }) {
+  const [name, setName] = useState(conv.title);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  // Enter saves and the field then loses focus: a ref, not state, keeps that second call from saving again.
+  const saving = useRef(false);
+  async function submit() {
+    const value = name.trim();
+    if (saving.current) return;
+    if (!value || value === conv.title) return onDone();
+    saving.current = true;
+    setBusy(true);
+    try {
+      const saved = await api<Conversation>(`/v1/conversations/${conv.id}`, { method: "PATCH", body: JSON.stringify({ title: value }) });
+      window.dispatchEvent(new CustomEvent(CONVERSATION_RENAMED, { detail: { id: conv.id, title: saved?.title ?? value } }));
+      conversationsChanged();
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
+      saving.current = false;
+    }
+  }
+  return (
+    <div className={`new-project ${className}`}>
+      <span className="new-project-icon">
+        <IconMessage size={15} />
+      </span>
+      <input
+        type="text"
+        autoFocus
+        onFocus={(e) => e.currentTarget.select()}
+        maxLength={200}
+        aria-label="对话名称"
+        value={name}
+        disabled={busy}
+        title={error || undefined}
+        className={error ? "invalid" : ""}
+        onChange={(e) => {
+          setName(e.target.value);
+          setError("");
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+          if (e.key === "Escape") onDone();
+        }}
+        onBlur={() => !error && submit()}
+      />
+    </div>
+  );
+}
 
 const MENU_W = 200;
 const MENU_H = 300;
 
 /** "⋯" on a conversation: move it into / out of a project, or delete it. */
-export default function ConversationMenu({ conv, onDeleted, onPinned, className = "" }: {
+export default function ConversationMenu({ conv, onDeleted, onPinned, onRename, className = "" }: {
   conv: Conversation;
   onDeleted?: () => void;
   onPinned?: (pinnedAt: string | null) => void;
+  onRename?: () => void;
   className?: string;
 }) {
   const [at, setAt] = useState<React.CSSProperties | null>(null);
@@ -147,6 +204,18 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
       {at
         ? createPortal(
         <div ref={menu} className="pop-menu fixed" role="menu" style={at}>
+          {onRename ? (
+            <button
+              className="menu-item"
+              role="menuitem"
+              onClick={() => {
+                setAt(null);
+                onRename();
+              }}
+            >
+              <IconPencil size={15} /> 重命名
+            </button>
+          ) : null}
           {onPinned ? (
             <button className="menu-item" role="menuitem" onClick={pin}>
               {conv.pinned_at ? <IconPinOff size={15} /> : <IconPin size={15} />} {conv.pinned_at ? "取消置顶" : "置顶"}

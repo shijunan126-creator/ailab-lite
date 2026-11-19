@@ -75,6 +75,9 @@
 .new-project input[type="text"] { border: 0; padding: 4px 0; box-shadow: none; font-size: var(--text-sm); min-width: 0; }
 .new-project input.invalid { color: var(--destructive); }
 .new-project .icon-btn { width: 24px; height: 24px; flex: none; }
+/* Renaming a conversation in a project's list keeps the row's height and type size. */
+.new-project.project-rename { padding: 7px 10px; gap: 12px; }
+.new-project.project-rename input[type="text"] { font-size: var(--text-md); }
 /* library picker (from the composer) */
 .picker-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 12px; position: sticky; top: 0; background: var(--popover); z-index: 1; }
 .picker-bar .search { margin-left: auto; width: 200px; }
@@ -277,7 +280,7 @@ a.project-row:hover, .project-row:hover { background: var(--subtle); color: var(
 .project-brief { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--popover); color: var(--foreground); font-weight: 400; font-size: var(--text-sm); line-height: 1.6; text-align: left; justify-content: flex-start; transition: border-color var(--t-fast), background var(--t-fast); }
 .project-brief svg { flex: none; margin-top: 3px; color: var(--muted-foreground); }
 .project-brief:hover { border-color: var(--border-strong); background: var(--popover); color: var(--foreground); }
-.project-brief.empty { border-style: dashed; color: var(--muted-foreground); }
+.project-brief.is-empty { border-style: dashed; color: var(--muted-foreground); }
 .project-brief-text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .project-brief.editing { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; border-color: var(--primary); box-shadow: 0 0 0 3px var(--selected); animation: pop var(--t) var(--ease); }
 .project-brief.editing textarea { width: 100%; resize: vertical; min-height: 96px; border: 0; padding: 2px; font: inherit; line-height: 1.6; outline: none; box-shadow: none; }

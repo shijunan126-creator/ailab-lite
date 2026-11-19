@@ -6,8 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { api, API_BASE, Conversation, Me, Usage, redirectIfUnauthorized } from "../lib/api";
 import { formatTokens } from "../lib/format";
 import { useProjects } from "../lib/projects";
+import { isPhone, PHONE_QUERY } from "../lib/viewport";
 import { IconClock, IconPin, IconSearch, IconFolder, IconHistory, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
-import ConversationMenu from "./conversation-menu";
+import ConversationMenu, { CONVERSATION_RENAMED, RenameConversationInput } from "./conversation-menu";
 import SearchDialog, { OPEN_SEARCH } from "./search";
 import Inbox, { InboxButton, useNotices } from "./inbox";
 import { OPEN_FILE } from "./file-cite";
@@ -121,6 +122,14 @@ function UserMenu({ me }: { me: Me | null }) {
   );
 }
 
+function storedClosed(): boolean {
+  try {
+    return localStorage.getItem("ailab.sidebar") === "closed";
+  } catch {
+    return false;
+  }
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || "/";
   const router = useRouter();
@@ -144,13 +153,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const key = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        if (window.innerWidth < 760) setCollapsed(true);
+        if (isPhone()) setCollapsed(true);
         setSearching((open) => !open);
       }
     };
     const open = () => {
       // The search dialog is portaled above the page; on a phone the open drawer would otherwise stay visible behind it.
-      if (window.innerWidth < 760) setCollapsed(true);
+      if (isPhone()) setCollapsed(true);
       setSearching(true);
     };
     window.addEventListener("keydown", key);
@@ -162,13 +171,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
   // Before the first paint: remembered on wide screens; narrow screens start closed (the sidebar covers the page there).
   // Transitions start only after that, so a closed sidebar does not show and then slide away on load.
+  // Crossing the breakpoint (a window resized, a tablet rotated) gives each layout its own state back: a wide screen
+  // the sidebar the user chose there, a phone a closed drawer that does not cover the page.
   useLayoutEffect(() => {
-    setCollapsed(window.innerWidth < 760 || localStorage.getItem("ailab.sidebar") === "closed");
+    const phone = window.matchMedia(PHONE_QUERY);
+    const apply = () => setCollapsed(phone.matches || storedClosed());
+    apply();
+    phone.addEventListener("change", apply);
     const frame = requestAnimationFrame(() => setSettled(true));
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      phone.removeEventListener("change", apply);
+      cancelAnimationFrame(frame);
+    };
   }, []);
   const [addingProject, setAddingProject] = useState(false);
   const [renamingProject, setRenamingProject] = useState<string | null>(null);
+  const [renamingConversation, setRenamingConversation] = useState<string | null>(null);
   const projects = useProjects();
   const current = pathname.startsWith("/c/") ? pathname.slice(3) : null;
   const currentProject = pathname.startsWith("/p/") ? pathname.slice(3) : null;
@@ -196,12 +214,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const { id, title } = (e as CustomEvent).detail || {};
       setConversations((rows) => rows?.map((row) => (row.id === id && !row.title ? { ...row, title } : row)) || rows);
     };
+    const renamed = (e: Event) => {
+      const { id, title } = (e as CustomEvent).detail || {};
+      listController.current?.abort();
+      setConversations((rows) => rows?.map((row) => (row.id === id ? { ...row, title } : row)) || rows);
+    };
     window.addEventListener(CONVERSATIONS_CHANGED, load);
     window.addEventListener(CONVERSATION_TITLED, titled);
+    window.addEventListener(CONVERSATION_RENAMED, renamed);
     return () => {
       listController.current?.abort();
       window.removeEventListener(CONVERSATIONS_CHANGED, load);
       window.removeEventListener(CONVERSATION_TITLED, titled);
+      window.removeEventListener(CONVERSATION_RENAMED, renamed);
     };
   }, [load]);
 
@@ -213,12 +238,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [conversations, load]);
 
   useEffect(() => {
-    if (window.innerWidth < 760) setCollapsed(true); // on a phone, navigating closes the drawer
+    if (isPhone()) setCollapsed(true); // on a phone, navigating closes the drawer
   }, [pathname]);
 
   const pinned = (conversations || []).filter((c) => c.pinned_at);
   const recent = (conversations || []).filter((c) => !c.pinned_at);
-  const row = (c: Conversation) => (
+  const row = (c: Conversation) => c.id === renamingConversation ? (
+    <RenameConversationInput key={c.id} conv={c} onDone={() => setRenamingConversation(null)} />
+  ) : (
     <div key={c.id} className={`conv-item ${c.id === current ? "on" : ""}`}>
       <Link href={`/c/${c.id}`} title={c.title}>
         <span className="conv-title" key={c.title || ""}>
@@ -227,7 +254,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </span>
         {c.last_status === "running" || c.last_status === "queued" ? <span className="conv-live" role="status" aria-label="回答中" title="回答中" /> : null}
       </Link>
-      <ConversationMenu conv={c} onPinned={(pinned_at) => {
+      <ConversationMenu conv={c} onRename={() => setRenamingConversation(c.id)} onPinned={(pinned_at) => {
         listController.current?.abort();
         setConversations((rows) => rows?.map((r) => (r.id === c.id ? { ...r, pinned_at } : r)) || null);
         load();
@@ -242,12 +269,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   function toggle() {
     const next = !collapsed;
     setCollapsed(next);
-    if (window.innerWidth >= 760) localStorage.setItem("ailab.sidebar", next ? "closed" : "open");
+    if (!isPhone()) {
+      try {
+        localStorage.setItem("ailab.sidebar", next ? "closed" : "open");
+      } catch {
+        // storage blocked: the choice holds for this page
+      }
+    }
   }
 
   return (
     <div className={`shell ${collapsed ? "collapsed" : ""} ${settled ? "" : "settling"}`}>
-      <aside className="sidebar" aria-label="侧栏">
+      <aside className="sidebar" aria-label="侧栏" inert={collapsed}>
         <div className="sidebar-head">
           <Link className="brand" href="/">
             <span className="brand-mark">A</span>

@@ -18,6 +18,7 @@ function harness(id: string, api: () => Promise<unknown>) {
   cacheConversation(displayed);
   let error = "";
   let cleared = false;
+  let gone = false;
   const controller = new AbortController();
   const noop = () => {};
   const vars = {
@@ -29,12 +30,12 @@ function harness(id: string, api: () => Promise<unknown>) {
     setError: (next: string) => { error = next; }, errorMessage: (err: Error) => err.message,
     setDetail: (next: any) => { displayed = typeof next === "function" ? next(displayed) : next; },
     setStreaming: noop, setLoadingOlder: noop, setItems: noop, setReaders: noop, setReaderUrl: noop,
-    setReaderOn: noop, setPaneOpen: noop, clearBranchPreviews: () => { cleared = true; },
+    setReaderOn: noop, setPaneOpen: noop, setGone: (next: boolean) => { gone = next; }, clearBranchPreviews: () => { cleared = true; },
     refreshConversation: (_previous: unknown, next: unknown) => next, forgetConversation,
   };
   const handlers = new Function(...Object.keys(vars), `${compiled}; return {loadDetail, removed};`)(...Object.values(vars));
   window.addEventListener(CONVERSATION_DELETED, handlers.removed);
-  return { ...handlers, displayed: () => displayed, error: () => error, cleared: () => cleared, controller,
+  return { ...handlers, displayed: () => displayed, error: () => error, gone: () => gone, cleared: () => cleared, controller,
     close: () => window.removeEventListener(CONVERSATION_DELETED, handlers.removed) };
 }
 
@@ -44,7 +45,7 @@ test("404 clears cached body and previews, aborts writers, and cannot be recache
     await h.loadDetail();
     assert.equal(h.displayed(), null);
     assert.equal(cachedConversation("gone-404"), null);
-    assert.equal(h.error(), "对话已删除或不存在");
+    assert.ok(h.gone());
     assert.ok(h.cleared() && h.controller.signal.aborted);
     cacheConversation({ id: "gone-404", turns: [] } as any);
     assert.equal(cachedConversation("gone-404"), null);

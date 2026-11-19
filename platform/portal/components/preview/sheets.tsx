@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import DocLoading from "./doc-loading";
+import { errorMessage } from "../../lib/api";
 
 type Cell = { v: string; b?: 1; bg?: string; fg?: string; n?: 1; f?: string };
 type Sheet = { name: string; rows: Cell[][]; widths: (number | null)[]; truncated: boolean; size: [number, number]; charts: number };
@@ -21,9 +22,9 @@ export default function Sheets({ src }: { src: string | null }) {
     if (!src) return;
     let stale = false;
     fetch(src)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`加载失败（${r.status}）`))))
       .then((d) => !stale && (setData(d), setError("")))
-      .catch((e) => !stale && setError(String(e?.message || e)));
+      .catch((e) => !stale && setError(errorMessage(e)));
     return () => {
       stale = true;
     };

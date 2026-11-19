@@ -95,8 +95,7 @@ def test_memory_page_is_changed_by_asking_and_undone(page, stack):
     memory = httpx.get(stack.api + "/v1/memory", headers=headers).json()
     assert memory["auto_save"] is False and len(memory["entries"]) == 1
     page.set_viewport_size({"width": 390, "height": 844})
-    if page.get_by_role("button", name="收起侧栏", exact=True).is_visible():
-        page.get_by_role("button", name="收起侧栏", exact=True).click()
+    expect(page.get_by_role("button", name="展开侧栏", exact=True)).to_be_visible()
     page.screenshot(path=str(stack.log_dir / "memory-mobile.png"), full_page=True, animations="disabled")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     reset_memory(stack, headers)
@@ -173,8 +172,8 @@ def test_project_memory_mode_moves_and_merges_facts(page, stack, width):
     put_facts(stack, headers, facts)
     page.set_viewport_size({"width": width, "height": 900})
     login(page, stack, path=f"/p/{project['id']}")
-    if width == 390 and page.get_by_role("button", name="收起侧栏", exact=True).is_visible():
-        page.get_by_role("button", name="收起侧栏", exact=True).click()
+    if width == 390:
+        expect(page.get_by_role("button", name="展开侧栏", exact=True)).to_be_visible()
     page.get_by_role("button", name="项目操作", exact=True).click()
     page.get_by_role("menuitem", name="记忆", exact=True).click()
     dialog = memory_dialog(page, "项目记忆")

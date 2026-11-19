@@ -536,3 +536,10 @@ def test_ui_docs_surviving_compaction_still_reusable_but_missing_guide_is_reload
     assert result["components"] == "" and result["already_available"] == ["Text"]
     assert result["unknown"] == ["HtmlArtifact", "Missing"] and "HtmlArtifact" not in result["available"]
     assert result["guide"] == guide_for(False)
+
+
+def test_offline_model_names_the_conversation_after_the_question():
+    # the title request quotes the question as JSON; the scripted chat answer is not a title
+    prompt = json.dumps({"question": "[[genui-demo]] 帮我看看季度销售\n第二行", "files": []}, ensure_ascii=False)
+    messages = [{"role": "system", "content": "标题"}, {"role": "user", "content": prompt}]
+    assert asyncio.run(MockLLM().chat(messages, [], "mock")).content == "帮我看看季度销售"

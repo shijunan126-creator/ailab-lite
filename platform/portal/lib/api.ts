@@ -541,6 +541,9 @@ function errorDetail(err: unknown): any {
 /** What to tell the user about a failed request: the API's own detail ("409 {"detail":"…"}" → "…"), else the text. */
 export function errorMessage(err: unknown): string {
   const text = String((err as any)?.message || err || "");
+  // fetch rejects with the browser's own English ("Failed to fetch", Safari's "Load failed") when the request never got
+  // an answer: the server is unreachable or the connection dropped
+  if (err instanceof TypeError && /fetch|load failed|network/i.test(text)) return "网络连接失败，请检查网络后重试";
   const detail = errorDetail(err);
   if (detail === null) return text;
   if (typeof detail === "string" && detail) return detail;

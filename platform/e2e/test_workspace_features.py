@@ -29,8 +29,8 @@ def shot(page, name, mobile=False):
     size = {"width": 390 if mobile else 1360, "height": 844 if mobile else 860}
     if page.viewport_size != size:
         page.set_viewport_size(size)
-    if mobile and not page.locator('[role="dialog"], [role="menu"]').count() and page.locator(".shell:not(.collapsed)").count():
-        page.get_by_role("button", name="收起侧栏", exact=True).click()
+    if mobile:
+        expect(page.locator(".shell")).to_have_class(re.compile(r"\bcollapsed\b"))
     page.screenshot(path=str(EVIDENCE / f"{name}-{'phone' if mobile else 'desktop'}.png"), full_page=True, animations="disabled")
     if mobile:
         assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
@@ -269,8 +269,15 @@ def test_inbox_schedule_badge_click_and_read_all(logged_in, stack):
         dialog = page.get_by_role("dialog", name="通知", exact=True)
         expect(dialog).to_contain_text(task["title"])
         shot(page, "inbox")
+        page.set_viewport_size({"width": 320, "height": 844})
+        expect(page.get_by_role("button", name="展开侧栏", exact=True)).to_be_visible()
+        expect(bell).to_have_count(1)
+        bell.click()
+        expect(dialog).to_be_visible()
+        assert dialog.evaluate("(el) => el.getBoundingClientRect().right <= document.documentElement.clientWidth - 8")
         page.set_viewport_size({"width": 390, "height": 844})
-        page.get_by_role("button", name=re.compile(r"^通知（")).click()
+        expect(dialog).to_have_count(0)
+        bell.click()
         shot(page, "inbox", True)
         dialog.locator(".inbox-row").filter(has_text=task["title"]).first.click()
         page.wait_for_url("**/c/" + started["conversation_id"])
@@ -484,8 +491,7 @@ def test_artifact_menu_moves_file_and_questions_in_its_project(logged_in, stack)
         expect(page.get_by_role("menuitem", name="分享", exact=True)).to_be_visible()
         shot(page, "artifact-menu")
         page.set_viewport_size({"width": 390, "height": 844})
-        if page.locator(".shell:not(.collapsed)").count():
-            page.get_by_role("button", name="收起侧栏", exact=True).click()
+        expect(page.get_by_role("button", name="展开侧栏", exact=True)).to_be_visible()
         button.click()
         shot(page, "artifact-menu", True)
         page.get_by_role("menuitem", name="移到项目", exact=True).click()
