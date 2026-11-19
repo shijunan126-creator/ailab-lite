@@ -30,6 +30,7 @@ def test_a_generated_page_runs_without_network_storage_or_cookies(logged_in) -> 
     expect(frame.locator("body")).to_have_attribute("data-ran", "1")
     expect(frame.locator("#net")).to_have_text("net:blocked")
     expect(frame.locator("#store")).to_have_text("store:blocked")
+    expect(page.locator(".work-process > .collapse")).to_have_css("transition-property", "none")
     frame.get_by_role("button", name="抛 10 次").click()
     expect(frame.locator("#count")).to_contain_text("已抛 10 次")
     # the page never sees the conversation: an opaque origin, nothing of the Portal's document

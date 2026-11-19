@@ -48,6 +48,7 @@ export function GenUIBlock({ source, index, streaming, closed }: { source: strin
   const [picture, setPicture] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const [touched, reveal] = useTouchReveal(ref);
   const onState = useCallback((next: BlockState, pictured: boolean) => {
     setState(next);
@@ -67,13 +68,13 @@ export function GenUIBlock({ source, index, streaming, closed }: { source: strin
       <Boundary resetKey={String(attempt)} fallback={<SourceFallback source={source} onRetry={() => setAttempt((n) => n + 1)} />}>
         <Suspense fallback={<Skeleton />}>
           {failed ? <SourceFallback source={source} /> : null}
-          <div hidden={failed}>
+          <div ref={content} className="genui-content" hidden={failed}>
             <OpenUIBlock source={source} index={index} streaming={live} phase={live ? "writing" : closed ? "complete" : "cut"} onState={onState} />
           </div>
           {live && state !== "ok" ? <Skeleton /> : null}
         </Suspense>
       </Boundary>
-      {!live && state === "ok" && picture ? <ImageTools block={ref} /> : null}
+      {!live && state === "ok" && picture ? <ImageTools block={content} /> : null}
     </div>
   );
 }

@@ -263,6 +263,8 @@
 - **不要直接给 `document.title` 赋值**。Next 在客户端导航提交后写入路由元数据的 title，会覆盖页面 effect 里刚设的值；静态标题写在路由 `layout.tsx` 的 `metadata`（根布局有 `%s · AILab` 模板），会话、项目这类浏览器侧才知道的标题用 `usePageTitle`。代码：`platform/portal/lib/page-title.ts::usePageTitle`、`platform/portal/app/layout.tsx`。
 
 ### GenUI
+- **把图片操作放在交互内容外**。悬浮工具条盖住右上角的开关时会拦截点击；截图只取正文容器，工具条单独占位。代码：`platform/portal/components/genui/index.tsx::GenUIBlock`、`platform/portal/styles/genui.css`。
+- **在生成页变成可交互前结束上方过程折叠**。持续改变 iframe 的屏幕位置时，Chromium 会把首次点击派发到外层 iframe 而非内页按钮。代码：`platform/portal/styles/genui.css`。
 - **OpenUI Lang 只有位置参数**。命名参数（`Metric("营收", 5, unit: "亿")`）会让整句解析失败；可选值放末尾的 `opts` 对象，对象里写错的键会被单独丢弃。主数据不超过 4 个位置参数。代码：`platform/portal/components/genui/catalog/schema.ts`。
 - **任何解析 OpenUI 的地方都先过 `toProgram`**。它的词法器会无报错地吃掉中文语句名、单引号字符串里的反斜杠，以及中文里用 ASCII 引号引词；渲染、复制和评测都走同一入口。代码：`platform/portal/components/genui/catalog/program.ts::toProgram`。
 - **类型不符的数组元素会被逐个丢弃，留下空数组**。类别、标签、坐标轴一律用 `label`（string 或 number），渲染端统一 `text()`；新增标签参数不要写成 `z.array(str)`。代码：`platform/portal/components/genui/catalog/schema.ts`。

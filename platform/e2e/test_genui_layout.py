@@ -106,7 +106,8 @@ def test_genui_controls_recompute_in_place_and_send_their_values(logged_in):
     expect(total).to_have_text("980")  # 20 * 49
     block.get_by_role("radio", name="专业版", exact=True).click()
     block.get_by_role("slider", name="人数").fill("60")
-    block.get_by_role("switch").click()
+    billing = block.get_by_role("switch")
+    billing.click()
     expect(total).to_have_text("5,049")  # 60 * 99 * 0.85, no new message
     expect(page.locator(".turn")).to_have_count(1)
     # pointer reads values out of the chart
@@ -124,6 +125,12 @@ def test_genui_controls_recompute_in_place_and_send_their_values(logged_in):
     block.locator(".gu-plot").screenshot(path=str(OUT / "chart-tip-edge.png"), animations="disabled")
     block.get_by_role("button", name="新增").click()  # legend hides a series
     expect(block.get_by_role("button", name="新增")).to_have_attribute("aria-pressed", "false")
+    page.set_viewport_size({"width": 320, "height": 844})
+    expect(page.get_by_role("button", name="展开侧栏", exact=True)).to_be_visible()
+    billing.click()
+    expect(total).to_have_text("5,940")
+    billing.click()
+    expect(total).to_have_text("5,049")
     block.get_by_role("button", name="按这个方案出报价单").click()
     expect(page.locator(".msg.user .bubble").last).to_have_text("按专业版、60 人出一份报价单")
 

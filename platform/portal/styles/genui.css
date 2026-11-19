@@ -6,6 +6,10 @@
    under the pointer owns the actions: over a table or code its own copy shows, not the block's. */
 .genui-tools { top: 0; right: 0; z-index: 4; }
 .genui-block[data-corner="boxed"] > .genui-tools { top: 8px; right: 8px; }
+/* Controls own their hit targets. Put the image actions below interactive content, outside the picture itself. */
+.genui-block:has(> .genui-content :is(button, input, select, textarea, summary, a[href], iframe, [tabindex]):not([data-capture-skip] *)) > .genui-tools {
+  position: static; width: fit-content; margin: 6px 0 0 auto;
+}
 .genui-tools .icon-btn[data-phase="busy"] svg { animation: genui-pulse .9s ease-in-out infinite; }
 .genui-tools .icon-btn[data-phase="failed"] { color: var(--destructive); }
 @keyframes genui-pulse { 50% { opacity: .3; } }
@@ -176,6 +180,8 @@
 .gu-html-body { position: relative; min-width: 0; }
 .gu-html-body > .genui-skeleton { margin: 12px; }
 .gu-html-frame { display: block; width: 100%; border: 0; border-radius: 0 0 var(--radius) var(--radius); background: transparent; transition: height var(--t-fast) var(--ease); }
+/* Commit the closed process height before the generated iframe starts accepting input. */
+.turn:has(.gu-html[data-state="complete"]) .work-process > .collapse[data-open="false"] { transition: none; }
 /* the running page loads underneath the preview and takes its place once it reports in */
 .gu-html-pending { position: absolute; inset: 0 0 auto 0; visibility: hidden; }
 .gu-html-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; padding: 14px; color: var(--muted-foreground); font-size: var(--text-sm); line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
