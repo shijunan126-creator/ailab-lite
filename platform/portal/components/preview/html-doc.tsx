@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SandboxFrame } from "../sandbox-frame";
 import DocLoading from "./doc-loading";
+import { errorMessage } from "../../lib/api";
 
 // Injected into the fetched document, before any script of its own: the pane resizes this frame
 // while it is open, and documents that rebuild their layout on every resize (fixed-canvas decks
@@ -53,13 +54,13 @@ export function useDocText(url: string): { html: string | null; error: string } 
     setHtml(null);
     setError("");
     fetch(url)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`加载失败（${r.status}）`))))
       .then((h) => {
         if (stale) return;
         cacheDoc(url, h);
         setHtml(h);
       })
-      .catch((e) => !stale && setError(String(e?.message || e)));
+      .catch((e) => !stale && setError(errorMessage(e)));
     return () => {
       stale = true;
     };

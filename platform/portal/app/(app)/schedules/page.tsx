@@ -13,7 +13,6 @@ import { useProjects } from "../../../lib/projects";
 import { confirmDialog } from "../../../lib/dialog";
 import { DAYS, MODE_LABEL, SCHEDULE_LIMIT as LIMIT, dayText, stateText, when } from "../../../lib/schedules";
 import Select, { TimeSelect } from "../../../components/select";
-import { usePageTitle } from "../../../lib/page-title";
 
 type Kind = Schedule["schedule"]["kind"];
 type Draft = Pick<Schedule, "title" | "prompt" | "skill" | "project_id" | "ends_on"> & { kind: Kind; time: string; days: number[]; date: string };
@@ -150,7 +149,6 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
 }
 
 export default function SchedulesPage() {
-  usePageTitle("定时任务");
   // useSearchParams needs a Suspense boundary for the static build
   return (
     <Suspense>

@@ -30,7 +30,6 @@ import {FileItem, Info, MAX_ATTACHMENTS, Project, api, archiveUrl, downloadUrl, 
 import { fileStatusText, formatBytes, formatDate, timeAgo } from "../../../lib/format";
 import { projectsChanged, useProjects } from "../../../lib/projects";
 import { confirmDialog } from "../../../lib/dialog";
-import { usePageTitle } from "../../../lib/page-title";
 
 type Tab = Category | "projects";
 const BATCH = 200; // the most files one request may touch
@@ -694,7 +693,6 @@ function Library() {
 }
 
 export default function FilesPage() {
-  usePageTitle("资料库");
   return (
     <Suspense fallback={null}>
       <Library />

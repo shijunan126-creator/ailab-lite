@@ -64,7 +64,7 @@ export default function SkillViewer({ skill, onClose, onCustomize }: { skill: Sk
         if (!ctl.signal.aborted) setTexts((t) => ({ ...t, [current.path]: text }));
       })
       .catch((e) => {
-        if (!ctl.signal.aborted) setError(String(e?.message || e));
+        if (!ctl.signal.aborted) setError(errorMessage(e));
       });
     return () => ctl.abort();
   }, [skill.name, current, texts]);

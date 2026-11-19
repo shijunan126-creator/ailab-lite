@@ -5,7 +5,8 @@ import DialogHost from "../components/dialog-host";
 import { PHONE_QUERY } from "../lib/viewport";
 
 export const metadata: Metadata = {
-  title: "AILab",
+  // a route's own title reads "技能 · AILab"; pages named by their content (a conversation, a project) set it themselves
+  title: { default: "AILab", template: "%s · AILab" },
   description: "AILab：会思考、能动手的 AI 工作台",
 };
 

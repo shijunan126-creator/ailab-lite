@@ -76,9 +76,9 @@ function TextView({ file, preview }: { file: FileItem; preview: FilePreview }) {
     if (!preview.text) return;
     let stale = false;
     fetch(source.asset(file.id, preview.text))
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`加载失败（${r.status}）`))))
       .then((t) => !stale && setText(t))
-      .catch((e) => !stale && setError(String(e?.message || e)));
+      .catch((e) => !stale && setError(errorMessage(e)));
     return () => {
       stale = true;
     };

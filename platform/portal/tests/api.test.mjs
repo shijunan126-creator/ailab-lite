@@ -144,3 +144,9 @@ test("a used-up quota says how long until it resets", () => {
   const refused = errorMessage(new Error('429 {"detail":{"code":"quota_exceeded","window":"daily_tokens","resets_at":"2099-01-01T00:00:00Z"}}'));
   assert.match(refused, /^今日额度已用完，\d+ 天后恢复$/);
 });
+
+test("a request that never got an answer reads as a network failure, not the browser's English", () => {
+  assert.equal(errorMessage(new TypeError("Failed to fetch")), "网络连接失败，请检查网络后重试");
+  assert.equal(errorMessage(new TypeError("Load failed")), "网络连接失败，请检查网络后重试");
+  assert.equal(errorMessage(new Error('500 {"detail":"磁盘已满"}')), "磁盘已满");
+});

@@ -13,7 +13,6 @@ import PoliciesSection from "../../../components/admin/policies";
 import UsageSection from "../../../components/admin/usage";
 import UsersSection from "../../../components/admin/users";
 import { api, Me } from "../../../lib/api";
-import { usePageTitle } from "../../../lib/page-title";
 
 type Tab = "users" | "departments" | "policies" | "usage" | "files" | "audit" | "skills" | "market" | "brand" | "context";
 const TABS: [Tab, string][] = [
@@ -84,7 +83,6 @@ function Admin() {
 }
 
 export default function AdminPage() {
-  usePageTitle("管理");
   return (
     <Suspense fallback={null}>
       <Admin />

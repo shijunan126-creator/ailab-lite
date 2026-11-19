@@ -39,13 +39,21 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
   }, [project.id]);
 
   useEffect(() => {
-    const load = () =>
-      api<Conversation[]>(`/v1/conversations?project_id=${encodeURIComponent(project.id)}`)
-        .then(setChats)
-        .catch(() => setChats([]));
+    // each change reloads; only the newest answer may land, so an older one finishing late cannot undo a rename or move
+    let current: AbortController | null = null;
+    const load = () => {
+      current?.abort();
+      const controller = (current = new AbortController());
+      api<Conversation[]>(`/v1/conversations?project_id=${encodeURIComponent(project.id)}`, { signal: controller.signal })
+        .then((rows) => !controller.signal.aborted && setChats(rows))
+        .catch(() => !controller.signal.aborted && setChats((rows) => rows ?? []));
+    };
     load();
     window.addEventListener(CONVERSATIONS_CHANGED, load);
-    return () => window.removeEventListener(CONVERSATIONS_CHANGED, load);
+    return () => {
+      current?.abort();
+      window.removeEventListener(CONVERSATIONS_CHANGED, load);
+    };
   }, [project.id]);
 
   useEffect(() => {

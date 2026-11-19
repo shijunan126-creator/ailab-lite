@@ -112,7 +112,7 @@ export default function DraftEditor({
         const text = await resp.text();
         if (!ctl.signal.aborted) setTexts((t) => ({ ...t, [current.path]: text }));
       })
-      .catch((e) => { if (!ctl.signal.aborted) setError(String(e?.message || e)); });
+      .catch((e) => { if (!ctl.signal.aborted) setError(errorMessage(e)); });
     return () => ctl.abort();
   }, [draft, ready, current, texts]);
 

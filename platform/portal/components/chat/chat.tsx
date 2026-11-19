@@ -888,7 +888,11 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
 
   async function stop() {
     const active = turns.find((t) => !isTerminal(t.status, !!t.result?.file_wait));
-    if (active) await api(`/v1/runs/${active.id}/cancel`, { method: "POST" }).catch(() => undefined);
+    // a run that ended meanwhile answers 409 and the reload shows its end; any other failure leaves it running, so say so
+    if (active)
+      await api(`/v1/runs/${active.id}/cancel`, { method: "POST" }).catch((err) => {
+        if (!/^409\b/.test(String(err?.message))) setError(`没能停止：${errorMessage(err)}`);
+      });
     loadDetail();
   }
 

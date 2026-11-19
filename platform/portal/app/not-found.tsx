@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-export const metadata: Metadata = { title: "页面不存在 · AILab" };
+export const metadata: Metadata = { title: "页面不存在" };
 
 export default function NotFound() {
   return (
