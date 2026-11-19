@@ -2,8 +2,10 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import {Me, api, errorMessage} from "../../../lib/api";
+import { usePageTitle } from "../../../lib/page-title";
 
 export default function AccountPage() {
+  usePageTitle("账号设置");
   const [me, setMe] = useState<Me | null>(null);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");

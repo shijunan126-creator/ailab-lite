@@ -12,11 +12,12 @@ code { font-size: .9em; background: var(--subtle); border-color: var(--border); 
 
 button, .btn { font-weight: 550; border-radius: var(--radius-sm); font-size: var(--text-ui); }
 button:not(:disabled):active, .btn:active { transform: none; }
-button.sm, .btn.sm { padding: 6px 12px; font-size: var(--text-sm); }
+/* At least one text line tall: an icon-only small button (a label hidden on phones) lines up with its text neighbours. */
+button.sm, .btn.sm { padding: 6px 12px; font-size: var(--text-sm); min-height: calc(1lh + 14px); }
 button.lg { padding: 11px 20px; font-size: var(--text-md); }
 button.secondary, .btn.secondary { background: var(--popover); border-color: var(--border-strong); color: var(--foreground); }
 button.secondary:hover, .btn.secondary:hover { background: var(--subtle); color: var(--foreground); }
-button.link { padding: 4px 6px; border-radius: var(--radius-xs); }
+button.link { padding: 4px 6px; min-height: 0; border-radius: var(--radius-xs); }
 .icon-btn { border-radius: var(--radius-sm); color: var(--muted-foreground); }
 .icon-btn:hover { background: var(--subtle); color: var(--foreground); }
 .icon-btn.danger-hover:hover { background: var(--destructive-soft); color: var(--destructive); }

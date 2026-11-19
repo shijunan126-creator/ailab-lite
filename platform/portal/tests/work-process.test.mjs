@@ -43,7 +43,10 @@ test('status header uses the persisted clock, never browser wall time or a legac
   assert.equal(workHeading({status,work_ms:125000}),label);
  assert.equal(workHeading({status:'queued',started_at:'2026-01-01'}),'等待继续');
  assert.equal(workHeading({status:'succeeded',work_ms:125750}),'工作总时长：2分5秒');
- assert.equal(workHeading({status:'failed',work_ms:0}),'执行失败 · 工作总时长：0分0秒');
+ assert.equal(workHeading({status:'failed',work_ms:0}),'执行失败 · 工作总时长：1秒');
+ assert.equal(workHeading({status:'succeeded',work_ms:1200}),'工作总时长：1秒');
+ assert.equal(workHeading({status:'succeeded',work_ms:120000}),'工作总时长：2分');
+ assert.equal(workHeading({status:'succeeded',work_ms:3_780_000}),'工作总时长：1小时3分');
  assert.equal(workHeading({status:'canceled',work_ms:125750}),'已取消 · 工作总时长：2分5秒');
  assert.equal(workHeading({status:'succeeded',started_at:'2000-01-01',finished_at:'2026-01-01',work_ms:null}),'工作已完成');
 });

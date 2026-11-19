@@ -287,12 +287,21 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
   return next;
 }
 
+/** "12秒", "2分5秒", "1小时3分": the units a person would say, never a leading "0分". */
+export function spokenDuration(ms: number): string {
+  const seconds = Math.max(1, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}秒`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}分${seconds % 60 ? `${seconds % 60}秒` : ""}`;
+  const minutes = Math.floor(seconds / 60) % 60;
+  return `${Math.floor(seconds / 3600)}小时${minutes ? `${minutes}分` : ""}`;
+}
+
 export function workHeading(run: Pick<Run, "status" | "work_ms" | "started_at" | "options" | "result">): string {
   if (run.status === "interrupted" && run.result?.file_wait) return "正在准备附件…";
   const ms = typeof run.work_ms === "number" ? run.work_ms : null;
   if (run.options?.mode === "chat") {
     // chat only answers: its time is thinking, not work
-    const thought = ms === null ? null : ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))}秒` : `${Math.floor(ms / 60000)}分${Math.floor(ms / 1000) % 60}秒`;
+    const thought = ms === null ? null : spokenDuration(ms);
     switch (run.status) {
       case "running": return "正在思考…";
       case "queued": return "等待开始";
@@ -303,7 +312,7 @@ export function workHeading(run: Pick<Run, "status" | "work_ms" | "started_at" |
       default: return thought ? `已思考 ${thought}` : "已思考";
     }
   }
-  const duration = ms === null ? null : `${Math.floor(ms / 60000)}分${Math.floor(ms / 1000) % 60}秒`;
+  const duration = ms === null ? null : spokenDuration(ms);
   switch (run.status) {
     case "running": return "正在工作中…";
     case "queued": return run.started_at ? "等待继续" : "等待开始";

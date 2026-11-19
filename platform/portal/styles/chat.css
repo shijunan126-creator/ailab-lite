@@ -351,8 +351,8 @@ button.pr-row:active { transform: none; }
 .ctx-meter { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; height: 34px; color: var(--faint-foreground); outline: none; }
 .ctx-draft { font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ctx-meter svg { flex: none; transform: rotate(-90deg); }
-.ctx-track { fill: none; stroke: var(--border); stroke-width: 2.4; }
-.ctx-fill { fill: none; stroke: var(--faint-foreground); stroke-width: 2.4; stroke-linecap: round; transition: stroke-dashoffset var(--t-slow) var(--ease), stroke var(--t); }
+.ctx-track { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+.ctx-fill { fill: none; stroke: var(--faint-foreground); stroke-width: 6.5; transition: stroke-dashoffset var(--t-slow) var(--ease), stroke var(--t); }
 .ctx-meter.warn .ctx-fill { stroke: var(--warning); }
 .ctx-meter.full .ctx-fill { stroke: var(--destructive); }
 .ctx-tip { position: absolute; right: -8px; bottom: calc(100% + 8px); z-index: 45; display: flex; flex-direction: column; gap: 2px; width: max-content; max-width: 260px; padding: 8px 10px; border-radius: 10px; background: var(--foreground); color: var(--popover); font-size: var(--text-xs); line-height: 1.5; box-shadow: var(--shadow-overlay); opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity var(--t-fast), transform var(--t-fast) var(--ease), visibility 0s var(--t-fast); pointer-events: none; }

@@ -8,6 +8,7 @@ import { api, Conversation, ConversationDetail, DocRef, downloadUrl, errorMessag
 import { createBatcher } from "../../lib/stream/batcher";
 import { useFollow } from "../../lib/use-follow";
 import { isPhone } from "../../lib/viewport";
+import { usePageTitle } from "../../lib/page-title";
 import { handleClientCall, type ClientCall } from "../../lib/js/client-calls";
 import { extractSkill } from "../../lib/skill-drafts";
 import { useStable } from "../../lib/use-stable";
@@ -190,15 +191,15 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   useEffect(() => {
     if (detail) cacheConversation(detail);
   }, [detail]);
-  useEffect(() => {
-    if (!id) return;
-    document.title = detail?.title ? `${detail.title} · AILab` : "AILab";
-  }, [id, detail?.title]);
-  useEffect(() => () => { document.title = "AILab"; }, []);
+  // a project's new-chat page is named after the project; a conversation after its title
+  usePageTitle(id ? detail?.title : project?.name);
 
   // A read started before a confirmed write can still contain the old queue or turn.
   const detailWriteVersion = useRef(0);
   const unavailable = useRef(false);
+  // The conversation was deleted (here or elsewhere) or never existed: the page says so instead of offering a composer
+  // whose every send would fail.
+  const [gone, setGone] = useState(false);
   const branchMutation = useRef(false);
   const visibleRevision = useRef(detail?.branch_revision);
   visibleRevision.current = detail?.branch_revision;
@@ -260,7 +261,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       setReaderUrl(null);
       setReaderOn(false);
       setPaneOpen(false);
-      setError("对话已删除或不存在");
+      setGone(true);
     };
     window.addEventListener(CONVERSATION_DELETED, removed);
     return () => window.removeEventListener(CONVERSATION_DELETED, removed);
@@ -1022,7 +1023,17 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   return (
     <div className={`chat-layout ${showPane ? "with-preview" : ""}`}>
       <section className="chat-main">
-        {!id && project && !outgoing.length ? (
+        {id && gone ? (
+          <div className="lost">
+            <div>
+              <h1>对话已删除或不存在</h1>
+              <p>它可能已在其他窗口删除，或者链接有误。</p>
+              <Link className="btn" href="/">
+                新对话
+              </Link>
+            </div>
+          </div>
+        ) : !id && project && !outgoing.length ? (
           <ProjectHome project={project} composer={composer} error={error} />
         ) : !id && outgoing.length ? (
           <>

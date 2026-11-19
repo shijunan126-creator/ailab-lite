@@ -127,3 +127,10 @@ button.side-link:active { transform: none; }
 .share-meta { display: flex; gap: 14px; margin-top: 6px; color: var(--muted-foreground); font-size: var(--text-sm); }
 .share-page > .files { margin-bottom: 24px; }
 .share-turns .turn { animation: none; }
+
+/* Not found and error pages: one short message and the way back, centered in whatever space is left. */
+.lost { min-height: 70vh; display: grid; place-items: center; padding: 24px 16px; text-align: center; }
+main.lost { min-height: 100vh; min-height: 100dvh; }
+.lost h1 { margin: 0 0 8px; font-size: var(--text-xl); font-weight: 600; }
+.lost p { margin: 0 0 24px; color: var(--muted-foreground); }
+.lost-actions { display: flex; gap: 8px; justify-content: center; }

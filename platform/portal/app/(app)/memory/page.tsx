@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MemoryPanel } from "../../../components/memory/memory-view";
 import Switch from "../../../components/switch";
 import { api, errorMessage } from "../../../lib/api";
+import { usePageTitle } from "../../../lib/page-title";
 
 type Settings = { enabled: boolean; auto_save: boolean; reference_history: boolean };
 type DreamSettings = { enabled: boolean; timezone: string | null; window_start: string; window_end: string };
@@ -17,6 +18,7 @@ const SWITCHES: { key: keyof Settings; label: string }[] = [
 
 /** What the AI remembers, laid out the way it uses it, and the switches that decide whether it remembers at all. */
 export default function MemoryPage() {
+  usePageTitle("记忆");
   const [doc, setDoc] = useState<Doc | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");

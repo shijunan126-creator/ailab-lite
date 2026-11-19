@@ -15,6 +15,7 @@ import { isLocked, SCANNING, scanProblem, ScannedFile, waitForScan } from "../..
 import { API_BASE, api, downloadUrl, errorMessage, FileItem, redirectIfUnauthorized, uploadFile, Skill, SkillDraft, skillKind } from "../../../lib/api";
 import { confirmDialog } from "../../../lib/dialog";
 import { draftLabel, draftsChanged, useActiveDrafts, working } from "../../../lib/skill-drafts";
+import { usePageTitle } from "../../../lib/page-title";
 
 const TEMPLATE = `---
 name: weekly-report
@@ -162,6 +163,7 @@ const TABS = [["mine", "我的技能"], ["market", "技能广场"]] as const;
 type Tab = (typeof TABS)[number][0];
 
 export default function SkillsPage() {
+  usePageTitle("技能");
   const [tab, setTab] = useState<Tab>("mine");
   const [storage, setStorage] = useState<{ used_bytes: number; limit_bytes: number; available_bytes: number } | null>(null);
   const [skills, setSkills] = useState<Skill[] | null>(null);

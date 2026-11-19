@@ -16,6 +16,8 @@ import DocLoading, { loadingShape } from "./doc-loading";
 import OfficeView, { MAX_NATIVE_BYTES, officeKind, type OfficeDoc, type OfficeReveal } from "./office-view";
 import { DocTools, DocToolsSlot } from "./doc-tools";
 
+// A small file renders in a fraction of a second: the first checks come soon, then back off to the steady interval.
+const POLL_FIRST_MS = 300;
 const POLL_MS = 1500;
 
 /** Where a viewed file's preview comes from: the user's own library, or a share someone opened to them (`shareId`). */
@@ -34,12 +36,15 @@ function usePreview(file: FileItem): FilePreview | null {
     if (known || !canPreview) return;
     let stale = false;
     let timer: ReturnType<typeof setTimeout>;
+    let wait = POLL_FIRST_MS;
     const ask = () =>
       api<FilePreview>(source.preview(file.id))
         .then((p) => {
           if (stale) return;
           setPreview(p);
-          if (p.status === "pending") timer = setTimeout(ask, POLL_MS);
+          if (p.status !== "pending") return;
+          timer = setTimeout(ask, wait);
+          wait = Math.min(POLL_MS, wait * 2);
         })
         .catch((err) => !stale && setPreview({ status: "failed", reason: errorMessage(err) }));
     ask();
