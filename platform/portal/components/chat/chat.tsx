@@ -110,7 +110,7 @@ function useInitialFiles(active: boolean): Attachment[] | undefined {
   return files;
 }
 
-export default function Chat({ id, project }: { id: string | null; project?: Project | null }) {
+export default function Chat({ id, project, targetRun }: { id: string | null; project?: Project | null; targetRun?: string | null }) {
   const [mode, setMode] = useChatMode();
   const router = useRouter();
   const initialFiles = useInitialFiles(!id);
@@ -176,6 +176,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const measureAway = (el: HTMLElement) => setAway(el.scrollHeight - tail.heading() - el.clientHeight > Math.max(160, el.clientHeight * 0.35));
   useEffect(() => setAway(false), [id]);
   const loadSeq = useRef(0);
+  const [searchReady, setSearchReady] = useState(false);
   const detailController = useRef<AbortController | null>(null);
   const olderController = useRef<AbortController | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -372,25 +373,14 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     if (!id) return;
     let disposed = false;
     let controller: AbortController | null = null;
-    // a search result names the turn it found: show it, on its own version of the conversation if need be
-    const url = new URL(window.location.href);
-    const target = url.searchParams.get("run");
-    if (target) {
-      url.searchParams.delete("run");
-      window.history.replaceState(window.history.state, "", url.pathname + url.search);
-    }
-    loadDetail().then(async (d) => {
+    loadDetail().then((d) => {
       if (disposed) return;
+      if (d) setSearchReady(true);
       const last = d?.turns[d.turns.length - 1];
       if (last && !isTerminal(last.status, !!last.result?.file_wait)) {
         if (startedHere.delete(last.id)) answerFrom(last.id);
         controller = follow(last);
       }
-      else if (target && d && !d.turns.some((t) => t.id === target)) await switchRef.current(target, d.branch_revision ?? 0);
-      if (target && !disposed) requestAnimationFrame(() => {
-        stick.current = false; // the found turn is what the reader came for: content settling below must not pull them away
-        reveal(target);
-      });
     });
     return () => {
       disposed = true;
@@ -434,7 +424,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     };
     const renamed = (e: Event) => {
       const { id: target, title } = (e as CustomEvent).detail || {};
-      if (target === id) setDetail((d) => (d ? { ...d, title } : d));
+      if (target !== id) return;
+      markDetailWrite();
+      setDetail((d) => (d ? { ...d, title } : d));
     };
     window.addEventListener(CONVERSATION_MOVED, moved);
     window.addEventListener(CONVERSATION_RENAMED, renamed);
@@ -838,8 +830,27 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   }
 
-  const switchRef = useRef(switchTo);
-  switchRef.current = switchTo;
+  const switchVersion = useStable(switchTo);
+  const targetInView = !!targetRun && turns.some((turn) => turn.id === targetRun);
+  const revision = detail?.branch_revision ?? 0;
+  // Search can target a conversation already on screen. Keep its stream mounted and reveal only after the turn commits.
+  useEffect(() => {
+    if (!targetRun || !searchReady) return;
+    if (targetInView) {
+      const frame = requestAnimationFrame(() => {
+        stick.current = false;
+        reveal(targetRun);
+        consumeSearchTarget(targetRun);
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    if (!running && !branchChanging) {
+      void switchVersion(targetRun, revision).then((page) => {
+        if (actionController.current.signal.aborted || page?.turns.some((turn) => turn.id === targetRun)) return;
+        if (consumeSearchTarget(targetRun) && page) setError("这条消息在较早的记录中，请加载更早的消息。");
+      });
+    }
+  }, [targetRun, targetInView, searchReady, running, branchChanging, revision, stick, switchVersion]);
 
   /** Show another version of a turn: the conversation below it follows that version. */
   async function switchTo(runId: string, expectedRevision = detail?.branch_revision ?? 0) {
@@ -861,6 +872,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       clearBranchPreviews();
       visibleRevision.current = page.branch_revision;
       setDetail((d) => (d && d.id === page.id ? { ...page, turns: page.turns } : page));
+      return page;
     } catch (err: any) {
       if (!actionController.current.signal.aborted) setError(errorMessage(err));
     } finally {
@@ -972,7 +984,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   });
   const turnEdit = useStable(edit);
-  const turnSwitch = useStable(switchTo);
+  const turnSwitch = useStable(async (runId: string) => { await switchTo(runId); });
   const turnFork = useStable(fork);
   const turnSources = useStable(showSources);
   const turnOpenLink = useStable((url: string, title: string) => openReader({ url, title }));
@@ -1217,6 +1229,14 @@ function TurnsSkeleton() {
       </div>
     </div>
   );
+}
+
+function consumeSearchTarget(runId: string) {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("run") !== runId) return false;
+  url.searchParams.delete("run");
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  return true;
 }
 
 /** Scroll a turn into view and mark it for a moment (where a search result points). */

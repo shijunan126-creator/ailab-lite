@@ -131,13 +131,14 @@ export default function Inbox({ anchor, onClose, onUnread }: { anchor: HTMLEleme
   const [items, setItems] = useState<Notice[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [more, setMore] = useState(false);
-  const [at, setAt] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const [at, setAt] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
   const box = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     const r = anchor.getBoundingClientRect();
-    const left = Math.min(Math.max(8, r.left), window.innerWidth - POP_W - 8);
-    setAt({ top: r.bottom + 6, left: Math.max(8, left), maxHeight: Math.min(480, window.innerHeight - r.bottom - 18) });
+    const width = Math.min(POP_W, document.documentElement.clientWidth - 16);
+    const left = Math.min(Math.max(8, r.left), document.documentElement.clientWidth - width - 8);
+    setAt({ top: r.bottom + 6, left, width, maxHeight: Math.min(480, window.innerHeight - r.bottom - 18) });
   }, [anchor]);
 
   useEffect(() => {
@@ -196,7 +197,7 @@ export default function Inbox({ anchor, onClose, onUnread }: { anchor: HTMLEleme
   if (!at) return null;
   const unread = items?.some((n) => !n.read_at);
   return createPortal(
-    <div ref={box} className="pop-menu fixed inbox" role="dialog" aria-label="通知" style={{ top: at.top, left: at.left, width: POP_W, maxHeight: at.maxHeight }}>
+    <div ref={box} className="pop-menu fixed inbox" role="dialog" aria-label="通知" style={at}>
       <div className="inbox-head">
         <strong>通知</strong>
         <span className="spacer" />

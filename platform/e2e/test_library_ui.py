@@ -246,7 +246,7 @@ def test_library_table_keeps_columns_and_row_boundaries(logged_in, stack, tmp_pa
     _shot(page, "library-table-tablet")
 
     page.set_viewport_size({"width": 390, "height": 844})
-    page.get_by_role("button", name="收起侧栏", exact=True).click()
+    expect(page.get_by_role("button", name="展开侧栏", exact=True)).to_be_visible()
     expect(rows[0].get_by_role("button", name=names[0], exact=True)).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert table.evaluate("t => t.getBoundingClientRect().right <= innerWidth")
@@ -323,8 +323,7 @@ def test_reupload_reuses_ready_file_and_explicit_copy_is_independent(logged_in, 
     assert all(f["version"] == 1 for f in files)
     _shot(page, "file-identity-desktop")
     page.set_viewport_size({"width": 390, "height": 844})
-    if page.get_by_role("button", name="收起侧栏", exact=True).is_visible():
-        page.get_by_role("button", name="收起侧栏", exact=True).click()
+    page.get_by_role("button", name="展开侧栏", exact=True).wait_for()
     page.get_by_role("button", name="上传", exact=True).wait_for(state="visible")
     assert page.evaluate("() => document.documentElement.scrollWidth <= innerWidth")
     _shot(page, "file-identity-mobile")

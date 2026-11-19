@@ -3,7 +3,6 @@
 // stub of @modelcontextprotocol/ext-apps replace the desktop transport, and PATCHES below are the only source edits.
 // Output: office/dist/ (git-ignored), served by app/office-viewer/[...path].
 import { build, transform } from "esbuild";
-import { brotliCompressSync, gzipSync, constants } from "node:zlib";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -289,18 +288,14 @@ parts.push(`@fontsource/noto-sans-sc (fonts/) — OFL-1.1\n${await readFile(join
 await writeFile(join(dist, "THIRD_PARTY_NOTICES.txt"), parts.join("\n\n----------------------------------------\n\n"));
 
 // Include workers, wasm and fonts in the version: immutable URLs must change with any asset byte.
-const digest = createHash("sha256");
+// Change the immutable URL for browsers that cached a response with mismatched encoding.
+const digest = createHash("sha256").update("http-identity-v1\0");
 async function finish(directory, prefix = "") {
   for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
     const name = prefix + entry.name;
     if (entry.isDirectory()) { await finish(join(directory, entry.name), name + "/"); continue; }
     const bytes = await readFile(join(directory, entry.name));
     digest.update(name).update(bytes);
-    // Compression costs build CPU only; requests only read the selected representation.
-    if (/\.(js|css|json|wasm|txt|bcmap)$/.test(name)) {
-      await writeFile(join(directory, entry.name + ".gz"), gzipSync(bytes, { level: 9 }));
-      await writeFile(join(directory, entry.name + ".br"), brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 9 } }));
-    }
   }
 }
 await finish(dist);

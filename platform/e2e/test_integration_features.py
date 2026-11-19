@@ -132,23 +132,32 @@ def test_pin_and_search_earlier_prompt_with_unicode_highlight(logged_in, stack, 
     _wait_for_turns(page, 1)
     _send(page, _prompt("后续"))
     _wait_for_turns(page, 2)
+    # The demo model can reuse the first prompt as the title. Rename it so the query hits the message.
+    renamed = _prompt("标题")
+    _menu(page, conv)
+    page.get_by_role("menuitem", name="重命名", exact=True).click()
+    field = page.get_by_role("textbox", name="对话名称", exact=True)
+    field.fill(renamed)
+    field.press("Enter")
+    expect(page).to_have_title(f"{renamed} · AILab")
     _menu(page, conv)
     page.get_by_role("menuitem", name="置顶", exact=True).click()
     pinned = page.get_by_role("navigation", name="置顶对话").locator(f"a[href='/c/{conv}']")
     expect(pinned).to_be_visible()
     page.reload()
     expect(pinned).to_be_visible()
-    page.goto(stack.portal + "/")
-    # The account chip appears after client effects; SSR navigation alone does not install shortcuts.
-    expect(page.locator(".user-chip")).to_be_visible()
-    page.keyboard.press(shortcut)
-    dialog = page.locator(".search-dialog")
-    expect(dialog).to_be_visible()
-    dialog.get_by_role("textbox").fill(word)
-    expect(dialog.locator("mark")).to_have_text(word)
-    dialog.get_by_role("textbox").press("Enter")
-    page.wait_for_url(re.compile(rf"/c/{conv}\?run="))
-    expect(page.locator(".msg.user .bubble").first).to_have_text(first)
+    expect(pinned).to_have_text(renamed)
+    for path in ("/", f"/c/{conv}"):
+        page.goto(stack.portal + path)
+        # The account chip appears after client effects; SSR navigation alone does not install shortcuts.
+        expect(page.locator(".user-chip")).to_be_visible()
+        page.keyboard.press(shortcut)
+        dialog = page.get_by_role("dialog", name="搜索对话")
+        field = dialog.get_by_role("textbox")
+        field.fill(word)
+        expect(dialog.locator(".search-snippet mark")).to_have_text(word)
+        field.press("Enter")
+        expect(page.locator(".turn.found .msg.user .bubble")).to_have_text(first)
 
 
 def test_slash_selects_skill_template_and_work_mode(logged_in):
@@ -308,7 +317,7 @@ def test_export_prints_all_turns_of_selected_path(logged_in, context):
 def test_mobile_composer_and_fixed_library_selection(logged_in, stack, tmp_path):
     page = logged_in
     page.set_viewport_size({"width": 390, "height": 844})
-    page.get_by_role("button", name="收起侧栏", exact=True).click()
+    expect(page.get_by_role("button", name="展开侧栏", exact=True)).to_be_visible()
     _start_conversation(page, _prompt("手机"))
     _wait_for_turns(page, 1)
     assert page.evaluate("document.documentElement.scrollWidth === innerWidth")

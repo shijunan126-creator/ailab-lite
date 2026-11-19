@@ -280,7 +280,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={`shell ${collapsed ? "collapsed" : ""} ${settled ? "" : "settling"}`}>
-      <aside className="sidebar" aria-label="侧栏">
+      <aside className="sidebar" aria-label="侧栏" inert={collapsed}>
         <div className="sidebar-head">
           <Link className="brand" href="/">
             <span className="brand-mark">A</span>

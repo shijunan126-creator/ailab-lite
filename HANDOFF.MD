@@ -232,6 +232,7 @@
 - **`getPromiseState()` 返回 settled 状态时必须 dispose `value`/`error` 句柄**。在循环条件里直接读 `.type` 会丢掉 rejected/fulfilled 结果，`JS_FreeRuntime` 随后断言；`import()` 和同步 rejected promise 都走这条路径。内存错误或 runtime 清理失败后丢弃 engine，不能复用损坏的 Wasm 实例。代码：`platform/portal/lib/js/engine.ts::run`；测试：`platform/portal/tests/js-engine.test.ts`。
 
 ### 预览与查看器
+- **Office 静态资源的压缩由 Next HTTP 服务处理**。App Router 会剥离响应的 `Content-Encoding`，直接返回预压缩数据会让浏览器收到乱码。涉及资源响应格式的变更要换 immutable URL，并用生产构建验证。代码：`platform/portal/app/office-viewer/[version]/[...path]/route.ts::GET`。
 - **预览外壳是唯一标题栏**。侧栏标签栏和全屏查看器顶栏已经命名文件并放操作；文档控件经 `DocTools` 插槽 portal 进去，不要在预览内部再画一行工具栏，上游 docbar 由 `office/build.mjs` 的补丁去掉。代码：`platform/portal/components/preview/doc-tools.tsx::DocTools`、`platform/portal/office/build.mjs`。
 - **预览 iframe 用 `aria-label` 命名，不用 `title`**。Chromium 会把 `title` 当悬停提示盖在整页文档上；E2E 用 `iframe.office-frame[aria-label=…]` 定位。代码：`platform/portal/components/preview/office-view.tsx::OfficeView`、`platform/e2e/test_office_native.py`。
 - **派生 preview 的 revision 不是原生文档内容身份**。用它作 iframe 的 React key 会在同字节渲染结果迟到时打断 capture；按来源稳定挂载，revision 触发可取消的索引复核，只有内容 hash 变化才换 frame。代码：`platform/portal/components/preview/office-view.tsx::useDocumentIndex`。
