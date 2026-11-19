@@ -84,6 +84,7 @@
 ## API
 
 ### 创建与会话
+- **项目对话分页在未置顶组也保留 `pinned_at` 排序**。否则 PostgreSQL 可能为了补齐一页扫描账号下的其他项目，完整排序键可按项目索引直接定位。代码：`platform/ailab_platform/api/routes_conversations.py::list_conversations`。
 - **新会话的首条消息必须与 Conversation、Run、outbox 在同一事务创建**。先提交空会话再发消息时，429/422 会留下 `runs=0` 的幽灵会话。代码：`platform/ailab_platform/api/routes_conversations.py::start_conversation`；测试：`platform/tests/test_first_message_atomic.py::test_rejected_first_message_leaves_no_empty_conversation`。
 - **`client_send_id` 重放必须返回原 Conversation/Run，且去重先于附件、额度、会话忙碌检查**。同一身份换内容返回 409；直接发送与队列发送共用用户级身份。代码：`platform/ailab_platform/api/routes_runs.py::start_run`；测试：`platform/tests/test_client_send_id.py::test_retry_returns_current_original_run_and_exactly_one_dispatch`。
 - **历史、摘要、工作区、预览和分叉都按 Run 祖先读取，不按时间或 `superseded_by_run_id` 推断**。树形会话里“时间更早”不等于祖先；测试数据也要写 `parent_run_id` 与 `active_run_id`。代码：`platform/ailab_platform/conversation_tree.py::path_ids`；测试：`platform/tests/test_conversation_tree.py::test_edit_earlier_path_versions_switch_restore_and_fork`。
@@ -241,6 +242,10 @@
 - **Next 查看器资产根依赖 `process.cwd()`**。启动 Next 时 cwd 必须是 `platform/portal`，`next start` 指定目录不会改变这个路径；依赖目录符号链接跨 Turbopack 根也会被拒。代码：`platform/portal/app/office-viewer/[version]/[...path]/route.ts`。
 - **网页预览按 URL 保留独立标签**。不要只用一个 `paneReader` 覆盖；最近 4 个文档保留挂载，较早标签保留但内容按需重载，不要无限保留第三方 iframe。代码：`platform/portal/components/chat/preview-pane.tsx::PreviewPane`。
 - **frame ready 只证明握手完成**。加载、准备和渲染器捕获的终态错误必须显式桥接给宿主；全局 error 监听收不到被 `setFailure` 吞掉的异常，索引 unsupported 的用例不能证明握手后失败也会回退。代码：`platform/portal/components/preview/office-view.tsx::OfficeView`。
+
+### 列表分页
+- **扫描轮询只更新本次请求的文件 ID**。加载下一页时，新出现的待扫描文件可能不在早先请求的结果里，不能把它们当成已删除。代码：`platform/portal/components/library/use-library.ts::useLibrary`。
+- **浏览器测试先把列表条目滚进视口，再打开其固定菜单**。打开后发生滚动会关闭菜单。代码：`platform/portal/components/conversation-menu.tsx::ConversationMenu`。
 
 ### 样式与布局
 - **数学公式先于其他行内标记识别**。`*`、`_`、`|`、`[` 在 TeX 里另有含义；行内正则里公式排在代码之后、强调和链接之前，表格按 `lib/math.ts::tableCells` 拆列（公式内的 `\|` 是范数，不当转义）。单个 `$` 按 Pandoc 规则判定，价格不会被当成公式。代码：`platform/portal/components/markdown.tsx::inline`、`platform/portal/lib/math.ts`。

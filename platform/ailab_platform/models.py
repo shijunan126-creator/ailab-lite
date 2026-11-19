@@ -243,8 +243,11 @@ class Conversation(Base):
             "ix_conversations_user_project_live",
             "user_id",
             "project_id",
-            sqlite_where=text("deleted_at IS NULL AND project_id IS NOT NULL"),
-            postgresql_where=text("deleted_at IS NULL AND project_id IS NOT NULL"),
+            "pinned_at",
+            "updated_at",
+            "id",
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
         ),
     )
 

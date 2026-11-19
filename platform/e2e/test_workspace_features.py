@@ -5,11 +5,16 @@ from __future__ import annotations
 import re
 import time
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 from playwright.sync_api import expect
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from ailab_platform.models import Conversation, FileObject, Project
 
 from .conftest import PASSWORD, wait_models
 from .test_integration_features import _menu
@@ -103,12 +108,75 @@ def test_project_brief_persists_and_reaches_model(logged_in, stack):
         api(page, stack, "delete", "/projects/" + p["id"])
 
 
+def test_project_lists_load_older_rows_and_keep_total_counts(logged_in, stack):
+    page = logged_in
+    p = api(page, stack, "post", "/projects", {"name": "分页-" + uuid.uuid4().hex[:8]})
+    project_id = p["id"]
+    engine = create_engine(stack.env["AILAB_DATABASE_URL"])
+    try:
+        with Session(engine) as db:
+            owner = db.get(Project, project_id).user_id
+            start = datetime(2026, 1, 1, tzinfo=UTC)
+            for index in range(102):
+                at = start + timedelta(seconds=index)
+                db.add(Conversation(user_id=owner, project_id=project_id, title=f"分页对话 {index}", created_at=at, updated_at=at))
+                db.add(
+                    FileObject(
+                        user_id=owner,
+                        project_id=project_id,
+                        filename=f"分页文件 {index}.txt",
+                        storage_key=f"test/{project_id}/{index}",
+                        status="ready",
+                        created_at=at,
+                    )
+                )
+            db.commit()
+
+        page.goto(f"{stack.portal}/p/{project_id}")
+        home = page.locator(".project-home")
+        more = home.get_by_role("button", name="加载更多", exact=True)
+        oldest = home.get_by_role("link", name="分页对话 0", exact=True)
+        expect(home.get_by_role("tab", name="对话 102")).to_be_visible()
+        expect(more).to_be_visible()
+        expect(oldest).to_have_count(0)
+        more.click()
+        expect(oldest).to_be_visible()
+        expect(more).to_have_count(0)
+
+        home.get_by_role("button", name="更多操作 分页对话 0", exact=True).click()
+        page.get_by_role("menuitem", name="置顶", exact=True).click()
+        expect(home.locator(".project-row").first).to_contain_text("分页对话 0")
+        rename_menu = home.get_by_role("button", name="更多操作 分页对话 1", exact=True)
+        rename_menu.scroll_into_view_if_needed()
+        rename_menu.click()
+        page.get_by_role("menuitem", name="重命名", exact=True).click()
+        edit = home.get_by_role("textbox", name="对话名称", exact=True)
+        edit.fill("旧对话改名")
+        edit.press("Enter")
+        expect(home.locator(".project-row").nth(1)).to_contain_text("旧对话改名")
+        expect(home.locator(".project-row")).to_have_count(102)
+        expect(home.get_by_role("tab", name="对话 102")).to_be_visible()
+
+        home.get_by_role("tab", name="文件 102").click()
+        oldest_file = home.get_by_role("button", name="预览 分页文件 0.txt", exact=True)
+        expect(more).to_be_visible()
+        expect(oldest_file).to_have_count(0)
+        more.click()
+        expect(oldest_file).to_be_visible()
+        expect(home.locator(".project-row")).to_have_count(102)
+        expect(more).to_have_count(0)
+    finally:
+        engine.dispose()
+        api(page, stack, "delete", "/projects/" + project_id)
+
+
 @pytest.mark.parametrize("mobile", [False, True])
 def test_sidebar_project_menu_renames_edits_brief_and_deletes_its_open_conversation(logged_in, stack, mobile):
     page = logged_in
     p = project(page, stack)
     if mobile:
         page.set_viewport_size({"width": 390, "height": 844})
+        expect(page.locator(".shell")).to_have_class(re.compile(r"\bcollapsed\b"))
     if page.locator(".shell.collapsed").count():
         page.get_by_role("button", name="展开侧栏", exact=True).click()
     row = page.locator(".project-item").filter(has=page.locator(f'a[href="/p/{p["id"]}"]'))
