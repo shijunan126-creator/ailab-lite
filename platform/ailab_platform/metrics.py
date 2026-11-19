@@ -146,6 +146,15 @@ def metrics_response() -> Response:
 class ApiStateCollector(Collector):
     """Values that live in the database / queue are read when Prometheus scrapes, not tracked incrementally."""
 
+    def describe(self):
+        # Registration only needs the names. Without this the registry calls collect(), which queries tables the
+        # API registers before its migrations have created them.
+        yield GaugeMetricFamily("ailab_runs_in_state", "Runs per status right now", labels=["status"])
+        yield GaugeMetricFamily("ailab_queue_depth", "Messages not yet acknowledged (waiting or in flight)", labels=["queue"])
+        yield GaugeMetricFamily("ailab_outbox_backlog", "Durable jobs awaiting consumer ACK")
+        yield GaugeMetricFamily("ailab_outbox_oldest_seconds", "Age of the oldest unacknowledged durable job")
+        yield GaugeMetricFamily("ailab_usage_unreconciled", "Usage reservations requiring reconciliation")
+
     def collect(self):
         from sqlalchemy import func, select
 
@@ -202,6 +211,12 @@ class ApiStateCollector(Collector):
 class BrokerStateCollector(Collector):
     def __init__(self, manager_getter):
         self._manager = manager_getter
+
+    def describe(self):
+        # names only: registering must not reach into the lease store
+        yield GaugeMetricFamily("ailab_sandbox_leases_active", "Sandbox leases currently held")
+        yield GaugeMetricFamily("ailab_sandbox_capacity", "Sandbox slots this Broker will hand out")
+        yield GaugeMetricFamily("ailab_sandbox_leases_by_state", "Desired leases by state", labels=["state"])
 
     def collect(self):
         from .config import settings

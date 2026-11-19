@@ -205,6 +205,20 @@ def test_metrics_expose_unacknowledged_work_health_without_identifiers(api):
     assert "user_id=" not in body and "run_id=" not in body and "file_id=" not in body
 
 
+def test_registering_state_collectors_reads_nothing(monkeypatch):
+    # The API registers its collector before migrations run: registration must not touch the database or leases.
+    from prometheus_client import CollectorRegistry
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("collect() ran at registration")
+
+    for collector in (metrics.ApiStateCollector(), metrics.BrokerStateCollector(refuse)):
+        monkeypatch.setattr(collector, "collect", refuse)
+        CollectorRegistry().register(collector)
+    described = {m.name for m in metrics.ApiStateCollector().describe()}
+    assert described == {m.name for m in metrics.ApiStateCollector.collect(metrics.ApiStateCollector())}
+
+
 def test_queue_depth_includes_both_run_lanes(monkeypatch):
     from ailab_platform import queue as queue_module
     from ailab_platform.queue import InMemoryQueue

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio  # noqa: F401 - legacy callers patch the shared asyncio module
 import json
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -406,6 +407,19 @@ def _genui_page(escape: bool = False, closed: bool = True) -> str:
     return "下面是一个可以动手的小实验。\n```openui\n" + block + ("```\n以上为演示。" if closed else "")
 
 
+def _mock_title(prompt: str) -> str | None:
+    """The conversation-title request quotes the question as JSON: name the conversation after it, as a model would,
+    rather than after the scripted chat answer."""
+    if not prompt.startswith('{"question":'):
+        return None
+    try:
+        question = str(json.loads(prompt).get("question") or "")
+    except ValueError:
+        return None
+    line = next((x.strip() for x in re.sub(r"\[\[[a-z-]+\]\]", "", question).splitlines() if x.strip()), "")
+    return line[:20] or "新对话"
+
+
 def _genui_answer(prompt: str) -> str | None:
     if prompt.startswith('{"question":'):
         return None  # the title request quotes the question; it gets a title, not the scripted answer
@@ -470,6 +484,8 @@ class MockLLM(LLMClient):
             return LLMResponse(content=canonical_summary(ContextSummary(objective="继续完成用户任务")), usage=usage)
         if messages and (answer := _memory_answer(str(messages[0].get("content") or ""), prompt)) is not None:
             return LLMResponse(content=answer, usage=usage)
+        if (title := _mock_title(prompt)) is not None:
+            return LLMResponse(content=title, usage=usage)
         if (answer := _genui_answer(prompt)) is not None:
             return LLMResponse(content=answer, usage=usage)
 
