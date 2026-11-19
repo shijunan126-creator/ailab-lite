@@ -259,6 +259,7 @@
 
 - **状态修饰类用 `is-*`，不要复用 `.empty` 之类的通用类名**。`chat.css` 的全局 `.empty` 带居中和 40px 内边距，`.memory-section.empty` 曾因此被撑成大空块；修饰类写成 `.memory-section.is-empty`。代码：`platform/portal/styles/chat.css`、`platform/portal/styles/app.css`。
 - **手机断点在脚本里只经 `lib/viewport.ts` 判断**。CSS 用 `max-width: 760px`，`innerWidth < 760` 和 `min-width: 761px` 会在边界和滚动条宽度上与 CSS 不一致；侧栏收起状态要监听 `PHONE_QUERY` 的 change，否则从手机宽度拉宽后侧栏一直收着。代码：`platform/portal/lib/viewport.ts::isPhone`、`platform/portal/components/app-shell.tsx`。
+- **不要直接给 `document.title` 赋值**。Next 在客户端导航提交后写入路由元数据的 title，会覆盖页面 effect 里刚设的值；静态标题写在路由 `layout.tsx` 的 `metadata`（根布局有 `%s · AILab` 模板），会话、项目这类浏览器侧才知道的标题用 `usePageTitle`。代码：`platform/portal/lib/page-title.ts::usePageTitle`、`platform/portal/app/layout.tsx`。
 
 ### GenUI
 - **OpenUI Lang 只有位置参数**。命名参数（`Metric("营收", 5, unit: "亿")`）会让整句解析失败；可选值放末尾的 `opts` 对象，对象里写错的键会被单独丢弃。主数据不超过 4 个位置参数。代码：`platform/portal/components/genui/catalog/schema.ts`。
