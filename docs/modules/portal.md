@@ -25,6 +25,7 @@ Portal 是浏览器里的界面与同源入口：负责页面、发送队列、S
 | 事件折叠成过程与回答 | `platform/portal/lib/work-process.ts::reduceEvent` |
 | API 类型与请求封装 | `platform/portal/lib/api.ts` |
 | 会话缓存与分页合并 | `platform/portal/lib/conversation-cache.ts`、`platform/portal/lib/conversation-pages.ts` |
+| 项目页对话与文件分页 | `platform/portal/components/project-home.tsx::ProjectHome`、`platform/portal/components/library/use-library.ts::useLibrary` |
 | 回答拆分、复制降级 | `platform/portal/lib/answer-parts.ts` |
 | GenUI 控件状态保存 | `platform/portal/lib/ui-state.ts` |
 | 浏览器内 QuickJS 与 `client.call` | `platform/portal/lib/js/client-calls.ts`、`platform/portal/lib/js/runner.ts` |

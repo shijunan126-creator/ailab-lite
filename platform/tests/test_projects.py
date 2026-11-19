@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -115,6 +116,38 @@ def test_conversation_isolation_move_and_activity(api):
     response = api.post(f"/v1/conversations/{grouped['id']}/messages", json={"prompt": "hello"})
     assert response.status_code == 201, response.text
     assert api.get(f"/v1/projects/{p['id']}").json()["updated_at"] > p["updated_at"]
+
+
+def test_project_conversation_cursor_crosses_pins_and_breaks_timestamp_ties(api):
+    project_id = project(api, "分页项目")["id"]
+    other_id = project(api, "另一个项目")["id"]
+    other = api.post("/v1/conversations", json={"project_id": other_id}).json()
+    foreign = api.post("/v1/conversations", headers=AUTH, json={}).json()
+    at = datetime(2026, 1, 1, tzinfo=UTC)
+    with SessionLocal() as db:
+        owner = db.get(Project, project_id).user_id
+        for index in range(5):
+            db.add(
+                Conversation(
+                    id=f"cnv_page_{index}",
+                    user_id=owner,
+                    project_id=project_id,
+                    updated_at=at + timedelta(days=index == 4),
+                    pinned_at=at if index < 2 else None,
+                )
+            )
+        db.commit()
+
+    params = {"project_id": project_id, "limit": 2}
+    first = api.get("/v1/conversations", params=params).json()
+    assert [row["id"] for row in first] == ["cnv_page_1", "cnv_page_0"]
+    crossed = api.get("/v1/conversations", params={**params, "cursor": first[0]["id"]}).json()
+    assert [row["id"] for row in crossed] == ["cnv_page_0", "cnv_page_4"]
+    last = api.get("/v1/conversations", params={**params, "cursor": crossed[-1]["id"]}).json()
+    assert [row["id"] for row in last] == ["cnv_page_3", "cnv_page_2"]
+    assert api.get("/v1/conversations", params={**params, "cursor": last[-1]["id"]}).json() == []
+    for invalid in (other["id"], foreign["id"], "missing"):
+        assert api.get("/v1/conversations", params={**params, "cursor": invalid}).status_code == 404
 
 
 def test_upload_and_artifact_inherit_project(api):

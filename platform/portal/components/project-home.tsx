@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Conversation, downloadUrl, FileItem, Project } from "../lib/api";
+import { api, Conversation, downloadUrl, errorMessage, FileItem, Project } from "../lib/api";
 import { fileStatusText, formatBytes, timeAgo } from "../lib/format";
 import { deleteProject, OPEN_PROJECT_PANEL, renameProject, takeProjectPanel } from "../lib/projects";
 import { conversationsChanged, CONVERSATIONS_CHANGED } from "./app-shell";
@@ -15,11 +15,18 @@ import FileTile from "./library/file-tile";
 import FileViewer from "./preview/file-viewer";
 import { useLibrary } from "./library/use-library";
 
+const CHAT_PAGE_SIZE = 100;
+
 /** A project's front page: start a chat in it, and see what is already in it. */
 export default function ProjectHome({ project, composer, error }: { project: Project; composer: React.ReactNode; error: string }) {
   const router = useRouter();
   const [tab, setTab] = useState<"chats" | "files">("chats");
   const [chats, setChats] = useState<Conversation[] | null>(null);
+  const [chatCursor, setChatCursor] = useState<string | null>(null);
+  const [loadingChats, setLoadingChats] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const chatRequest = useRef<AbortController | null>(null);
+  const chatPages = useRef(1);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(project.name);
   const [menu, setMenu] = useState(false);
@@ -27,7 +34,9 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
   const menuBox = useRef<HTMLDivElement | null>(null);
   const [viewing, setViewing] = useState<FileItem | null>(null);
   const [renamingChat, setRenamingChat] = useState<string | null>(null);
-  const { files, loaded } = useLibrary({ category: "all", projectId: project.id }, tab === "files"); // only once opened
+  const { files, loaded, more: moreFiles, loading: loadingFiles, error: filesError, loadMore, reload } = useLibrary({
+    category: "all", projectId: project.id,
+  }, tab === "files");
 
   useEffect(() => setName(project.name), [project.name]);
 
@@ -38,23 +47,55 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
     return () => window.removeEventListener(OPEN_PROJECT_PANEL, open);
   }, [project.id]);
 
-  useEffect(() => {
-    // each change reloads; only the newest answer may land, so an older one finishing late cannot undo a rename or move
-    let current: AbortController | null = null;
-    const load = () => {
-      current?.abort();
-      const controller = (current = new AbortController());
-      api<Conversation[]>(`/v1/conversations?project_id=${encodeURIComponent(project.id)}`, { signal: controller.signal })
-        .then((rows) => !controller.signal.aborted && setChats(rows))
-        .catch(() => !controller.signal.aborted && setChats((rows) => rows ?? []));
-    };
-    load();
-    window.addEventListener(CONVERSATIONS_CHANGED, load);
-    return () => {
-      current?.abort();
-      window.removeEventListener(CONVERSATIONS_CHANGED, load);
-    };
+  const loadChats = useCallback(async (after: string | null = null) => {
+    if (after && chatRequest.current) return;
+    chatRequest.current?.abort();
+    const controller = (chatRequest.current = new AbortController());
+    const { signal } = controller;
+    setLoadingChats(true);
+    setChatError("");
+    try {
+      const rows = new Map<string, Conversation>();
+      let cursor = after;
+      let pages = 0;
+      const depth = after ? 1 : chatPages.current;
+      do {
+        const params = new URLSearchParams({ project_id: project.id, limit: String(CHAT_PAGE_SIZE + 1) });
+        if (cursor) params.set("cursor", cursor);
+        const page = await api<Conversation[]>(`/v1/conversations?${params}`, { signal });
+        if (signal.aborted) return;
+        const visible = page.slice(0, CHAT_PAGE_SIZE);
+        for (const row of visible) rows.set(row.id, row);
+        cursor = page.length > CHAT_PAGE_SIZE ? visible[visible.length - 1].id : null;
+        pages++;
+      } while (cursor && pages < depth);
+      // Replay the loaded depth after mutations because pinning or renaming can move a row across pages.
+      setChats((prev) => {
+        if (!after || !prev) return [...rows.values()];
+        const seen = new Set(prev.map((row) => row.id));
+        return [...prev, ...Array.from(rows.values()).filter((row) => !seen.has(row.id))];
+      });
+      setChatCursor(cursor);
+      chatPages.current = after ? chatPages.current + pages : pages;
+    } catch (err) {
+      if (!signal.aborted) setChatError(errorMessage(err));
+    } finally {
+      if (chatRequest.current === controller) {
+        chatRequest.current = null;
+        if (!signal.aborted) setLoadingChats(false);
+      }
+    }
   }, [project.id]);
+
+  useEffect(() => {
+    const reloadChats = () => void loadChats();
+    reloadChats();
+    window.addEventListener(CONVERSATIONS_CHANGED, reloadChats);
+    return () => {
+      chatRequest.current?.abort();
+      window.removeEventListener(CONVERSATIONS_CHANGED, reloadChats);
+    };
+  }, [loadChats]);
 
   useEffect(() => {
     if (!menu) return;
@@ -76,6 +117,11 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
     conversationsChanged();
     router.push("/");
   }
+
+  const listError = tab === "chats" ? chatError : filesError;
+  const loadingList = tab === "chats" ? loadingChats : loadingFiles;
+  const more = tab === "chats" ? !!chatCursor : moreFiles;
+  const loadNext = tab === "chats" ? () => loadChats(chatError ? null : chatCursor) : filesError ? reload : loadMore;
 
   return (
     <div className="project-home">
@@ -144,7 +190,7 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
 
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === "chats"} className={tab === "chats" ? "on" : ""} onClick={() => setTab("chats")}>
-          对话{(chats?.length ?? project.conversations) ? <span className="tab-count">{chats?.length ?? project.conversations}</span> : null}
+          对话{project.conversations ? <span className="tab-count">{project.conversations}</span> : null}
         </button>
         <button role="tab" aria-selected={tab === "files"} className={tab === "files" ? "on" : ""} onClick={() => setTab("files")}>
           文件{project.files ? <span className="tab-count">{project.files}</span> : null}
@@ -170,12 +216,12 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
                   {c.title || "新对话"}
                 </Link>
                 <span className="meta">{c.last_status === "running" || c.last_status === "queued" ? "回答中…" : timeAgo(c.updated_at)}</span>
-                <ConversationMenu conv={c} onRename={() => setRenamingChat(c.id)} />
+                <ConversationMenu conv={c} onRename={() => setRenamingChat(c.id)} onPinned={conversationsChanged} />
               </div>
             ))}
           </div>
         )
-      ) : !loaded ? null : files.length === 0 ? (
+      ) : !loaded || (filesError && !files.length) ? null : files.length === 0 ? (
         <div className="project-empty">在这个项目的对话里上传或生成的文件会放在这里</div>
       ) : (
         <div className="project-list">
@@ -197,6 +243,14 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
           ))}
         </div>
       )}
+      {more || listError ? (
+        <div className="load-more" aria-busy={loadingList}>
+          {listError ? <div className="alert error" role="alert">{listError}</div> : null}
+          <button className="link" disabled={loadingList} onClick={loadNext}>
+            {listError ? "重试" : "加载更多"}
+          </button>
+        </div>
+      ) : null}
       {memory ? <ProjectMemoryDialog project={project} onClose={() => setMemory(false)} /> : null}
       {viewing ? (
         <FileViewer files={files} file={viewing} onOpen={setViewing} onClose={() => setViewing(null)} chatHref={(f) => `/p/${project.id}?files=${f.id}`} />

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from ..conversation_tree import path_ids, path_runs, require_idle
@@ -63,19 +63,48 @@ def conversation_out(conv: Conversation, last_status: str | None = None) -> dict
 def list_conversations(
     limit: int = Query(default=100, ge=1, le=300),
     project_id: str | None = None,
+    cursor: str | None = Query(default=None, max_length=40),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     if project_id is not None:
         owned_project(db, project_id, user)
+    previous = _owned(db, cursor, user) if cursor is not None else None
+    if previous is not None and previous.project_id != project_id:
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+    scope = (Conversation.user_id == user.id, Conversation.deleted_at.is_(None), Conversation.project_id == project_id)
     last_status = select(Run.status).where(Run.id == Conversation.active_run_id).scalar_subquery()
-    rows = db.execute(
-        select(Conversation, last_status)
-        .where(Conversation.user_id == user.id, Conversation.deleted_at.is_(None), Conversation.project_id == project_id)
-        .order_by(Conversation.pinned_at.desc().nulls_last(), Conversation.updated_at.desc(), Conversation.id.desc())
-        .limit(limit)
-    ).all()
-    return [conversation_out(conv, last) for conv, last in rows]
+    details = select(Conversation, last_status).where(*scope)
+    recent = (Conversation.updated_at.desc(), Conversation.id.desc())
+    if project_id is None and previous is None:
+        rows = db.execute(details.order_by(Conversation.pinned_at.desc().nulls_last(), *recent).limit(limit))
+        return [conversation_out(conv, last) for conv, last in rows]
+
+    stmt = select(Conversation.id).where(*scope)
+    ordering = (Conversation.pinned_at.desc(), *recent)
+    page_ids = []
+    # Seek in each group separately so both databases can walk the same index with pinned rows first.
+    if previous is None or previous.pinned_at is not None:
+        pinned = stmt.where(Conversation.pinned_at.is_not(None))
+        if previous is not None:
+            pinned = pinned.where(
+                tuple_(Conversation.pinned_at, Conversation.updated_at, Conversation.id)
+                < tuple_(previous.pinned_at, previous.updated_at, previous.id)
+            )
+        page_ids.extend(db.scalars(pinned.order_by(*ordering).limit(limit)))
+
+    if remaining := limit - len(page_ids):
+        unpinned = stmt.where(Conversation.pinned_at.is_(None))
+        if previous is not None and previous.pinned_at is None:
+            unpinned = unpinned.where(tuple_(Conversation.updated_at, Conversation.id) < tuple_(previous.updated_at, previous.id))
+        page_ids.extend(db.scalars(unpinned.order_by(*ordering).limit(remaining)))
+    if not page_ids:
+        return []
+
+    # The pagination index covers the ID query. Load the full rows and status only for this page.
+    rows = {conv.id: conversation_out(conv, last) for conv, last in db.execute(details.where(Conversation.id.in_(page_ids)))}
+    return [rows[id_] for id_ in dict.fromkeys(page_ids) if id_ in rows]
 
 
 @router.post("", response_model=ConversationOut, status_code=status.HTTP_201_CREATED)

@@ -63,6 +63,7 @@
 
 ### 会话、分叉、定时、搜索、管理
 - 会话的每个用户消息是一轮 Run；`_start_turn` 复用 `start_run`，同一会话只能有一轮在跑（409）。
+- `GET /v1/conversations` 按置顶时间、更新时间和 ID 排序。`cursor` 是同一列表上一页的最后一个会话 ID，根目录和各项目的游标不能混用。代码：`platform/ailab_platform/api/routes_conversations.py::list_conversations`。
 - 分叉只复制最多 500 个已结束轮次、派生对象和同模式 checkpoint，不复制账本或文件字节；模型可见字节不能因换会话 ID 而改变，详见 [ADR 0041](../architecture/adr/0041-fork-reuses-checkpoint.md)。
 - 定时任务每用户最多 5 条，用 `next_run_at` 的 CAS 领取；到点那一轮与 Run/outbox 同事务写入。会话忙时按 1 分钟重试、最多顺延 2 小时，详见 [ADR 0040](../architecture/adr/0040-schedule-in-conversation.md)。
 - 全局搜索按会话维护词项并集：SQLite 用 FTS5，PostgreSQL 用触发器维护的 tsvector + GIN；候选会话再精确扫描，因此一次请求搜完整个账号，没有游标，详见 [ADR 0039](../architecture/adr/0039-global-search-index.md)。

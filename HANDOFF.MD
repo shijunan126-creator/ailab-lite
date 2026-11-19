@@ -84,6 +84,7 @@
 ## API
 
 ### 创建与会话
+- **项目对话分页在未置顶组也保留 `pinned_at` 排序**。否则 PostgreSQL 可能为了补齐一页扫描账号下的其他项目，完整排序键可按项目索引直接定位。代码：`platform/ailab_platform/api/routes_conversations.py::list_conversations`。
 - **新会话的首条消息必须与 Conversation、Run、outbox 在同一事务创建**。先提交空会话再发消息时，429/422 会留下 `runs=0` 的幽灵会话。代码：`platform/ailab_platform/api/routes_conversations.py::start_conversation`；测试：`platform/tests/test_first_message_atomic.py::test_rejected_first_message_leaves_no_empty_conversation`。
 - **`client_send_id` 重放必须返回原 Conversation/Run，且去重先于附件、额度、会话忙碌检查**。同一身份换内容返回 409；直接发送与队列发送共用用户级身份。代码：`platform/ailab_platform/api/routes_runs.py::start_run`；测试：`platform/tests/test_client_send_id.py::test_retry_returns_current_original_run_and_exactly_one_dispatch`。
 - **历史、摘要、工作区、预览和分叉都按 Run 祖先读取，不按时间或 `superseded_by_run_id` 推断**。树形会话里“时间更早”不等于祖先；测试数据也要写 `parent_run_id` 与 `active_run_id`。代码：`platform/ailab_platform/conversation_tree.py::path_ids`；测试：`platform/tests/test_conversation_tree.py::test_edit_earlier_path_versions_switch_restore_and_fork`。
@@ -242,6 +243,10 @@
 - **网页预览按 URL 保留独立标签**。不要只用一个 `paneReader` 覆盖；最近 4 个文档保留挂载，较早标签保留但内容按需重载，不要无限保留第三方 iframe。代码：`platform/portal/components/chat/preview-pane.tsx::PreviewPane`。
 - **frame ready 只证明握手完成**。加载、准备和渲染器捕获的终态错误必须显式桥接给宿主；全局 error 监听收不到被 `setFailure` 吞掉的异常，索引 unsupported 的用例不能证明握手后失败也会回退。代码：`platform/portal/components/preview/office-view.tsx::OfficeView`。
 
+### 列表分页
+- **扫描轮询只更新本次请求的文件 ID**。加载下一页时，新出现的待扫描文件可能不在早先请求的结果里，不能把它们当成已删除。代码：`platform/portal/components/library/use-library.ts::useLibrary`。
+- **浏览器测试先把列表条目滚进视口，再打开其固定菜单**。打开后发生滚动会关闭菜单。代码：`platform/portal/components/conversation-menu.tsx::ConversationMenu`。
+
 ### 样式与布局
 - **数学公式先于其他行内标记识别**。`*`、`_`、`|`、`[` 在 TeX 里另有含义；行内正则里公式排在代码之后、强调和链接之前，表格按 `lib/math.ts::tableCells` 拆列（公式内的 `\|` 是范数，不当转义）。单个 `$` 按 Pandoc 规则判定，价格不会被当成公式。代码：`platform/portal/components/markdown.tsx::inline`、`platform/portal/lib/math.ts`。
 - **行内公式过宽的片段单独横向滚动，不要给所有片段加滚动**。KaTeX 只在顶层片段（0.19 起类名为 `.katex-base`，不是 `.base`）之间断行；滚动容器的 inline-block 没有基线，会让所有行内公式上下错位，所以只给比所在行宽的片段加 `wide`，窗口或数学字体变化时重新判断。代码：`platform/portal/components/math.tsx::fit`。
@@ -317,7 +322,7 @@
 - **不带 `with` 的 `TestClient(app)` 不跑启动钩子**。存储目录不会 `ensure_dirs()`，第一个 `/readyz` 用例会因 `storage: False` 得到 503；要么用上下文管理器，要么显式建目录。代码：`platform/tests/test_review_regressions.py::test_api_stays_ready_but_degraded_without_redis`。
 - **查询次数测试只监听被测 session 的连接**。在 `Engine` 上挂监听会把 API 后台 outbox 和 reaper 的查询算进来；用 `db.connection()`，并只计调用线程。代码：`platform/tests/test_conversation_paging.py::test_detail_batches_related_rows_instead_of_querying_each_turn`。
 - **共享测试库的 outbox 会被 API lifespan dispatcher 扫描**。要隔离缩略图或发布测试，在启动 `TestClient` 前替换 `main.dispatch_forever`，不要只替换 `preview_dispatch.get_queue`。代码：`platform/tests/test_library.py::api`。
-- **迁移漂移比较必须在 head 上做**。升到中间 revision 再和最新 ORM 比较会把后续合法表误判为漂移；逐步升、降、再升链另测。代码：`platform/tests/test_migrations.py::assert_schema_matches`。
+- **迁移集成测试从 Alembic 的当前单一 head 推导升级和回退链**。手写终点会在新迁移加入时过期；重新升级到 head 后再与最新 ORM 比较。代码：`platform/tests/test_integration_migrations.py::test_integrated_feature_chain_up_down_reup`、`platform/tests/test_migrations.py::assert_schema_matches`。
 - **EXPLAIN 测试用独立库、有代表性的数据并 ANALYZE**。不要强制索引名或关闭顺序扫描；SQLite 的 skip-scan 和 PostgreSQL 的等价索引都有效。代码：`platform/tests/test_memory_query_plans.py`。
 - **测试 HTTP 服务器统一 `serve_forever(poll_interval=0.01)`**。`shutdown()` 默认要等下一次 0.5 秒轮询；测试里的 `AILAB_LLM_RETRY_BACKOFF_SECONDS` 默认 1ms，测退避节奏的用例自己设置。代码：`platform/tests/conftest.py`、`platform/tests/prefix_harness.py`。
 
