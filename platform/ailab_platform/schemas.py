@@ -329,14 +329,27 @@ class InternalFileOut(FileOut):
     render_owner_id: str | None = None
 
 
+class MentionItem(FileOut):
+    origin: Literal["conversation", "project", "library"]
+    delivered: bool
+    conversation_title: str | None
+    project_name: str | None
+    highlight: list[tuple[int, int]]
+
+
+class FileMentions(ORMModel):
+    items: list[MentionItem]
+
+
 class LibraryFilePatch(BaseModel):
     starred: bool = None
     project_id: str | None = None
+    filename: str | None = Field(default=None, min_length=1, max_length=255)
 
     @model_validator(mode="after")
     def require_changes(self):
-        if "pinned" in self.model_fields_set and self.pinned is None:
-            raise ValueError("pinned must be a boolean")
+        if "filename" in self.model_fields_set and self.filename is None:
+            raise ValueError("filename must be a string")
         if not self.model_fields_set:
             raise ValueError("at least one field is required")
         return self

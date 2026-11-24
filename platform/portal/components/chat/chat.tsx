@@ -1029,6 +1029,7 @@ export default function Chat({ id, project, targetRun }: { id: string | null; pr
       autoFocus
       placeholder={question ? "回答上面的问题" : running ? "补充或下一条消息" : undefined}
       projectId={projectId}
+      conversationId={id}
       initialFiles={initialFiles}
       context={detail?.context ? { used: detail.context.used_tokens, compactAt: detail.context.compact_at_tokens } : undefined}
       quotesKey={quotesKey(id, projectId)}

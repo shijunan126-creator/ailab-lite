@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FileItem, ModelInfo, Skill, SkillKind, api, skillKind } from "../../lib/api";
+import { FileItem, MentionItem, ModelInfo, Skill, SkillKind, api, skillKind } from "../../lib/api";
 import { MAX_SKILLS, matchSkills, plainText, skillsOf, toPayload, type Part } from "../../lib/message-parts";
 import type { SendOptions } from "../../lib/outbox";
 import { clearQuotes, removeQuote, useQuotes, type Quote } from "../../lib/doc-refs";
@@ -13,7 +13,9 @@ import LibraryPicker from "../library/library-picker";
 import ContextMeter, { estimateTokens } from "./context-meter";
 import type { Mode } from "./mode-toggle";
 import ModelMenu from "./model-menu";
-import RichInput, { skillTone, type RichInputHandle, type SlashState } from "./rich-input";
+import { forgetMentions } from "../../lib/mentions";
+import MentionMenu, { useMentions } from "./mention-menu";
+import RichInput, { skillTone, type RichInputHandle, type TriggerState } from "./rich-input";
 import TemplatePicker, { TemplateChoice } from "./template-picker";
 
 export type Attachment = Pick<FileItem, "id" | "filename" | "status" | "content_type" | "size">;
@@ -69,6 +71,7 @@ export default function Composer({
   autoFocus,
   placeholder,
   projectId,
+  conversationId,
   initialFiles,
   context,
   quotesKey,
@@ -87,6 +90,7 @@ export default function Composer({
   autoFocus?: boolean;
   placeholder?: string;
   projectId?: string | null; // uploads from here go into this project
+  conversationId?: string | null; // "@" offers this conversation's files first
   initialFiles?: Attachment[]; // e.g. "talk about these" from the library
   context?: { used: number | null; compactAt: number | null }; // the conversation so far, for the context meter
   quotesKey?: string; // quotes taken from the side-pane viewer go out with this composer's next message
@@ -107,9 +111,9 @@ export default function Composer({
   const input = useRef<RichInputHandle | null>(null);
 
   const [skills, setSkills] = useState<Offered[]>([]);
-  const [slash, setSlash] = useState<SlashState>(null);
-  const [slashAt, setSlashAt] = useState(0); // highlighted entry of the "/" list
-  const [slashClosed, setSlashClosed] = useState(false); // Escape: this "/" stays text
+  const [trigger, setTrigger] = useState<TriggerState>(null);
+  const [listAt, setListAt] = useState(0); // highlighted entry of the "/" or "@" list
+  const [listClosed, setListClosed] = useState(false); // Escape: this "/" or "@" stays text
 
   useEffect(() => {
     api<Skill[]>("/v1/skills")
@@ -137,17 +141,17 @@ export default function Composer({
   function addSkill(s: Offered, fromSlash: boolean) {
     setError("");
     if (inMessage.has(s.name)) {
-      if (fromSlash) input.current?.completeSlash(null);
+      if (fromSlash) input.current?.completeTrigger(null);
       input.current?.flash(s.name);
       return;
     }
     if (chips.length >= MAX_SKILLS) {
-      if (fromSlash) input.current?.completeSlash(null);
+      if (fromSlash) input.current?.completeTrigger(null);
       setError(`一条消息最多 ${MAX_SKILLS} 个技能`);
       return;
     }
     const ref = { name: s.name, title: s.title, fileId: s.fileId };
-    if (fromSlash) input.current?.completeSlash(ref);
+    if (fromSlash) input.current?.completeTrigger({ skill: ref });
     else input.current?.insertSkill(ref);
   }
 
@@ -219,9 +223,25 @@ export default function Composer({
   const shown = skills.slice(0, VISIBLE_SKILLS);
   const found = skillQuery.trim() ? matchSkills(skills, skillQuery) : skills;
   // "/" at the start or after a space lists the skills; with no match the list says so and Enter sends as usual
-  const slashItems: Offered[] = slash && !slashClosed ? matchSkills(skills, slash.query) : [];
-  const slashOpen = !!slash && !slashClosed && (slashItems.length > 0 || !!slash.query);
-  const slashIndex = Math.min(slashAt, Math.max(0, slashItems.length - 1));
+  const slash = trigger?.trigger === "/" && !listClosed ? trigger : null;
+  const slashItems: Offered[] = slash ? matchSkills(skills, slash.query) : [];
+  const slashOpen = !!slash && (slashItems.length > 0 || !!slash.query);
+  // "@" lists library files and earlier deliverables; picking one names it in the text and attaches it
+  const mention = useMentions(trigger?.trigger === "@" && !listClosed ? trigger.query : null, { conversationId, projectId });
+  const mentionOpen = trigger?.trigger === "@" && !listClosed && (mention.items.length > 0 || mention.settled);
+  const listLength = slashOpen ? slashItems.length : mentionOpen ? mention.items.length : 0;
+  const listIndex = Math.min(listAt, Math.max(0, listLength - 1));
+  const attachedIds = files.flatMap((key) => (uploads[key]?.fileId ? [uploads[key].fileId!] : []));
+
+  function pickMention(f: MentionItem) {
+    input.current?.completeTrigger({ text: f.filename });
+    if (attachedIds.includes(f.id)) return;
+    if (f.content_type.startsWith("image/") && imageCount >= 5) {
+      setError("每轮最多附加5张图片");
+      return;
+    }
+    attachExisting([f]);
+  }
 
   async function send(steer = false) {
     if (!canSend || (running && !queueable)) return;
@@ -234,6 +254,7 @@ export default function Composer({
     if (ok) {
       input.current?.clear();
       setFiles([]);
+      forgetMentions(); // the answer may deliver files the next "@" should offer
       if (quotesKey) clearQuotes(quotesKey);
       setTemplateState(null); // skills and their template are for one message; the mode stays
       setError("");
@@ -294,8 +315,8 @@ export default function Composer({
             slashItems.map((s, i) => {
               const Icon = skillIcon(s.name);
               return (
-                <button key={s.name} type="button" role="option" aria-selected={i === slashIndex} className={`slash-item ${i === slashIndex ? "on" : ""} ${inMessage.has(s.name) ? "picked" : ""}`}
-                  onMouseMove={() => setSlashAt(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => addSkill(s, true)}>
+                <button key={s.name} type="button" role="option" aria-selected={i === listIndex} className={`slash-item ${i === listIndex ? "on" : ""} ${inMessage.has(s.name) ? "picked" : ""}`}
+                  onMouseMove={() => setListAt(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => addSkill(s, true)}>
                   <span className={`slash-icon tone-${skillTone(s.name)}`}><Icon size={15} /></span>
                   <span className="slash-label">{s.title}</span>
                   {inMessage.has(s.name) ? <IconCheck size={14} /> : null}
@@ -306,6 +327,8 @@ export default function Composer({
             <div className="menu-empty" role="presentation">没有匹配的技能</div>
           )}
         </div>
+      ) : mentionOpen ? (
+        <MentionMenu items={mention.items} index={listIndex} attached={new Set(attachedIds)} onHover={setListAt} onPick={pickMention} />
       ) : null}
       <div className={`composer-main ${expanded ? "expanded" : ""}`}>
         <div className="plus-menu" ref={menu.box}>
@@ -357,7 +380,7 @@ export default function Composer({
         {library ? (
           <LibraryPicker
             projectId={projectId}
-            attached={files.flatMap((key) => (uploads[key]?.fileId ? [uploads[key].fileId!] : []))}
+            attached={attachedIds}
             onClose={() => setLibrary(false)}
             onPick={(picked: FileItem[]) => {
               setLibrary(false);
@@ -375,29 +398,30 @@ export default function Composer({
             setParts(next);
             if (error) setError("");
           }}
-          onSlash={(next) => {
-            setSlash(next);
-            setSlashAt(0);
-            setSlashClosed(false);
+          onTrigger={(next) => {
+            setTrigger(next);
+            setListAt(0);
+            setListClosed(false);
           }}
-          slashOpen={slashOpen}
-          controls={slashOpen ? "slash-menu" : undefined}
+          listOpen={slashOpen || mentionOpen}
+          controls={slashOpen ? "slash-menu" : mentionOpen ? "mention-menu" : undefined}
           onPasteFiles={upload}
           onKeyDown={(e) => {
-            if (slashOpen && !e.nativeEvent.isComposing) {
-              if (slashItems.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            if ((slashOpen || mentionOpen) && !e.nativeEvent.isComposing) {
+              if (listLength && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
                 e.preventDefault();
-                setSlashAt((slashIndex + (e.key === "ArrowDown" ? 1 : slashItems.length - 1)) % slashItems.length);
+                setListAt((listIndex + (e.key === "ArrowDown" ? 1 : listLength - 1)) % listLength);
                 return;
               }
-              if (slashItems.length && (e.key === "Enter" || e.key === "Tab")) {
+              if (listLength && (e.key === "Enter" || e.key === "Tab")) {
                 e.preventDefault();
-                addSkill(slashItems[slashIndex], true);
+                if (slashOpen) addSkill(slashItems[listIndex], true);
+                else pickMention(mention.items[listIndex]);
                 return;
               }
               if (e.key === "Escape") {
                 e.preventDefault();
-                setSlashClosed(true);
+                setListClosed(true);
                 return;
               }
             }

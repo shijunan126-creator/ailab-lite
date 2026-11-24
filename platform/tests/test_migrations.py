@@ -19,7 +19,7 @@ from ailab_platform.migrate import alembic_config, run_migrations
 from ailab_platform.models import Base
 
 # FTS5 virtual tables and the PostgreSQL GIN expression index implement the search index; they are not ORM tables.
-SEARCH_INDEX_OBJECTS = {"conversation_search_fts", "ix_conversation_search_terms"}
+SEARCH_INDEX_OBJECTS = {"conversation_search_fts", "ix_conversation_search_terms", "file_search_fts", "ix_file_search_terms"}
 
 
 def _search_index_diff(entry) -> bool:
@@ -28,7 +28,7 @@ def _search_index_diff(entry) -> bool:
         return False
     kind, obj = entry[0], entry[1]
     name = getattr(obj, "name", None)
-    if kind in {"add_table", "remove_table"} and name and name.startswith("conversation_search_fts"):
+    if kind in {"add_table", "remove_table"} and name and name.startswith(("conversation_search_fts", "file_search_fts")):
         return True
     return kind in {"add_index", "remove_index"} and name in SEARCH_INDEX_OBJECTS
 
@@ -97,6 +97,25 @@ def test_migrations_and_models_do_not_drift(engine) -> None:
     run_migrations(engine)
     with engine.connect() as conn:
         assert_schema_matches(conn)
+
+
+def test_file_search_migration_roundtrip(engine) -> None:
+    with engine.begin() as conn:
+        config = alembic_config()
+        config.attributes["connection"] = conn
+        command.upgrade(config, "0072")
+        assert not inspect(conn).has_table("file_search")
+        command.upgrade(config, "0073")
+        assert inspect(conn).has_table("file_search_state")
+        assert conn.scalar(text("SELECT COUNT(*) FROM file_search")) == 0
+        if conn.dialect.name == "sqlite":
+            assert inspect(conn).has_table("file_search_fts")
+        else:
+            assert "ix_file_search_terms" in {index["name"] for index in inspect(conn).get_indexes("file_search")}
+        command.downgrade(config, "0072")
+        assert not inspect(conn).has_table("file_search")
+        assert not inspect(conn).has_table("file_search_state")
+        assert not inspect(conn).has_table("file_search_fts")
 
 
 def test_running_twice_is_harmless(engine) -> None:

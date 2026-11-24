@@ -85,6 +85,26 @@ export function slashQuery(before: string): { query: string; length: number } | 
   return { query: m[1], length: m[1].length + 1 };
 }
 
+/**
+ * The "@" being typed right before the caret, if it opens the file list: at the start, or after a space, a line
+ * break or a skill. `a@b.com` stays text. A space ends it, so "@周报 " is plain text again.
+ */
+export function mentionQuery(before: string): { query: string; length: number } | null {
+  const m = /(?:^|[\s 　])@([^\s 　@]{0,40})$/.exec(before);
+  if (!m) return null;
+  return { query: m[1], length: m[1].length + 1 };
+}
+
+export type Trigger = "/" | "@";
+
+/** Whichever list the text before the caret opens: skills after "/", files after "@". */
+export function triggerQuery(before: string): { trigger: Trigger; query: string; length: number } | null {
+  const slash = slashQuery(before);
+  if (slash) return { trigger: "/", ...slash };
+  const mention = mentionQuery(before);
+  return mention ? { trigger: "@", ...mention } : null;
+}
+
 /** Skills whose title or name contains the query (case-insensitive); title-prefix matches first. */
 export function matchSkills<T extends { name: string; title: string }>(list: T[], query: string): T[] {
   const q = query.trim().toLowerCase();

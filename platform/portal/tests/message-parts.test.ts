@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fromPayload, matchSkills, normalize, sentSkills, slashQuery, toPayload, type Part } from "../lib/message-parts";
+import { fromPayload, matchSkills, mentionQuery, normalize, sentSkills, slashQuery, toPayload, triggerQuery, type Part } from "../lib/message-parts";
 
 const skill = (name: string, title = name): Part => ({ kind: "skill", name, title });
 const text = (t: string): Part => ({ kind: "text", text: t });
@@ -43,6 +43,17 @@ describe("message parts", () => {
     expect(slashQuery("看 https://a.cn/x")).toBeNull();
     expect(slashQuery("~/dir")).toBeNull();
     expect(slashQuery("/a b")).toBeNull();
+  });
+
+  it("opens the file list only where a mention can start", () => {
+    expect(mentionQuery("@")).toEqual({ query: "", length: 1 });
+    expect(mentionQuery("对比 @季度报")).toEqual({ query: "季度报", length: 4 });
+    expect(mentionQuery("第一行\n@ppt")).toEqual({ query: "ppt", length: 4 });
+    expect(mentionQuery("mail a@b.com")).toBeNull();
+    expect(mentionQuery("@周报 ")).toBeNull();
+    expect(triggerQuery("请用 /pp")).toEqual({ trigger: "/", query: "pp", length: 3 });
+    expect(triggerQuery("看 @a/b")).toEqual({ trigger: "@", query: "a/b", length: 4 });
+    expect(triggerQuery("纯文本")).toBeNull();
   });
 
   it("matches by title or name, title prefix first", () => {

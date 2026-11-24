@@ -11,7 +11,7 @@ from sqlalchemy import delete, func, insert, literal, literal_column, select, up
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .models import Artifact, FileObject, Project, User, utcnow
+from .models import Artifact, FileObject, FileSearch, Project, User, utcnow
 from .naming import name_key, numbered_name
 from .storage import get_storage
 
@@ -88,6 +88,7 @@ def delete_file_rows(db: Session, files: list[FileObject], *, detach_children: b
     for key in dict.fromkeys(keys):
         schedule_object_deletion(db, key, "file", prefix=key.endswith("/"))
     if tombstone:
+        db.execute(delete(FileSearch).where(FileSearch.file_id.in_(ids)))
         db.execute(update(FileObject).where(FileObject.id.in_(ids)).values(purged_at=utcnow(), is_head=0, meta={}, filename="文件已删除"))
         return keys
     # Clear links within the selection too, so FK enforcement does not depend on delete order.
@@ -181,22 +182,26 @@ def assign_file_version(db: Session, file: FileObject, parent: FileObject | None
     db.execute(
         update(FileObject).where(FileObject.lineage_id == parent.lineage_id, FileObject.is_head == literal_column("1")).values(is_head=0)
     )
+    db.execute(delete(FileSearch).where(FileSearch.lineage_id == parent.lineage_id))
 
     reserve_filename(db, file)
 
 
-def move_lineage(db: Session, file: FileObject, project_id: str | None) -> None:
+def move_lineage(db: Session, file: FileObject, project_id: str | None, *, filename: str | None = None) -> None:
     head = db.scalar(select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.is_head == 1))
     if head.purpose != "library":
         raise HTTPException(409, "技能只能在技能页管理")
     head.project_id = project_id
+    if filename is not None:
+        head.filename = filename
     reserve_filename(db, head)
+    # Flush the head through its ORM index hook before updating the historical names in bulk.
+    db.flush()
     db.execute(
         update(FileObject)
-        .where(FileObject.lineage_id == head.lineage_id)
+        .where(FileObject.lineage_id == head.lineage_id, FileObject.id != head.id)
         .values(project_id=project_id, filename=head.filename, name_key=head.name_key)
     )
-    db.flush()
 
 
 def trim_file_versions(db: Session, file: FileObject) -> list[str]:
@@ -243,6 +248,7 @@ def trash_lineages(db: Session, user_id: str, lineage_ids: list[str], *, project
         .where(FileObject.user_id == user_id, FileObject.lineage_id.in_(lineage_ids), FileObject.deleted_at.is_(None))
         .values(**values)
     )
+    db.execute(delete(FileSearch).where(FileSearch.user_id == user_id, FileSearch.lineage_id.in_(lineage_ids)))
     if project_id is not None:
         # Already-trashed versions must lose the FK too when their project is removed.
         db.execute(

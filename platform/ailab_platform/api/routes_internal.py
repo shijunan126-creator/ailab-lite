@@ -1223,9 +1223,10 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
             purpose = "platform_skill" if file.purpose == "platform_skill" else "skill"
             head.purpose, head.project_id = purpose, None
             reserve_filename(db, head)
+            db.flush()
             db.execute(
                 update(FileObject)
-                .where(FileObject.lineage_id == file.lineage_id)
+                .where(FileObject.lineage_id == file.lineage_id, FileObject.id != head.id)
                 .values(purpose=purpose, project_id=None, filename=head.filename, name_key=head.name_key)
             )
     if (body.meta or {}).get("document_manifest_key"):
