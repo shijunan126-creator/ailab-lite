@@ -297,6 +297,8 @@ def test_query_plans_use_file_full_text_and_recent_indexes():
         prefix = "EXPLAIN QUERY PLAN " if dialect == "sqlite" else "EXPLAIN "
         if dialect == "postgresql":
             db.execute(text("SET LOCAL enable_seqscan = off"))
+            # Statistics left by other tests must not decide the plan: only an index that yields the order may serve it.
+            db.execute(text("SET LOCAL enable_sort = off"))
 
         def plan(stmt):
             sql = stmt.compile(db.get_bind(), compile_kwargs={"literal_binds": True})

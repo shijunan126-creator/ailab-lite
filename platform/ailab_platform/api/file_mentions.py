@@ -162,7 +162,8 @@ def recent_query(user_id, project_id=None, isolated=False, references=None, *, l
         query = query.where(FileObject.project_id == project_id)
     else:
         query = query.where(allowed)
-    return query.order_by(FileObject.created_at.desc(), FileObject.id).limit(limit)
+    # Same direction on both keys, so the partial recency indexes are walked backwards and stop at the limit.
+    return query.order_by(FileObject.created_at.desc(), FileObject.id.desc()).limit(limit)
 
 
 def suggestions(db: Session, user_id: str, query: str, limit: int, conversation_id=None, project_id=None, *, isolated=False) -> list[dict]:
