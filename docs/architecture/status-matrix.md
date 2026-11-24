@@ -44,6 +44,7 @@
 | 预览、缩略图与派生资源 | 已实现 | `platform/ailab_platform/api/derived_assets.py`、`platform/ailab_platform/api/preview_dispatch.py`、`platform/ailab_platform/broker/render.py` | [ADR 0011](adr/0011-worker-previews.md)、[ADR 0032](adr/0032-prewarmed-single-use-render-sandboxes.md) |
 | 文档查看、视觉覆盖与文件等待 | 已实现 | `platform/ailab_platform/api/document_view.py`、`platform/ailab_platform/api/document_visual.py`、`platform/ailab_platform/api/file_dependencies.py` | [ADR 0026](adr/0026-document-visual-coverage-and-file-waits.md) |
 | 交付件身份、版本与回收站 | 已实现 | `platform/ailab_platform/api/artifact_identity.py`、`platform/ailab_platform/api/owned_assets.py`、`platform/ailab_platform/models.py::FileObject` | [files](../modules/files.md) |
+| 资料库文件与交付件联想接口 | 已实现 | `platform/ailab_platform/api/routes_files.py::file_mentions`、`platform/ailab_platform/api/file_mentions.py::suggestions` | [ADR 0046](adr/0046-file-mention-index.md) |
 | Chat/Work 文档工具 | 已实现 | `platform/ailab_platform/agent/document_tools.py`、`platform/ailab_platform/domain/document_reading.py` | [ADR 0042](adr/0042-single-tool-catalog.md) |
 | 资料库摘要、分享与文件提问 | 已实现 | `platform/ailab_platform/api/routes_library_summary.py`、`platform/ailab_platform/api/routes_library_tools.py`、`platform/ailab_platform/api/routes_shares.py` | [files](../modules/files.md) |
 
