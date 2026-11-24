@@ -6,7 +6,7 @@
 // reads the DOM back into parts after each input.
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
-import { normalize, slashQuery, type Part, type SkillRef } from "../../lib/message-parts";
+import { normalize, triggerQuery, type Part, type SkillRef, type Trigger } from "../../lib/message-parts";
 
 export type RichInputHandle = {
   focus: (atEnd?: boolean) => void;
@@ -15,8 +15,8 @@ export type RichInputHandle = {
   clear: () => void;
   /** Put a skill at the caret (or at the end when the box was not focused). */
   insertSkill: (skill: SkillRef) => void;
-  /** Replace the "/query" being typed with this skill, or just remove it (null). */
-  completeSlash: (skill: SkillRef | null) => void;
+  /** Replace the "/query" or "@query" being typed with a skill chip, with plain text, or with nothing (null). */
+  completeTrigger: (with_: { skill: SkillRef } | { text: string } | null) => void;
   /** Remove every chip of this skill, as an undoable edit. */
   removeSkill: (name: string) => void;
   /** Briefly highlight the chip of a skill already in the message. */
@@ -24,7 +24,7 @@ export type RichInputHandle = {
   element: () => HTMLDivElement | null;
 };
 
-export type SlashState = { query: string } | null;
+export type TriggerState = { trigger: Trigger; query: string } | null;
 
 const MIME = "application/x-ailab-parts";
 const X_SVG =
@@ -125,22 +125,22 @@ type Props = {
   initial?: Part[];
   className?: string;
   onChange?: (parts: Part[]) => void;
-  onSlash?: (state: SlashState) => void;
+  onTrigger?: (state: TriggerState) => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onPasteFiles?: (files: File[]) => void;
-  slashOpen?: boolean; // for aria-expanded
+  listOpen?: boolean; // for aria-expanded
   controls?: string;
 };
 
 const RichInput = forwardRef<RichInputHandle, Props>(function RichInput(
-  { ariaLabel, placeholder, autoFocus, initial, className, onChange, onSlash, onKeyDown, onPasteFiles, slashOpen, controls },
+  { ariaLabel, placeholder, autoFocus, initial, className, onChange, onTrigger, onKeyDown, onPasteFiles, listOpen, controls },
   ref,
 ) {
   const box = useRef<HTMLDivElement | null>(null);
   const composing = useRef(false);
-  const lastSlash = useRef<string | null>(null);
-  const handlers = useRef({ onChange, onSlash });
-  handlers.current = { onChange, onSlash };
+  const lastTrigger = useRef<string | null>(null);
+  const handlers = useRef({ onChange, onTrigger });
+  handlers.current = { onChange, onTrigger };
 
   const sync = useCallback(() => {
     const el = box.current;
@@ -150,15 +150,15 @@ const RichInput = forwardRef<RichInputHandle, Props>(function RichInput(
     handlers.current.onChange?.(parts);
   }, []);
 
-  const checkSlash = useCallback(() => {
+  const checkTrigger = useCallback(() => {
     const el = box.current;
     if (!el || composing.current) return;
     const at = document.activeElement === el ? textBeforeCaret(el) : null;
-    const hit = at ? slashQuery(at.before) : null;
-    const key = hit ? hit.query : null;
-    if (key === lastSlash.current) return;
-    lastSlash.current = key;
-    handlers.current.onSlash?.(hit ? { query: hit.query } : null);
+    const hit = at ? triggerQuery(at.before) : null;
+    const key = hit ? hit.trigger + hit.query : null;
+    if (key === lastTrigger.current) return;
+    lastTrigger.current = key;
+    handlers.current.onTrigger?.(hit ? { trigger: hit.trigger, query: hit.query } : null);
   }, []);
 
   const exec = (command: string, value?: string) => {
@@ -200,7 +200,7 @@ const RichInput = forwardRef<RichInputHandle, Props>(function RichInput(
       const el = box.current;
       if (!el) return;
       el.textContent = "";
-      lastSlash.current = null;
+      lastTrigger.current = null;
       sync();
     },
     insertSkill: (skill) => {
@@ -215,20 +215,24 @@ const RichInput = forwardRef<RichInputHandle, Props>(function RichInput(
       const pad = before && !/\s$/.test(before) ? " " : "";
       exec("insertHTML", esc(pad) + chipHtml(skill) + " ");
     },
-    completeSlash: (skill) => {
+    completeTrigger: (with_) => {
       const el = box.current;
       if (!el) return;
       const at = textBeforeCaret(el);
-      const hit = at ? slashQuery(at.before) : null;
+      const hit = at ? triggerQuery(at.before) : null;
+      const put = () => {
+        if (!with_) exec("delete");
+        else if ("skill" in with_) exec("insertHTML", chipHtml(with_.skill) + " ");
+        else exec("insertText", with_.text + " ");
+      };
       if (at && hit) {
         const sel = window.getSelection()!;
         sel.removeAllRanges();
         sel.addRange(rangeBack(at.node, at.offset, hit.length));
-        if (skill) exec("insertHTML", chipHtml(skill) + " ");
-        else exec("delete");
-      } else if (skill) exec("insertHTML", chipHtml(skill) + " ");
-      lastSlash.current = null;
-      handlers.current.onSlash?.(null);
+        put();
+      } else if (with_) put();
+      lastTrigger.current = null;
+      handlers.current.onTrigger?.(null);
     },
     removeSkill: (name) => {
       for (const chip of Array.from(box.current?.querySelectorAll<HTMLElement>(".skill-chip") || [])) if (chip.dataset.skill === name) deleteChip(chip);
@@ -260,7 +264,7 @@ const RichInput = forwardRef<RichInputHandle, Props>(function RichInput(
       }
     };
     const selection = () => {
-      if (document.activeElement === el) checkSlash();
+      if (document.activeElement === el) checkTrigger();
     };
     el.addEventListener("beforeinput", beforeInput);
     document.addEventListener("selectionchange", selection);
@@ -293,13 +297,13 @@ const RichInput = forwardRef<RichInputHandle, Props>(function RichInput(
       role="textbox"
       aria-multiline="true"
       aria-label={ariaLabel}
-      aria-expanded={slashOpen}
+      aria-expanded={listOpen}
       aria-controls={controls}
       data-placeholder={placeholder || ""}
       spellCheck={false}
       onInput={() => {
         sync();
-        checkSlash();
+        checkTrigger();
       }}
       onCompositionStart={() => {
         composing.current = true;
@@ -307,7 +311,7 @@ const RichInput = forwardRef<RichInputHandle, Props>(function RichInput(
       onCompositionEnd={() => {
         composing.current = false;
         sync();
-        checkSlash();
+        checkTrigger();
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" && e.shiftKey && !e.nativeEvent.isComposing) {

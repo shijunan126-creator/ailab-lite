@@ -406,6 +406,15 @@ export type FileItem = {
   purged?: boolean; // an old version whose content is gone
 };
 
+/** A file offered after "@" in the composer (GET /v1/files/mentions): ranked, with where it came from. */
+export type MentionItem = FileItem & {
+  origin: "conversation" | "project" | "library"; // already used in this conversation, in its project, elsewhere
+  delivered: boolean; // a deliverable of some answer, not an upload
+  conversation_title: string | null; // the conversation that delivered it
+  project_name: string | null;
+  highlight: [number, number][]; // matched code-point ranges of filename
+};
+
 /** Formats the side-pane document viewer opens natively. */
 export type OfficeKind = "docx" | "xlsx" | "pptx" | "pdf";
 

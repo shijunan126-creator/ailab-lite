@@ -363,6 +363,12 @@ span.skill-chip:not(:has(.skill-chip-x)) { padding-right: 8px; cursor: pointer; 
 .slash-icon.tone-1 { --chip: var(--series-1); } .slash-icon.tone-2 { --chip: var(--series-2); } .slash-icon.tone-3 { --chip: var(--series-3); }
 .slash-icon.tone-4 { --chip: var(--series-4); } .slash-icon.tone-5 { --chip: var(--series-5); } .slash-icon.tone-6 { --chip: var(--series-6); }
 .slash-item.picked { color: var(--muted-foreground); }
+/* "@": files take a wider list than skill names; where a file came from sits at the right, quieter than its name */
+.slash-menu.mention-menu { width: min(440px, calc(100% - 16px)); max-height: 340px; }
+.mention-item .file-tile { border-radius: 7px; }
+.mention-name { min-width: 0; flex: 1; text-align: left; }
+.mention-name mark { background: none; color: var(--primary); font-weight: 600; }
+.mention-where { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint-foreground); font-size: var(--text-sm); font-weight: 400; }
 
 /* attachments: a bounded band above the text, each state in the tile's top-right corner (HLD §16.3) */
 .composer-attachments { max-height: 84px; overflow-y: auto; margin: 0 0 6px; padding: 2px; gap: 6px; }
