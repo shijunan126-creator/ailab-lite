@@ -41,3 +41,4 @@
 | [0043](0043-on-demand-tools.md) | 低频工具经 call_tool 按需加载 | 已采纳 | 低频工具默认只暴露名字，首次调用时返回说明并还原真实调用。 |
 | [0044](0044-pi-aligned-workspace-tools.md) | 工作区工具对齐 Pi 的语义 | 已采纳 | read/write/edit/bash/grep/find 照 Pi 的语义；read 按行窗口，edit 线性匹配，bash 等待窗口与平台期限分开。 |
 | [0045](0045-lightweight-web-read.md) | 轻量网页读取：删除浏览器渲染，curl_cffi、Markdown 协商、结构化数据与 Wayback | 已采纳 | 直接抓取钉住已检查的 IP；弱页先取页面自带结构化数据，被拦截再读存档，不破解人机验证。 |
+| [0046](0046-file-mention-index.md) | 输入框文件名联想采用倒排索引 | 已采纳 | 按血脉索引当前可用文件，支持拉丁前缀、CJK 单字和对话内引用。 |

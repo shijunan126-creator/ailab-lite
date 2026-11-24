@@ -105,6 +105,7 @@
 - **用量页面必须用一条 SQL 同时读已结算与未结算预留**。分开查询会在结算切换瞬间双计。代码：`platform/ailab_platform/quota.py::usage_summary`。
 
 ### 搜索
+- **文件联想先用窄时间窗口取高频命中，全库全文匹配结束后再排序**。SQLite 的大词项结果逐行回表会超预算，PostgreSQL 混合排序和匹配时可能按时间扫描整个账号。代码：`platform/ailab_platform/api/file_mentions.py::candidate_query`、`::_index_window`。
 - **SQLite 的 FTS 候选先 `MATERIALIZED` 再 JOIN，PostgreSQL 用持久 `terms_tsv` + GIN**。直接平铺 JOIN 会对每个会话跑一次 `MATCH`，表达式 `to_tsvector` 在小表会被规划器放弃。代码：`platform/ailab_platform/search_index.py::candidate_query`。
 - **词项并集只增不减，最终命中只认归一化后的可见内容**。编辑、重试、删除后旧词项可以留下，但 SQL 预筛选必须是 NFKC/casefold 的候选超集，隐藏 UI 源码不能兜底。代码：`platform/ailab_platform/search_index.py::_fold`、`::_indexed_search`；测试：`platform/tests/test_search.py::test_search_does_not_match_hidden_ui_source`。
 - **无索引词项的输入只回退扫描最近 200 个会话，不能扩大成无界扫描**。单字、纯标点或分词器不覆盖的文字无法承诺全量。代码：`platform/ailab_platform/search_index.py::_fallback_search`。
@@ -149,6 +150,7 @@
 - **旧预览恢复要同时覆盖公有预览入口和 `request_preview` 的失败缓存短路**。只改排队入口，旧的 `render_failed` 仍会永久返回；恢复扫描期间必须有终态且不能提前排渲染。代码：`platform/ailab_platform/api/preview_requests.py::request_preview`、`platform/ailab_platform/api/routes_files.py::get_preview`；测试：`platform/tests/test_file_previews.py::test_legacy_artifact_rescans_before_retrying_failed_preview`。
 
 ### 交付与清理
+- **批量改 head、移入回收站与清除墓碑时同步处理文件名索引**。Core 批量写入不触发 ORM 事件，历史版本清理只能删除指向该版本的索引行。代码：`platform/ailab_platform/library.py::assign_file_version`、`::trash_lineages`、`::delete_file_rows`。
 - **`/workspace/outputs` 是自动交付区；交付身份按修订意图生成，不能只按路径或 hash**。A→B→A 是三次修订；恢复先读 receipt 确认结果，再核对当前字节。代码：`platform/ailab_platform/agent/loop.py::AgentLoop::_deliver_leftovers`、`platform/ailab_platform/api/routes_internal.py::_commit_artifact`；测试：`platform/tests/test_file_identity.py::test_output_revision_slot_replay_and_legacy_repair`。
 - **交付 receipt 丢失后必须能幂等重放，且不能删除可能已发布的对象**。先查 `RunDelivery`，同 id 异内容与租约 fencing 分别报错。代码：`platform/ailab_platform/api/routes_internal.py::delivery_receipt`、`::internal_commit_artifact`；测试：`platform/tests/test_artifacts.py::test_retry_after_staging_was_already_consumed_is_idempotent`。
 - **工作区交付名与资料库冲突后的显示名是两个身份**。metadata 保留 `artifact_filename`，同会话祖先链按它找父版本；否则后续同名交付会不断变成新 lineage。代码：`platform/ailab_platform/api/artifact_identity.py::repair_metadata`、`platform/ailab_platform/api/routes_internal.py::_commit_artifact`；测试：`platform/tests/test_file_versions.py::test_collision_renamed_artifact_keeps_lineage_and_name_on_later_turn`。

@@ -25,6 +25,7 @@
 | 项目与文件移动、星标 | `platform/ailab_platform/api/routes_projects.py::delete_project`、`platform/ailab_platform/api/routes_files.py::patch_file`、`platform/ailab_platform/library.py::move_lineage` |
 | 版本、移动、回收站 | `platform/ailab_platform/api/routes_files.py::file_versions`、`::restore_version`、`::batch_files`、`platform/ailab_platform/library.py::trash_lineages`、`::purge_lineages` |
 | 资料库与文件夹列表 | `platform/ailab_platform/api/routes_files.py::list_files`、`::list_file_folders`、`platform/ailab_platform/api/routes_library_tools.py::library_query` |
+| 输入框文件联想 | `platform/ailab_platform/api/routes_files.py::file_mentions`、`platform/ailab_platform/api/file_mentions.py::suggestions`、`platform/ailab_platform/file_search.py::index_pending` |
 | 原生查看索引 | `platform/ailab_platform/api/routes_files.py::get_document`、`platform/ailab_platform/api/document_view.py::index`、`platform/ailab_platform/worker/viewer.py::process_viewer` |
 | 浏览器截图 | `platform/ailab_platform/api/viewer_captures.py::save`、`platform/ailab_platform/models.py::ViewerCapture` |
 
@@ -124,6 +125,12 @@ API 负责接收与记账，Worker 负责扫描；解析只在 Worker 的受限�
 2. 新过滤条件要配 `FileObject` 的索引；部分索引的谓词必须与查询里的常量完全一致。SQLite 上 `content_type LIKE 'image/%'` 要用 `literal_column("'image/%'")` 才能命中 `ix_files_live_images`，绑定参数不行。
 3. 保持 `(排序字段, id)` 的稳定游标；文件列表 `limit` 默认 50、最大 200，文件夹列表默认 100、最大 200，`offset` 兼容和 `ids` 精确版本查询不要混用。
 4. 在 `platform/tests/test_library_agent_tools.py::test_library_search_query_uses_user_index` 的 EXPLAIN 列表里加新查询，并补 `platform/tests/test_library.py::test_filters_order_search_and_pagination` 或 `platform/tests/test_library_namespaces.py::test_folder_pagination_empty_projects_images_and_search` 的行为断言。
+
+### 改文件名联想
+
+1. `GET /v1/files/mentions` 校验对话和项目归属，由对话决定实际项目。联想只列本人可用的资料库 head，项目可见性沿用资料库工具的隔离规则。对话中任一 Run 的输入与交付都按血脉定位当前 head，允许跨隔离项目引用。
+2. 空查询按对话、项目、账号分组取最近文件。非空查询校验倒排索引的 200 个候选与最多 50 个对话 head。匹配不足时在最近 2000 个可见 head 内补子串，按匹配档位、来源、时间和 ID 排序。高亮使用文件名的原始码点偏移。
+3. 改名、移动、就绪、换版和回收站操作必须在文件事务内同步 `file_search`。迁移建立索引，API 后台按水位补旧 head。修改词项或候选计划时同步运行 `platform/tests/test_file_mentions.py::test_query_plans_use_file_full_text_and_recent_indexes` 和双库基准。见 [ADR 0046](../architecture/adr/0046-file-mention-index.md)。
 
 ## 配置
 
