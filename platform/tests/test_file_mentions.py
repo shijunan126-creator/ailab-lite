@@ -312,7 +312,10 @@ def test_query_plans_use_file_full_text_and_recent_indexes():
             assert "ix_file_search_terms" in search, search
         for project in (None, "mention-plan-project"):
             recent = plan(recent_query(owner, project, limit=RECENT_CANDIDATES, project_only=bool(project)))
-            assert "ix_files_mentions_" in recent, recent
+            # A partial live-head index gives recency order (PostgreSQL may pick the older ix_files_live_* twin); the
+            # newest page never sorts the account's files.
+            assert "ix_files_mentions_" in recent or (dialect == "postgresql" and "ix_files_live_" in recent), recent
+            assert ("TEMP B-TREE" not in recent) if dialect == "sqlite" else (" Sort " not in f" {recent} "), recent
         references = file_mentions._conversation_lineages(dialect, owner, "mention-plan-conversation")
         conversation = plan(file_mentions.conversation_query(owner, references))
         assert "files_pkey" in conversation if dialect == "postgresql" else "sqlite_autoindex_files_1" in conversation, conversation
