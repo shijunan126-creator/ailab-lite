@@ -52,9 +52,8 @@ if _is_sqlite:
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, class_=Session)
 
-# Registering the conversation-search session hooks. The API is the only writer of the business database, so every
-# ORM write of a title, prompt or answer updates the index in the same transaction.
-from . import search_index  # noqa: E402,F401
+# Register search ORM hooks so writes update their search rows in the same transaction.
+from . import file_search, search_index  # noqa: E402,F401
 
 
 def hash_token(token: str) -> str:

@@ -38,10 +38,11 @@ from ..library import (
     trim_file_versions,
 )
 from ..locks import user_critical_section
-from ..models import FileObject, FileStatus, UploadReceipt, User, new_id, utcnow
+from ..models import Conversation, FileObject, FileStatus, UploadReceipt, User, new_id, utcnow
 from ..quota import enforce_library_quota
-from ..schemas import FileBatch, FileOut, LibraryFilePatch
+from ..schemas import FileBatch, FileMentions, FileOut, LibraryFilePatch
 from ..storage import get_storage
+from .file_mentions import suggestions
 from .jobs import stage_job
 from .serializers import file_dict, file_dicts
 from .upload_identity import fingerprint, receipt_for, replay, reusable
@@ -583,6 +584,34 @@ def preview_asset(
     return _ClosingStreamingResponse(get_storage().stream(key), media_type=mime, headers=headers)
 
 
+@router.get("/mentions", response_model=FileMentions)
+def file_mentions(
+    q: str = Query(default="", max_length=100),
+    conversation_id: str | None = None,
+    project_id: str | None = None,
+    limit: int = Query(default=8, ge=1, le=20),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = owned_project(db, project_id, user) if project_id else None
+    if conversation_id:
+        conversation = db.get(Conversation, conversation_id)
+        if conversation is None or conversation.user_id != user.id or conversation.deleted_at is not None:
+            raise HTTPException(404, "对话不存在")
+        project = owned_project(db, conversation.project_id, user) if conversation.project_id else None
+    return {
+        "items": suggestions(
+            db,
+            user.id,
+            q,
+            limit,
+            conversation_id or None,
+            project.id if project else None,
+            isolated=bool(project and project.memory_mode == "isolated"),
+        )
+    }
+
+
 @router.patch("/{file_id}", response_model=FileOut)
 def patch_file(file_id: str, body: LibraryFilePatch, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     with user_critical_section(db, user.id):
@@ -590,10 +619,14 @@ def patch_file(file_id: str, body: LibraryFilePatch, user: User = Depends(curren
         if file.deleted_at is not None or file.purged_at is not None:
             raise HTTPException(status_code=404, detail="file not found")
         lineage = list(db.scalars(select(FileObject).where(FileObject.lineage_id == file.lineage_id)))
-        if "project_id" in body.model_fields_set:
-            if body.project_id is not None:
-                owned_project(db, body.project_id, user)
-            move_lineage(db, file, body.project_id)
+        if {"project_id", "filename"} & body.model_fields_set:
+            head = next((version for version in lineage if version.is_head), None)
+            if head is None:
+                raise HTTPException(404, "file not found")
+            destination = body.project_id if "project_id" in body.model_fields_set else head.project_id
+            if destination is not None:
+                owned_project(db, destination, user)
+            move_lineage(db, file, destination, filename=safe_filename(body.filename) if body.filename is not None else None)
         if "starred" in body.model_fields_set:
             for version in lineage:
                 version.starred_at = (version.starred_at or utcnow()) if body.starred else None

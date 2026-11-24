@@ -397,6 +397,9 @@ class RunProcessSnapshot(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+FILE_MENTION_ELIGIBLE = "purpose = 'library' AND status = 'ready' AND is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"
+
+
 class FileObject(Base):
     __tablename__ = "files"
     __table_args__ = (
@@ -408,6 +411,27 @@ class FileObject(Base):
         Index("uq_files_lineage_version", "lineage_id", "version", unique=True),
         Index("uq_files_lineage_head", "lineage_id", sqlite_where=text("is_head = 1"), postgresql_where=text("is_head = 1"), unique=True),
         Index("ix_files_lineage_retained", "lineage_id", "purged_at", "version"),
+        Index(
+            "ix_files_mentions_recent",
+            "purpose",
+            "status",
+            "user_id",
+            "created_at",
+            "id",
+            sqlite_where=text(FILE_MENTION_ELIGIBLE),
+            postgresql_where=text(FILE_MENTION_ELIGIBLE),
+        ),
+        Index(
+            "ix_files_mentions_project_recent",
+            "purpose",
+            "status",
+            "user_id",
+            "project_id",
+            "created_at",
+            "id",
+            sqlite_where=text(FILE_MENTION_ELIGIBLE),
+            postgresql_where=text(FILE_MENTION_ELIGIBLE),
+        ),
         Index(
             "ix_files_live_created",
             "user_id",
@@ -512,6 +536,35 @@ class FileObject(Base):
     trashed_from_project_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FileSearch(Base):
+    """Searchable name and ordering keys for a library lineage's current head."""
+
+    __tablename__ = "file_search"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lineage_id: Mapped[str] = mapped_column(String(40))
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    project_id: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    terms: Mapped[str] = mapped_column(Text)
+    terms_tsv: Mapped[str | None] = mapped_column(TSVECTOR().with_variant(Text(), "sqlite"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("lineage_id", name="uq_file_search_lineage"),
+        UniqueConstraint("file_id", name="uq_file_search_file"),
+        Index("ix_file_search_recent", user_id, created_at.desc(), file_id),
+    )
+
+
+class FileSearchState(Base):
+    __tablename__ = "file_search_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    watermark_user_id: Mapped[str] = mapped_column(String(40))
+    watermark_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    watermark_file_id: Mapped[str] = mapped_column(String(40))
 
 
 class UploadReceipt(Base):
