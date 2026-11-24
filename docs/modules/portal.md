@@ -14,6 +14,7 @@ Portal 是浏览器里的界面与同源入口：负责页面、发送队列、S
 | 404 与出错页 | `platform/portal/app/not-found.tsx`、`platform/portal/app/(app)/error.tsx`、`platform/portal/app/global-error.tsx` |
 | 会话页、发送、跟随流、侧栏查看器 | `platform/portal/components/chat/chat.tsx::Chat` |
 | 输入框、附件、技能、模板、排队与插话 | `platform/portal/components/chat/composer.tsx::Composer` |
+| 输入框 `/` 技能与 `@` 文件联想 | `platform/portal/lib/message-parts.ts::triggerQuery`、`platform/portal/components/chat/mention-menu.tsx::useMentions`、`platform/portal/lib/mentions.ts::fetchMentions` |
 | 单轮消息、过程、回答、分支/重试/编辑 | `platform/portal/components/chat/turn.tsx::Turn` |
 | 回答中的 Markdown 与 GenUI 分片 | `platform/portal/components/chat/answer.tsx::Answer` |
 | Markdown 中的数学公式 | `platform/portal/lib/math.ts`、`platform/portal/components/math.tsx::TexMath` |
